@@ -61,6 +61,17 @@ fn native_shared_parent_submission_recomputes_merged_dependency() {
     assert_eq!(accepted["status"], "current");
     let donor_db = Path::new(accepted["view"].as_str().unwrap()).join(".sifttext/index.sqlite");
     let donor_bytes = fs::read(&donor_db).unwrap();
+    let root_navigation = donor_db
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(format!("nodes/{}/outline.full.lean", id(1)));
+    let donor_navigation = fs::read(&root_navigation).unwrap();
+    let donor_cost: serde_json::Value = serde_json::from_slice(
+        &fs::read(root_navigation.with_file_name("outline.full.lean.meta.json")).unwrap(),
+    )
+    .unwrap();
     let combined = call("git-submit-observe", f.request(&f.a));
     assert_eq!(combined["status"], "current");
     assert_eq!(combined["accepted_index_available"], true);
@@ -110,6 +121,24 @@ fn native_shared_parent_submission_recomputes_merged_dependency() {
     let outlines = call("core-observe", json!({"op":"outline_inspect","store":view}));
     assert_eq!(outlines["status"], "current");
     assert_eq!(outlines["version"], combined["version"]);
+    let combined_navigation = view.join(format!("nodes/{}/outline.full.lean", id(1)));
+    assert_ne!(fs::read(&combined_navigation).unwrap(), donor_navigation);
+    let combined_cost: serde_json::Value = serde_json::from_slice(
+        &fs::read(combined_navigation.with_file_name("outline.full.lean.meta.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        combined_cost["tokens"].as_u64().unwrap() > donor_cost["tokens"].as_u64().unwrap(),
+        "new shared-parent row must change the full navigation cost"
+    );
+    assert_eq!(fs::read(&root_navigation).unwrap(), donor_navigation);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(
+            &fs::read(root_navigation.with_file_name("outline.full.lean.meta.json")).unwrap()
+        )
+        .unwrap(),
+        donor_cost
+    );
     assert_eq!(fs::read(&donor_db).unwrap(), donor_bytes);
     assert_eq!(
         fs::read(f.a.join(".sifttext/index.sqlite")).unwrap(),
