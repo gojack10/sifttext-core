@@ -455,7 +455,7 @@ impl Store {
         #[cfg(test)]
         coherent_capture::count(|c| c.inventories += 1);
         let mut files = BTreeMap::new();
-        inventory(&path, &path, &mut files)?;
+        inventory(path, path, &mut files)?;
         files.retain(|p, _| {
             let mut parts = p.components();
             !(parts.next().is_some_and(|p| p.as_os_str() == "nodes")
