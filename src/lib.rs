@@ -336,8 +336,86 @@ fn safe_link(path: &Path, expected: &Path, destination: &Path) -> Result<()> {
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static INVENTORY_SPAWN_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static INVENTORY_IO_FAILURE: std::cell::Cell<Option<std::io::ErrorKind>> = const { std::cell::Cell::new(None) };
+}
+
 fn inventory(path: &Path, root: &Path, result: &mut BTreeMap<PathBuf, Entry>) -> Result<()> {
-    for p in entries(path)? {
+    let paths = entries(path)?;
+    if path == root.join("nodes") && paths.len() >= 64 {
+        // Only disjoint node subtrees run concurrently; complete physical
+        // sweeps and both real byte inventories still bracket this work.
+        let (startup, batches) = thread::scope(|scope| {
+            let mut workers = Vec::new();
+            let mut startup = Ok(());
+            for chunk in paths.chunks(paths.len().div_ceil(4)) {
+                #[cfg(test)]
+                if INVENTORY_SPAWN_FAILURE.with(|failure| failure.get() == Some(workers.len())) {
+                    startup = Err(std::io::Error::other("injected inventory spawn failure"));
+                    break;
+                }
+                #[cfg(test)]
+                let io_failure = INVENTORY_IO_FAILURE.with(|failure| failure.get());
+                match thread::Builder::new().spawn_scoped(scope, move || {
+                    let mut batch = BTreeMap::new();
+                    let mut read = || -> Result<()> {
+                        #[cfg(test)]
+                        if let Some(kind) = io_failure {
+                            return Err(std::io::Error::from(kind).into());
+                        }
+                        inventory_entries(chunk, root, &mut batch)
+                    };
+                    read()
+                        .map(|()| batch)
+                        // Box<dyn Error> is not Send. Keep IO identity intact;
+                        // fixed native guard errors retain their exact strings.
+                        .map_err(|error| {
+                            error
+                                .downcast::<std::io::Error>()
+                                .map(|error| *error)
+                                .map_err(|error| error.to_string())
+                        })
+                }) {
+                    Ok(worker) => workers.push(worker),
+                    Err(error) => {
+                        startup = Err(error);
+                        break;
+                    }
+                }
+            }
+            let batches = workers
+                .into_iter()
+                .map(|worker| worker.join())
+                .collect::<Vec<_>>();
+            (startup, batches)
+        });
+        // Drain every worker before returning any error or accepting bytes.
+        startup?;
+        for batch in batches {
+            let batch = batch.map_err(|_| "inventory worker panicked")?.map_err(
+                |error| -> Box<dyn std::error::Error> {
+                    match error {
+                        Ok(error) => error.into(),
+                        Err(message) => message.into(),
+                    }
+                },
+            )?;
+            result.extend(batch);
+        }
+        Ok(())
+    } else {
+        inventory_entries(&paths, root, result)
+    }
+}
+
+fn inventory_entries(
+    paths: &[PathBuf],
+    root: &Path,
+    result: &mut BTreeMap<PathBuf, Entry>,
+) -> Result<()> {
+    for p in paths {
         let rel = p.strip_prefix(root)?.to_path_buf();
         if rel == Path::new(".git") {
             continue;

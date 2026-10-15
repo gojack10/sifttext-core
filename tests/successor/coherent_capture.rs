@@ -96,6 +96,69 @@ fn single_inventory_parse_and_one_pass_relationship_work() {
 }
 
 #[test]
+fn parallel_node_inventory_preserves_serial_bytes_links_and_refusals() {
+    for deep in [false, true] {
+        let d = fixture(128, deep);
+        let asset = d.path().join("nodes").join(id(128)).join("assets");
+        fs::create_dir(&asset).unwrap();
+        fs::write(asset.join("opaque.bin"), [0, 255, 13, 10]).unwrap();
+        let mut serial = BTreeMap::new();
+        crate::inventory_entries(
+            &crate::entries(&d.path().join("nodes")).unwrap(),
+            d.path(),
+            &mut serial,
+        )
+        .unwrap();
+        let store = Store::read(d.path()).unwrap();
+        let parallel: BTreeMap<_, _> = store
+            .inventory
+            .iter()
+            .filter(|(p, _)| p.starts_with("nodes") && p.as_path() != Path::new("nodes"))
+            .map(|(p, e)| (p.clone(), e.clone()))
+            .collect();
+        assert_eq!(parallel, serial);
+        let captured = Capture::read(d.path(), None).unwrap();
+        assert_eq!(captured.store.inventory, store.inventory);
+        fs::hard_link(asset.join("opaque.bin"), asset.join("alias.bin")).unwrap();
+        assert!(captured.unchanged_all().is_err());
+        assert!(Store::read(d.path()).is_err());
+    }
+    let d = fixture(128, false);
+    crate::INVENTORY_SPAWN_FAILURE.with(|failure| failure.set(Some(1)));
+    let refused = Store::read(d.path());
+    crate::INVENTORY_SPAWN_FAILURE.with(|failure| failure.set(None));
+    assert!(
+        refused
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("injected inventory spawn failure")
+    );
+    assert_eq!(Store::read(d.path()).unwrap().nodes.len(), 128);
+    for (kind, expected) in [
+        (std::io::ErrorKind::NotFound, "not_found"),
+        (std::io::ErrorKind::PermissionDenied, "permission_denied"),
+        (std::io::ErrorKind::OutOfMemory, "resource_exhausted"),
+    ] {
+        crate::INVENTORY_IO_FAILURE.with(|failure| failure.set(Some(kind)));
+        let refused = Store::read(d.path());
+        crate::INVENTORY_IO_FAILURE.with(|failure| failure.set(None));
+        let error = refused.err().unwrap();
+        assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(), kind);
+        assert_eq!(
+            crate::index::Refusal::from_error("capture", error.as_ref()).kind,
+            expected
+        );
+    }
+    assert_eq!(Store::read(d.path()).unwrap().nodes.len(), 128);
+    let changed = d.path().join("nodes").join(id(128)).join("node.md");
+    coherent_capture::on_inventory(move || {
+        fs::write(changed, "changed").unwrap();
+    });
+    assert!(Capture::read(d.path(), None).is_err());
+}
+
+#[test]
 fn real_consumers_reuse_metadata_without_extra_markdown_parses() {
     let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
     let before = fixture(8, false);
@@ -167,17 +230,31 @@ fn creation_copies_checked_snapshots_and_rejects_initial_capture_race() {
         let home = fixture(3, false);
         let git = |path: &Path, args: &[&str]| {
             let output = std::process::Command::new("git")
-                .arg("-C").arg(path)
-                .args(["-c", "user.name=Synthetic User", "-c", "user.email=user@example.invalid"])
-                .args(args).output().unwrap();
+                .arg("-C")
+                .arg(path)
+                .args([
+                    "-c",
+                    "user.name=Synthetic User",
+                    "-c",
+                    "user.email=user@example.invalid",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
             assert!(output.status.success(), "{output:?}");
         };
         git(home.path(), &["init", "--initial-branch=main"]);
         git(home.path(), &["add", "nodes", "trees"]);
-        git(home.path(), &["commit", "-m", "knowledge: synthetic fixture"]);
+        git(
+            home.path(),
+            &["commit", "-m", "knowledge: synthetic fixture"],
+        );
         let scratch = tempfile::tempdir().unwrap();
         let draft = scratch.path().join("draft");
-        git(home.path(), &["worktree", "add", "-b", "draft", draft.to_str().unwrap()]);
+        git(
+            home.path(),
+            &["worktree", "add", "-b", "draft", draft.to_str().unwrap()],
+        );
         coherent_capture::take_work();
         let fired = std::rc::Rc::new(std::cell::Cell::new(false));
         if race {
@@ -191,13 +268,23 @@ fn creation_copies_checked_snapshots_and_rejects_initial_capture_race() {
                 fired.set(true);
             });
         }
-        let result = crate::local::create(&policy, &draft, "Created", "Synthetic summary", Some(&id(1)));
+        let result = crate::local::create(
+            &policy,
+            &draft,
+            "Created",
+            "Synthetic summary",
+            Some(&id(1)),
+        );
         let work = coherent_capture::take_work();
         if race {
             assert!(fired.get());
             assert!(result.is_err());
             assert_eq!(fs::read_dir(draft.join("nodes")).unwrap().count(), 3);
-            assert!(fs::read_to_string(draft.join("nodes").join(id(2)).join("node.md")).unwrap().ends_with("changed\n"));
+            assert!(
+                fs::read_to_string(draft.join("nodes").join(id(2)).join("node.md"))
+                    .unwrap()
+                    .ends_with("changed\n")
+            );
         } else {
             let created = result.unwrap();
             let key = created["id"].as_str().unwrap();
@@ -461,10 +548,15 @@ fn accepted_unbounded_reference_capture_and_exact_order_diagnostic_share_one_pas
 fn freshness_recapture_timing() {
     fn cpu() -> f64 {
         let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
-        assert_eq!(unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) }, 0);
+        assert_eq!(
+            unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) },
+            0
+        );
         let u = unsafe { usage.assume_init() };
-        u.ru_utime.tv_sec as f64 + u.ru_utime.tv_usec as f64 / 1e6
-            + u.ru_stime.tv_sec as f64 + u.ru_stime.tv_usec as f64 / 1e6
+        u.ru_utime.tv_sec as f64
+            + u.ru_utime.tv_usec as f64 / 1e6
+            + u.ru_stime.tv_sec as f64
+            + u.ru_stime.tv_usec as f64 / 1e6
     }
     for (count, deep) in [(10000, false), (1000, true)] {
         let d = fixture(count, deep);
@@ -478,7 +570,10 @@ fn freshness_recapture_timing() {
         let cpu = cpu() - before;
         let wall = start.elapsed().as_secs_f64();
         let work = coherent_capture::take_work();
-        println!("freshness nodes={count} deep={deep} repeats=3 wall={wall:.6} cpu={cpu:.6} concurrency={:.4} work={work:?}", cpu / wall);
+        println!(
+            "freshness nodes={count} deep={deep} repeats=3 wall={wall:.6} cpu={cpu:.6} concurrency={:.4} work={work:?}",
+            cpu / wall
+        );
         assert_eq!(work.inventories, 3);
     }
 }
