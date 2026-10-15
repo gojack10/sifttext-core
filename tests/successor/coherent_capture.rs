@@ -152,8 +152,9 @@ fn real_consumers_reuse_metadata_without_extra_markdown_parses() {
         let work = coherent_capture::take_work();
         assert_eq!(
             work.parses,
-            8 * work.inventories,
-            "consumer {operation} reparsed metadata"
+            // Status captures before, candidate and the accepted post-write view.
+            if operation == "status" { 24 } else { 8 },
+            "consumer {operation} must parse only its initial captures"
         );
         println!("consumer={operation} work={work:?}");
     }
@@ -377,4 +378,31 @@ fn accepted_unbounded_reference_capture_and_exact_order_diagnostic_share_one_pas
     let work = coherent_capture::take_work();
     assert_eq!(work.inventories, 1);
     assert_eq!(work.parses, 1); // reject at the actual parse/order boundary, no binding reparse
+}
+
+#[test]
+#[ignore = "explicit paired freshness timing, not an acceptance gate"]
+fn freshness_recapture_timing() {
+    fn cpu() -> f64 {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+        assert_eq!(unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) }, 0);
+        let u = unsafe { usage.assume_init() };
+        u.ru_utime.tv_sec as f64 + u.ru_utime.tv_usec as f64 / 1e6
+            + u.ru_stime.tv_sec as f64 + u.ru_stime.tv_usec as f64 / 1e6
+    }
+    for (count, deep) in [(10000, false), (1000, true)] {
+        let d = fixture(count, deep);
+        let captured = Capture::read(d.path(), None).unwrap();
+        coherent_capture::take_work();
+        let start = std::time::Instant::now();
+        let before = cpu();
+        for _ in 0..3 {
+            captured.unchanged_all().unwrap();
+        }
+        let cpu = cpu() - before;
+        let wall = start.elapsed().as_secs_f64();
+        let work = coherent_capture::take_work();
+        println!("freshness nodes={count} deep={deep} repeats=3 wall={wall:.6} cpu={cpu:.6} concurrency={:.4} work={work:?}", cpu / wall);
+        assert_eq!(work.inventories, 3);
+    }
 }

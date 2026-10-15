@@ -33,9 +33,6 @@ mod checked_publication_attribution;
 #[cfg(test)]
 #[path = "../tests/successor/checked_publication.rs"]
 mod checked_publication_tests;
-#[cfg(test)]
-#[path = "../tests/successor/prepared_publication.rs"]
-mod prepared_publication_tests;
 mod coherent_capture;
 #[cfg(test)]
 #[path = "../tests/successor/coherent_capture.rs"]
@@ -61,6 +58,9 @@ pub mod outline_artifacts;
 mod outline_residue_tests;
 pub mod outline_rows;
 pub mod outlines;
+#[cfg(test)]
+#[path = "../tests/successor/prepared_publication.rs"]
+mod prepared_publication_tests;
 #[cfg(test)]
 #[path = "../tests/successor/publication_graph_transition.rs"]
 mod publication_graph_transition_tests;
@@ -89,14 +89,14 @@ mod search_tests;
 #[path = "../tests/successor/incremental_retrieval.rs"]
 mod incremental_retrieval_tests;
 #[cfg(test)]
-#[path = "../tests/successor/retrieval_contention.rs"]
-mod retrieval_contention_tests;
-#[cfg(test)]
 #[path = "../tests/successor/index.rs"]
 mod index_tests;
 #[cfg(test)]
 #[path = "../tests/successor/prepared_index_reuse.rs"]
 mod prepared_index_reuse_tests;
+#[cfg(test)]
+#[path = "../tests/successor/retrieval_contention.rs"]
+mod retrieval_contention_tests;
 pub mod status;
 pub mod token_metadata;
 
@@ -425,6 +425,24 @@ impl Store {
     ) -> Result<(Self, coherent_capture::Metadata)> {
         real_dir(path)?;
         let path = fs::canonicalize(path)?;
+        let (files, dirs) = Self::inventory_classified(
+            &path,
+            base.map(|b| (b.path.as_path(), &b.inventory)),
+            residues,
+        )?;
+        let captured = coherent_capture::from_inventory(path, files, dirs, base.is_some())?;
+        residues.unchanged()?;
+        Ok(captured)
+    }
+
+    // Shared by initial parsing and freshness-only recapture. Sparse inheritance
+    // selects whole nodes from inventoried directories, including their assets.
+    pub(crate) fn inventory_classified(
+        path: &Path,
+        base: Option<(&Path, &BTreeMap<PathBuf, Entry>)>,
+        residues: &coherent_capture::Residues,
+    ) -> Result<(BTreeMap<PathBuf, Entry>, BTreeMap<String, PathBuf>)> {
+        real_dir(path)?;
         real_dir(&path.join("nodes"))?;
         real_dir(&path.join("trees"))?;
         residues.unchanged()?;
@@ -444,9 +462,12 @@ impl Store {
         #[cfg(test)]
         coherent_capture::after_inventory();
         let mut dirs = BTreeMap::new();
-        if let Some(base) = base {
-            for id in base.nodes.keys() {
-                dirs.insert(id.clone(), base.path.join("nodes").join(id));
+        if let Some((base_path, base_files)) = base {
+            for (rel, entry) in base_files {
+                if rel.parent() == Some(Path::new("nodes")) {
+                    require(matches!(entry, Entry::Dir), "not a real node directory")?;
+                    dirs.insert(name(rel)?, base_path.join(rel));
+                }
             }
         }
         for (rel, entry) in &files {
@@ -455,20 +476,19 @@ impl Store {
                 dirs.insert(name(rel)?, path.join(rel));
             }
         }
-        if let Some(base) = base {
-            for (rel, entry) in &base.inventory {
+        if let Some((base_path, base_files)) = base {
+            for (rel, entry) in base_files {
                 let parts: Vec<_> = rel.components().collect();
                 if parts.len() >= 2 && parts[0].as_os_str() == "nodes" {
                     let id = parts[1].as_os_str().to_str().ok_or("non-UTF-8 node")?;
-                    if dirs.get(id).is_some_and(|dir| dir.starts_with(&base.path)) {
+                    if dirs.get(id).is_some_and(|dir| dir.starts_with(base_path)) {
                         files.insert(rel.clone(), entry.clone());
                     }
                 }
             }
         }
-        let captured = coherent_capture::from_inventory(path, files, dirs, base.is_some())?;
         residues.unchanged()?;
-        Ok(captured)
+        Ok((files, dirs))
     }
 
     pub fn resolve(&self, prefix: &str) -> Result<String> {

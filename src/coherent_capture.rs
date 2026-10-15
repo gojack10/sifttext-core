@@ -23,8 +23,10 @@ pub(crate) fn authored_path(p: &Path) -> bool {
                     .any(|n| parts[2].as_os_str() == *n)))
 }
 pub(crate) fn logical(store: &Store) -> BTreeMap<PathBuf, Entry> {
-    store
-        .inventory
+    logical_inventory(&store.inventory)
+}
+fn logical_inventory(inventory: &BTreeMap<PathBuf, Entry>) -> BTreeMap<PathBuf, Entry> {
+    inventory
         .iter()
         .filter(|(p, _)| authored_path(p))
         .map(|(p, e)| (p.clone(), e.clone()))
@@ -799,7 +801,7 @@ impl Capture {
         capture.unchanged()?;
         Ok(capture)
     }
-    fn current(&self) -> Result<Store> {
+    fn current(&self) -> Result<BTreeMap<PathBuf, Entry>> {
         self.residues.unchanged()?;
         self.base_residues.unchanged()?;
         require(
@@ -811,13 +813,23 @@ impl Capture {
                 Some(identities(&base.path, &self.base_residues)?) == self.base_physical,
                 "changed base identity",
             )?;
-            let now = Store::capture_classified(&base.path, None, &self.base_residues)?.0;
-            require(logical(&now) == logical(base), "changed base bytes")?;
+            let (now, _) = Store::inventory_classified(&base.path, None, &self.base_residues)?;
+            require(
+                logical_inventory(&now) == logical(base),
+                "changed base bytes",
+            )?;
             Some(now)
         } else {
             None
         };
-        let now = Store::capture_classified(&self.store.path, base.as_ref(), &self.residues)?.0;
+        let (now, _) = Store::inventory_classified(
+            &self.store.path,
+            self.base
+                .as_ref()
+                .zip(base.as_ref())
+                .map(|(b, files)| (b.path.as_path(), files)),
+            &self.residues,
+        )?;
         require(
             identities(&self.store.path, &self.residues)? == self.physical,
             "changed source identity",
@@ -834,14 +846,14 @@ impl Capture {
     }
     pub fn unchanged(&self) -> Result<()> {
         require(
-            logical(&self.current()?) == logical(&self.store),
+            logical_inventory(&self.current()?) == logical(&self.store),
             "changed authored bytes",
         )
     }
     // Status and neighborhoods historically protect unrelated inventoried assets too.
     pub fn unchanged_all(&self) -> Result<()> {
         require(
-            self.current()?.inventory == self.store.inventory,
+            self.current()? == self.store.inventory,
             "changed store bytes",
         )
     }
