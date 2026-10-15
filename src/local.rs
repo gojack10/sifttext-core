@@ -252,7 +252,7 @@ fn git_with_input(path: &Path, args: &[&str], input: Vec<u8>) -> Result<String> 
     git_output(output)
 }
 
-fn stage_initialized_home(path: &Path, seed: Option<&Store>) -> Result<()> {
+fn stage_initialized_home(path: &Path, seed: Option<&Store>, commit: bool) -> Result<bool> {
     let mut files = vec![(PathBuf::from(".gitignore"), 0o100644, IGNORE.as_bytes())];
     if let Some(seed) = seed {
         for (rel, entry) in &seed.inventory {
@@ -278,19 +278,46 @@ fn stage_initialized_home(path: &Path, seed: Option<&Store>) -> Result<()> {
                     .file_name()
                     .is_some_and(|name| name == ".gitignore" || name == ".gitattributes"))
     }) {
-        return git(path, &["add", "--", ".gitignore", "nodes", "trees"]).map(|_| ());
+        git(path, &["add", "--", ".gitignore", "nodes", "trees"])?;
+        return Ok(false);
     }
-    // Git's blob protocol batches object creation without following symlinks or
-    // interpreting pathnames. No commit or ref is created by this stream.
+    // Git batches blobs and, on initialization, trees and the initial commit.
+    // Ordinary staging callers still receive only an index, without a new ref.
     let mut blobs = Vec::new();
     for (index, (_, _, bytes)) in files.iter().enumerate() {
         let mark = index + 1;
         blobs.extend_from_slice(format!("blob\nmark :{mark}\ndata {}\n", bytes.len()).as_bytes());
         blobs.extend_from_slice(bytes);
-        blobs.extend_from_slice(format!("\nget-mark :{mark}\n").as_bytes());
+        blobs.push(b'\n');
+        if !commit {
+            blobs.extend_from_slice(format!("get-mark :{mark}\n").as_bytes());
+        }
+    }
+    if commit {
+        let identity = git(path, &["var", "GIT_COMMITTER_IDENT"])?;
+        let message = b"knowledge: initialize local home\n";
+        blobs.extend_from_slice(
+            format!(
+                "commit refs/heads/main\ncommitter {identity}\ndata {}\n",
+                message.len()
+            )
+            .as_bytes(),
+        );
+        blobs.extend_from_slice(message);
+        blobs.push(b'\n');
+        for (index, (rel, mode, _)) in files.iter().enumerate() {
+            blobs.extend_from_slice(format!("M {mode:o} :{} ", index + 1).as_bytes());
+            blobs.extend_from_slice(rel.as_os_str().as_encoded_bytes());
+            blobs.push(b'\n');
+        }
+        blobs.push(b'\n');
     }
     blobs.extend_from_slice(b"done\n");
     let oids = git_with_input(path, &["fast-import", "--quiet"], blobs)?;
+    if commit {
+        git(path, &["read-tree", "HEAD"])?;
+        return Ok(true);
+    }
     let oids: Vec<_> = oids.lines().collect();
     require(
         oids.len() == files.len(),
@@ -312,7 +339,7 @@ fn stage_initialized_home(path: &Path, seed: Option<&Store>) -> Result<()> {
         .collect::<Result<Vec<_>>>()?
         .concat();
     git_with_input(path, &["update-index", "-z", "--index-info"], index)?;
-    Ok(())
+    Ok(false)
 }
 
 fn id() -> Result<String> {
@@ -454,15 +481,16 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     if pointer {
         exclude_pointer(path)?;
     }
-    stage_initialized_home(path, seed.as_ref())?;
-    let mut commit = git_command(path);
-    commit
-        .env("GIT_AUTHOR_NAME", &author_name)
-        .env("GIT_AUTHOR_EMAIL", &author_email)
-        .env("GIT_COMMITTER_NAME", &author_name)
-        .env("GIT_COMMITTER_EMAIL", &author_email)
-        .args(["commit", "-m", "knowledge: initialize local home"]);
-    git_output(commit.output()?)?;
+    if !stage_initialized_home(path, seed.as_ref(), true)? {
+        let mut commit = git_command(path);
+        commit
+            .env("GIT_AUTHOR_NAME", &author_name)
+            .env("GIT_AUTHOR_EMAIL", &author_email)
+            .env("GIT_COMMITTER_NAME", &author_name)
+            .env("GIT_COMMITTER_EMAIL", &author_email)
+            .args(["commit", "-m", "knowledge: initialize local home"]);
+        git_output(commit.output()?)?;
+    }
     require(
         git(path, &["log", "-1", "--format=%an%n%ae%n%cn%n%ce"])?
             == format!("{author_name}\n{author_email}\n{author_name}\n{author_email}"),
@@ -554,7 +582,8 @@ fn initial_index_matches_git_add_for_files_and_links() {
     init_repo(&baseline);
     let seed = fixture(&fast);
     let _baseline_seed = fixture(&baseline);
-    stage_initialized_home(&fast, Some(&seed)).unwrap();
+    assert!(!stage_initialized_home(&fast, Some(&seed), true).unwrap());
+    assert!(git(&fast, &["rev-parse", "--verify", "HEAD"]).is_err());
     git(&baseline, &["add", "--", ".gitignore", "nodes", "trees"]).unwrap();
     assert_eq!(
         git(&fast, &["ls-files", "--stage"]).unwrap(),
@@ -590,7 +619,7 @@ fn initial_index_matches_git_add_for_files_and_links() {
     );
     seed.inventory
         .insert(newline.clone(), Entry::File(b"newline path\n".to_vec()));
-    stage_initialized_home(&fast, Some(&seed)).unwrap();
+    stage_initialized_home(&fast, Some(&seed), false).unwrap();
     git(&baseline, &["add", "--", ".gitignore", "nodes", "trees"]).unwrap();
     assert_eq!(
         git(&fast, &["ls-files", "--stage"]).unwrap(),
@@ -657,7 +686,11 @@ fn initial_index_fast_path_preserves_raw_paths_and_symlinks() {
     }
     let mut raw_path = b"nodes/00000000-0000-4000-8000-000000000001/raw-".to_vec();
     raw_path.push(b'\t');
-    raw_path.extend_from_slice(b".md");
+    raw_path.extend_from_slice(b"\"\\");
+    // APFS refuses non-UTF8 filenames before Git can observe them.
+    #[cfg(target_os = "linux")]
+    raw_path.push(0xff);
+    raw_path.extend_from_slice(b".md ");
     let raw = PathBuf::from(std::ffi::OsStr::from_bytes(&raw_path));
     for repo in [&fast, &baseline] {
         fs::write(repo.join(&raw), b"raw pathname\n").unwrap();
@@ -681,17 +714,27 @@ fn initial_index_fast_path_preserves_raw_paths_and_symlinks() {
         roots: Vec::new(),
         inventory,
     };
-    stage_initialized_home(&fast, Some(&seed)).unwrap();
+    assert!(stage_initialized_home(&fast, Some(&seed), true).unwrap());
     git(&baseline, &["add", "--", ".gitignore", "nodes", "trees"]).unwrap();
     assert_eq!(
         git_bytes(&fast, &["ls-files", "--stage"]),
         git_bytes(&baseline, &["ls-files", "--stage"])
     );
+    git(
+        &baseline,
+        &["commit", "-qm", "knowledge: initialize local home"],
+    )
+    .unwrap();
     for repo in [&fast, &baseline] {
-        git(repo, &["commit", "-qm", "knowledge: initialize local home"]).unwrap();
         git(repo, &["checkout", "--detach", "--quiet"]).unwrap();
         assert!(git(repo, &["symbolic-ref", "-q", "HEAD"]).is_err());
         assert!(git_bytes(repo, &["status", "--porcelain"]).is_empty());
+        assert_eq!(git(repo, &["rev-list", "--count", "HEAD"]).unwrap(), "1");
+        assert_eq!(
+            git(repo, &["log", "-1", "--format=%an%n%ae%n%cn%n%ce"]).unwrap(),
+            "Test User\ntest@example.invalid\nTest User\ntest@example.invalid"
+        );
+        git(repo, &["fsck", "--strict"]).unwrap();
     }
     assert_eq!(
         git_bytes(&fast, &["ls-tree", "-r", "HEAD"]),
