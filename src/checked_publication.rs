@@ -330,6 +330,9 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
             "ignored user file; preserve it before submitting",
         )?;
     }
+    // These operation markers belong to the worktree Git directory, including
+    // linked worktrees. Resolve it once instead of spawning Git for each marker.
+    let git_dir = PathBuf::from(git(draft, &["rev-parse", "--absolute-git-dir"])?);
     for name in [
         "MERGE_HEAD",
         "CHERRY_PICK_HEAD",
@@ -337,13 +340,40 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
         "rebase-merge",
         "rebase-apply",
     ] {
-        let path = git(
-            draft,
-            &["rev-parse", "--path-format=absolute", "--git-path", name],
-        )?;
-        require(!Path::new(&path).try_exists()?, "unfinished Git operation")?;
+        require(!git_dir.join(name).try_exists()?, "unfinished Git operation")?;
     }
     Ok(())
+}
+#[cfg(test)]
+#[test]
+fn clean_checks_operation_markers_in_each_worktree_git_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("repo");
+    git(temp.path(), &["init", "-q", "-b", "main", repo.to_str().unwrap()]).unwrap();
+    git(&repo, &["commit", "--allow-empty", "-qm", "fixture"]).unwrap();
+    let head = git(&repo, &["rev-parse", "HEAD"]).unwrap();
+    let linked = temp.path().join("linked");
+    git(&repo, &["worktree", "add", "-q", "--detach", linked.to_str().unwrap(), &head]).unwrap();
+    for view in [&repo, &linked] {
+        clean(view, &head).unwrap();
+        let git_dir = PathBuf::from(git(view, &["rev-parse", "--absolute-git-dir"]).unwrap());
+        for name in ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"] {
+            let marker = git_dir.join(name);
+            assert_eq!(marker, PathBuf::from(git(view, &["rev-parse", "--path-format=absolute", "--git-path", name]).unwrap()));
+            if name.starts_with("rebase-") {
+                fs::create_dir(&marker).unwrap();
+            } else {
+                fs::write(&marker, &head).unwrap();
+            }
+            assert!(clean(view, &head).is_err(), "{name} accepted in {view:?}");
+            if marker.is_dir() {
+                fs::remove_dir(&marker).unwrap();
+            } else {
+                fs::remove_file(&marker).unwrap();
+            }
+            clean(view, &head).unwrap();
+        }
+    }
 }
 #[cfg(test)]
 #[test]
