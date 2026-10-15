@@ -1208,8 +1208,7 @@ pub fn create(
                 )?,
         "creation requires a real linked Git worktree root",
     )?;
-    let before = Store::read(path)?;
-    check(policy, path, None, BTreeSet::new())?;
+    let before = checked_snapshot(policy, path, None)?;
     let parent = parent.map(|p| before.resolve(p)).transpose()?;
     let key = id()?;
     let stage = tempfile::tempdir()?;
@@ -1248,8 +1247,7 @@ pub fn create(
         )?;
     }
     crate::status::normalize(policy, &before.path, stage.path(), &BTreeSet::new(), None)?;
-    check(policy, stage.path(), Some(&before.path), BTreeSet::new())?;
-    let after = Store::read(stage.path())?;
+    let after = checked_snapshot(policy, stage.path(), Some(&before.path))?;
     require(
         Store::read(path)?.inventory == before.inventory,
         "draft changed while preparing creation",
@@ -1277,6 +1275,24 @@ pub fn create(
     Ok(
         json!({"id":key,"path":fs::canonicalize(path)?.join("nodes").join(&key).join("node.md"),"parent":parent,"committed":false}),
     )
+}
+
+/// Copy-only snapshots need no new live-source capability. Creation still checks
+/// the live draft before applying staged bytes and again after application.
+fn checked_snapshot(policy: &Policy, path: &Path, before: Option<&Path>) -> Result<Store> {
+    let (report, capture) = candidate_validation::validate_with_capture(
+        policy,
+        &candidate_validation::Request {
+            store: path.to_owned(),
+            before: before.map(Path::to_owned),
+            explicit: BTreeSet::new(),
+            expected_version: None,
+            pause_before_accept: None,
+        },
+        None,
+    );
+    require(report.status == "current", &report.lean()?)?;
+    Ok(capture.ok_or("missing validated creation snapshot")?.into_snapshot())
 }
 
 pub fn instructions(policy: &Policy, path: &Path) -> Result<Value> {

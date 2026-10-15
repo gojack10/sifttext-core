@@ -161,6 +161,60 @@ fn real_consumers_reuse_metadata_without_extra_markdown_parses() {
 }
 
 #[test]
+fn creation_copies_checked_snapshots_and_rejects_initial_capture_race() {
+    let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    for race in [false, true] {
+        let home = fixture(3, false);
+        let git = |path: &Path, args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C").arg(path)
+                .args(["-c", "user.name=Synthetic User", "-c", "user.email=user@example.invalid"])
+                .args(args).output().unwrap();
+            assert!(output.status.success(), "{output:?}");
+        };
+        git(home.path(), &["init", "--initial-branch=main"]);
+        git(home.path(), &["add", "nodes", "trees"]);
+        git(home.path(), &["commit", "-m", "knowledge: synthetic fixture"]);
+        let scratch = tempfile::tempdir().unwrap();
+        let draft = scratch.path().join("draft");
+        git(home.path(), &["worktree", "add", "-b", "draft", draft.to_str().unwrap()]);
+        coherent_capture::take_work();
+        let fired = std::rc::Rc::new(std::cell::Cell::new(false));
+        if race {
+            let draft = draft.clone();
+            let fired = fired.clone();
+            // Modify an unrelated node after inventory acquisition; no copied
+            // snapshot may bypass the validation's final byte/identity guard.
+            coherent_capture::on_inventory(move || {
+                let file = draft.join("nodes").join(id(2)).join("node.md");
+                fs::write(&file, fs::read_to_string(&file).unwrap() + "changed\n").unwrap();
+                fired.set(true);
+            });
+        }
+        let result = crate::local::create(&policy, &draft, "Created", "Synthetic summary", Some(&id(1)));
+        let work = coherent_capture::take_work();
+        if race {
+            assert!(fired.get());
+            assert!(result.is_err());
+            assert_eq!(fs::read_dir(draft.join("nodes")).unwrap().count(), 3);
+            assert!(fs::read_to_string(draft.join("nodes").join(id(2)).join("node.md")).unwrap().ends_with("changed\n"));
+        } else {
+            let created = result.unwrap();
+            let key = created["id"].as_str().unwrap();
+            // Before, normalize(before/candidate/result), final validation
+            // (candidate/before), and both live application checks: 28 parses.
+            // The former read-then-check chain parsed 35 nodes on this fixture.
+            assert_eq!(work.parses, 28, "{work:?}");
+            let store = Store::read(&draft).unwrap();
+            assert_eq!(store.nodes[key].name, "Created");
+            assert!(store.children[&id(1)].contains(&key.to_owned()));
+            assert_eq!(store.nodes.len(), 4);
+            assert_eq!(Store::read(home.path()).unwrap().nodes.len(), 3);
+        }
+    }
+}
+
+#[test]
 fn exact_inventory_is_the_only_parser_input_and_skew_rejects() {
     for kind in ["body", "order", "membership", "root", "same_bytes"] {
         let d = fixture(3, false);
