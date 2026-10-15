@@ -88,8 +88,9 @@ fn combined_dependencies_and_opaque_byte_bound_records() {
     let (got, reuse) =
         index::refresh_prepared(&policy, combined, None, &m, Some(&x), None).unwrap();
     let capture_work = crate::coherent_capture::take_work();
-    assert_eq!(capture_work.parses, 5 * capture_work.inventories);
+    // Freshness barriers reread bytes without reparsing the captured nodes.
     // Record reuse does not replace the shared capture or add a second parser.
+    assert_eq!(capture_work.parses, 5);
     assert!(capture_work.inventories > 0);
     assert_eq!(got.status, "current");
     assert_eq!(reuse.accepted_main, 2);
