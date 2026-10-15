@@ -307,11 +307,14 @@ impl Publication {
         repair: bool,
         force_stage: bool,
     ) -> Result<Self> {
-        let mut rows = nodes.to_vec();
-        for row in &mut rows {
-            row["crystallization"] = row["content"].clone();
-        }
-        let typed: Vec<Node> = serde_json::from_value(json!(rows))?;
+        let typed: Vec<Node> = nodes
+            .iter()
+            .map(|row| {
+                let mut row = row.clone();
+                row["crystallization"] = row["content"].take();
+                serde_json::from_value(row)
+            })
+            .collect::<std::result::Result<_, _>>()?;
         let forest = Forest::new(&typed)?;
         let processing = processing_identity();
         let full_ids = forest.full_identities(&processing)?;

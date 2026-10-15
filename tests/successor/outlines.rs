@@ -149,6 +149,35 @@ fn refreshed_outline_reuses_checked_publication_bytes_and_capture() {
 }
 
 #[test]
+fn publication_moves_only_its_owned_content_and_keeps_resolved_guard() {
+    let d = fixture();
+    fs::create_dir(d.path().join(".sifttext")).unwrap();
+    let store = Store::read(d.path()).unwrap();
+    let mut nodes = vec![json!({
+        "id": id(1), "name": "Root", "status": "resolved",
+        "micro_summary": "Summary", "children": [],
+        "content": "Body", "crystallization": "ignored hydrated field"
+    })];
+    let original = nodes.clone();
+    let expected = outlines::Publication::prepare(&store, &nodes, "v1")
+        .unwrap()
+        .manifest;
+    assert_eq!(nodes, original);
+    nodes[0]["content"] = json!("Different body Ω\n".repeat(65536));
+    nodes[0]["unused"] = json!({"nested": [true, null, 3]});
+    let before = nodes.clone();
+    let got = outlines::Publication::prepare(&store, &nodes, "v1")
+        .unwrap()
+        .manifest;
+    assert_eq!(got, expected);
+    assert_eq!(nodes, before);
+    for body in [json!(" \n"), Value::Null, json!(42)] {
+        nodes[0]["content"] = body;
+        assert!(outlines::Publication::prepare(&store, &nodes, "v1").is_err());
+    }
+}
+
+#[test]
 fn complete_publication_costs_tamper_loss_and_stale_inspection() {
     let d = fixture();
     let p = d.path();
