@@ -507,7 +507,11 @@ fn markdown_unicode_unknown_bytes_native_rename_and_git_restore() {
     assert_eq!(incoming["navigation"][0]["name"], new_name);
     assert_eq!(
         incoming["navigation"][0]["path"],
-        node_file(helper.path(), 3).to_str().unwrap()
+        node_file(helper.path(), 3)
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
     );
     // Semantically ignored metadata and body bytes are nevertheless protected by draft validation.
     for tampered in [
