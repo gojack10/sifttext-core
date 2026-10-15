@@ -521,7 +521,7 @@ fn check(
     // failure stage or candidate capture/version observations with a new guard.
     // An initial identity-read error can never mint a successful capability.
     let policy_identity = policy.validation_identity();
-    let candidate = report.observe("candidate_capture", Capture::read(&request.store, None))?;
+    let candidate = report.observe("candidate_capture", Capture::read_for_validation(&request.store))?;
     let store = &candidate.store;
     report.nodes = store.nodes.len();
     report.version = Some(version(store));

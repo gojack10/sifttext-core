@@ -761,6 +761,25 @@ pub(crate) struct Capture {
 }
 impl Capture {
     pub fn read(path: &Path, base: Option<&Path>) -> Result<Self> {
+        let capture = Self::capture(path, base)?;
+        capture.unchanged()?;
+        Ok(capture)
+    }
+
+    /// Candidate validation executes unchanged_all after its policy/field checks.
+    /// Keep the initial identity/ABA guard, but defer its duplicate byte inventory
+    /// to that mandatory final barrier. No other consumer may accept this alone.
+    pub(crate) fn read_for_validation(path: &Path) -> Result<Self> {
+        let capture = Self::capture(path, None)?;
+        capture.residues.unchanged()?;
+        require(
+            identities(&capture.store.path, &capture.residues)? == capture.physical,
+            "changed source identity",
+        )?;
+        Ok(capture)
+    }
+
+    fn capture(path: &Path, base: Option<&Path>) -> Result<Self> {
         crate::real_dir(path)?;
         if let Some(base) = base {
             crate::real_dir(base)?;
@@ -789,7 +808,7 @@ impl Capture {
             .map(|p| Store::capture_classified(p, None, &base_residues).map(|s| s.0))
             .transpose()?;
         let (store, metadata) = Store::capture_classified(&path, base.as_ref(), &residues)?;
-        let capture = Self {
+        Ok(Self {
             store,
             metadata,
             base,
@@ -797,9 +816,7 @@ impl Capture {
             base_physical,
             residues,
             base_residues,
-        };
-        capture.unchanged()?;
-        Ok(capture)
+        })
     }
     fn current(&self) -> Result<BTreeMap<PathBuf, Entry>> {
         self.residues.unchanged()?;

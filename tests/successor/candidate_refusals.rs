@@ -238,6 +238,30 @@ fn candidate_refusals_actual_helper_timeout_is_same_call_and_recovers() {
     );
 }
 #[test]
+fn candidate_validation_defers_one_inventory_but_retains_final_asset_barrier() {
+    let t = tempfile::tempdir().unwrap();
+    fixture(t.path());
+    crate::coherent_capture::take_work();
+    let (report, capture) = gate::validate_with_capture(&policy(), &request(t.path()), None);
+    assert_eq!(report.status, "current");
+    assert!(capture.is_some());
+    assert_eq!(crate::coherent_capture::take_work().inventories, 2);
+
+    // The initial identity check does not cover unrelated assets. The mandatory
+    // complete final inventory still must: mutate one while the policy runs.
+    let asset = t.path().join("asset.txt");
+    fs::write(&asset, "before").unwrap();
+    let helper = helper_project(
+        &t.path().join("helper"),
+        &format!("printf after > '{}'; printf 'STG1 VALID\\n'", asset.display()),
+    );
+    let (report, capture) = gate::validate_with_capture(&helper, &request(t.path()), None);
+    refused(&report, "source_recheck", "source_changed");
+    assert_eq!(report.status, "stale");
+    assert!(capture.is_none());
+}
+
+#[test]
 fn candidate_refusals_capture_race_keeps_known_provenance() {
     let t = tempfile::tempdir().unwrap();
     fixture(t.path());
