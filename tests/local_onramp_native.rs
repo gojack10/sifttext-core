@@ -469,6 +469,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         "scripts",
         "tests",
         "fixtures",
+        "docs",
         "nodes",
         "trees",
         "build",
