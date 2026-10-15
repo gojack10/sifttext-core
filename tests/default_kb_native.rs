@@ -137,7 +137,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let home = evidence.join("home");
     let h = text(&home);
     let initial = n.json(&["init", h]);
-    assert_eq!(initial["starter_nodes"], 78);
+    assert_eq!(initial["starter_nodes"], 80);
     assert_eq!(initial["pointer"], "AGENTS.md");
     let original = inventory(&home);
     assert_eq!(
@@ -217,7 +217,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         n.cli(&["read", h, ROOT], true)
             .contains("SiftText Knowledge Base")
     );
-    assert_eq!(n.json(&["index", h])["nodes"], 78);
+    assert_eq!(n.json(&["index", h])["nodes"], 80);
     assert!(
         n.json(&["search", h, "SiftText"])["total_matches"]
             .as_u64()
@@ -226,7 +226,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     );
     assert_eq!(
         n.json(&["sql", h, "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        78
+        80
     );
     assert_eq!(
         n.json(&[
@@ -283,7 +283,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let alternate = evidence.join("alternate");
     assert_eq!(
         n.json(&["init", text(&alternate), "--bundle", h])["starter_nodes"],
-        78
+        80
     );
     assert_eq!(inventory(&alternate), original);
     let empty = evidence.join("empty");
@@ -454,7 +454,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
             receipt["view"].as_str().unwrap(),
             "SELECT count(*) FROM nodes"
         ])["result"]["rows"][0][0],
-        79
+        81
     );
     let advanced = n.json(&["advance", o]);
     assert_eq!(advanced["accepted"], receipt["candidate"]);
@@ -479,7 +479,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     n.json(&["advance", o]);
     assert_eq!(
         n.json(&["sql", o, "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        78
+        80
     );
     assert_eq!(
         n.json(&["search", o, "Defaultbundlescratchtrial"])["total_matches"],

@@ -9,9 +9,9 @@ warnings: "Read this hub and its three pre-write children before writing. Approv
 ---
 ## Entry and actors
 
-For a local knowledge write, read this hub, then the children named Dialogue, Forcing Pass and Persistence, in that order. Find their UUIDs in this directory's `children.order` and read each `children/UUID/node.md` using ordinary file tools. Reuse unchanged reads already loaded in this session. Read applicable instructions in the assigned local project; do not require an external project tree or hosted service.
+For a local knowledge write, read this hub, then the children named Dialogue, Forcing Pass and Persistence, in that order. Find their UUIDs in this directory's `children.order` and read each `children/UUID/node.md` using ordinary file tools. Reuse unchanged reads already loaded in this session; reload after context loss, notice of a relevant revision or a concrete conflict. Read applicable instructions in the assigned local project; do not require an external project tree or hosted service.
 
-The human-facing reasoning agent reconstructs and proposes the change; the human owns consequential choices and permission. A bounded worker stays within its assigned fence and returns its private candidate to its assigning agent. Concrete already-authorized edits do not need repeated approval. A discussion, question or silence grants none.
+The human-facing reasoning agent reconstructs and proposes the change; the human owns consequential choices and permission. A bounded worker stays within its assigned fence and returns its private candidate to its assigning agent. Concrete already-authorized edits do not need repeated approval. An explicit standing write grant covers changes within its scope without another approval for each write; narrower assignments and human stops still apply. A discussion, question or silence grants none.
 
 Read affected nodes and necessary owners, inputs and evidence before designing the delta. After the required pull, reconsider the proposed change rather than replaying a previously blocked write.
 
@@ -25,12 +25,12 @@ A completed investigation is not proof its tested approach works. Keep untested 
 
 1. Dialogue reconstructs an inspectable affected tree delta and exact changed instruction text.
 2. Forcing Pass repairs supported ownership, dependency, field, status and continuation defects before presentation.
-3. Obtain explicit permission unless the exact edit is already authorized. Stay in dialogue for objections or unclear overrides.
-4. Persistence applies only the approved delta in a private knowledge worktree, using Worktree Publication's fixed baseline and native checks.
+3. In approval mode, present the exact delta and obtain explicit permission. Under an explicit standing write grant, retain the same inspectable delta and proceed within its scope. Stay in dialogue for objections, unclear overrides or a new human-owned choice.
+4. Persistence applies only the authorized delta in a private knowledge worktree, using Worktree Publication's fixed baseline and native checks.
 5. Read the child named Reconciliation and repair affected connected state within the same authority; ask if a semantic correction exceeds it.
-6. Read the child named Verify, compare actual fields and relationships with the approved delta, inspect native receipts and report the boundary reached.
+6. Read the child named Verify, compare actual fields and relationships with the authorized delta, inspect native receipts and report the boundary reached.
 
-Before persistence, run Forcing Pass again on the latest delta. Failure, unavailable input, unsafe paths, a human stop or missing authority suspends dependent work; preserve drafts and name the exact restart condition. The human may reshape or pause the route without silently waiving unrelated constraints.
+Before persistence, recheck any changes made since Forcing Pass and their affected dependencies; an unchanged reviewed delta needs no repeated full pass. Keep stage transitions internal unless staged review is requested; a completed stage needs no approval already covered by the grant. Failure, unavailable input, unsafe paths, a human stop or missing authority suspends dependent work; preserve drafts and name the exact restart condition. The human may reshape or pause the route without silently waiving unrelated constraints.
 
 ## Completion boundary
 

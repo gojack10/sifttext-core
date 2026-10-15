@@ -1,21 +1,21 @@
 ---
 id: "d00ab6fd-b475-49ef-b37a-812807879308"
 name: "Dialogue"
-micro_summary: "Makes proposed tree changes inspectable before the human authorizes persistence."
+micro_summary: "Makes proposed local tree changes and their authority inspectable before persistence."
 status: "in_progress"
 see_also: []
-scope: "Mandatory pre-write child for SiftText Commit. Generalizes the Dialogue/reconstruction discipline to any ideation write: reconstruct the intended tree delta before writing, interrupt preplanned edits, and stay in dialogue or proposal mode until explicit permission when stakes are non-trivial."
-warnings: "Do not use the write gate as a checkbox. After reading this child, reconsider the planned write instead of replaying blocked calls.\n  Do not collapse distinct rejected attempts into prose blobs. Native metadata has no `ruled_out`; meaningful rejected paths become discarded nodes with reasons.\n  Do not render an entire subtree as if it is new. Show only affected areas plus enough existing context, with operation marker left and status marker right.\na plausible giant delta is not informed approval; scanning or rubber-stamp impulse means the response failed.\na grouped operation inventory or schematic is not a canonical SiftText tree delta."
+scope: "Recover meaningful changes and prepare an exact local tree delta under the current approval or standing-write boundary."
+warnings: "Do not use the write gate as a checkbox. After reading this child, reconsider the planned write and inspect any earlier refusal before retrying.\n  Do not collapse distinct rejected attempts into prose blobs. Native metadata has no `ruled_out`; meaningful rejected paths become discarded nodes with reasons.\n  Do not render an entire subtree as if it is new. Show only affected areas plus enough existing context, with operation marker left and status marker right.\na plausible giant delta is not informed approval; scanning or rubber-stamp impulse means the response failed.\na grouped operation inventory or schematic is not a canonical SiftText tree delta."
 ---
 ## Applies to Any Tree Write
 
-This child is part of the mandatory pre-write pull. Its discipline applies to any ideation write, not only end-of-session commits. For a targeted point fix, the tree delta may be tiny, but the agent still must reconstruct what it intends to change before writing and must not replay blocked preplanned calls.
+This child is part of the mandatory pre-write pull. Its discipline applies to any ideation write, not only end-of-session commits. For a targeted point fix, the tree delta may be tiny, but the agent still must reconstruct what it intends to change before writing and inspect any earlier refusal before an authorized retry.
 
 Phase 0/1 of full SiftText Commit. This is no longer a loose pre-Witness chat. It is the main user-facing reconstruction phase: conversationally rebuild the session's explored search path as a moldable Unix-style tree delta.
 
 ## Deep Scan First
 
-Before saying anything, scan the full context window through the lens of **probe topology**. Dig deep into the session, not just the latest exchanges. Look for:
+For a retrospective, inspect the full supplied conversation or source range through the lens of **probe topology**. For a focused change, inspect its relevant source and affected context. Look for:
 
 - Distinct probes/attempts that happened, including shots in the dark
 - Which attempts were lateral alternatives versus downstream of a discovery
@@ -24,7 +24,9 @@ Before saying anything, scan the full context window through the lens of **probe
 - Slow assumption shifts, implicit decisions, and paths discussed early then abandoned
 - Multi-step reasoning chains whose intermediate steps would be expensive to reconstruct
 
-If you only surface recent events, or if you collapse many probes into one abstract summary, you have failed this phase.
+Do not omit meaningful earlier developments from a retrospective or collapse distinct probes into one abstract summary.
+
+Preserve relevant human wording exactly with its context and role: question, example, proposal, instruction, approval or correction. Mark excerpt omissions and attribute recollections to their reporter. A peer-generated assignment retains that authorship; distinguish it from a human requirement, your interpretation and an observed result.
 
 ## The Lens: Reconstruct the Terrain
 
@@ -42,7 +44,7 @@ Before presenting anything, classify whether the human faces a real choice. Prio
 
 For a real decision, present the problem, the exact ask, the canonical delta or option deltas, the practical consequences and what remains unchanged, the recommendation, and one explicit question. The human must be able to state the problem, the choice, what changes under each option, and what stays unchanged.
 
-A plausible giant delta is not informed approval. A grouped operation inventory or schematic is not a canonical SiftText tree delta. Confusion, scanning, or rubber-stamp impulse means the response failed; stop and restate the problem and exact choice. Until explicit Persistence authorization, treat replies as modifications, objections, corrections, omissions, or clarifications to the proposed delta. No tree writes happen during Dialogue.
+A plausible giant delta is not informed approval. A grouped operation inventory or schematic is not a canonical SiftText tree delta. Confusion, scanning, or rubber-stamp impulse means the response failed; stop and restate the problem and exact choice. When approval is required, treat replies as modifications, objections, corrections, omissions or clarifications until explicit authorization. An explicit standing write grant covers reviewed changes within its scope without another approval; discussion or silence grants none. No tree writes happen during Dialogue; return the authorized delta to Persistence.
 
 ## Unix Tree Delta Format
 
@@ -111,7 +113,9 @@ This example is fictional. Its parent and existing contract are context, not ins
 
 ## STOP Condition
 
-Stay in this reconstruction dialogue until the human gives an explicit permission trigger such as "commit", "ship it", "go", or "do it". Do not self-advance. Before any delta is displayed or landed, run the Forcing Pass; before Persistence, run it again on the latest delta.
+When approval is required, stay in dialogue until the human explicitly authorizes the stated delta. Under an explicit standing write grant, proceed with the reviewed in-scope delta without asking again. A new human-owned choice, unclear override, missing authority or human stop suspends only the affected work.
+
+Run the sibling Forcing Pass on the proposed state before presentation or execution. Before Persistence, recheck changes made during molding and any newly changed source or affected dependency; an unchanged reviewed delta needs no repeated full pass. Return the authorized delta and its source/permission basis to the sibling Persistence. Keep stage transitions internal unless staged review is requested.
 
 ---
 

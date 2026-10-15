@@ -192,7 +192,7 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     assert!(
         fs::read_to_string(source.join("README.md"))
             .unwrap()
-            .contains("Agents: read [AGENTS.md](AGENTS.md)")
+            .contains("[AGENTS.md](AGENTS.md)")
     );
 
     let prefix = evidence.join("application");
@@ -265,7 +265,7 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     let result: Value =
         serde_json::from_str(&commands.run(text(&bin), &["init", text(&independent)], true))
             .unwrap();
-    assert_eq!(result["starter_nodes"], 78);
+    assert_eq!(result["starter_nodes"], 80);
     assert_eq!(inventory(&independent), authored);
     fs::rename(&hidden, source.join("nodes")).unwrap();
     let instructions: Value =

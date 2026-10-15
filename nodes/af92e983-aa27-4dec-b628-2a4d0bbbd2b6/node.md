@@ -9,9 +9,9 @@ warnings: "Create structure before dependent references/content; abort dependent
 ---
 ## Input and role
 
-Input is the approved Unix-style tree delta after the required pull and Forcing Pass. It identifies operations, exact content, effective statuses and the permission boundary. Use ordinary file tools in the authorized private knowledge worktree. Follow Worktree Publication for baseline allocation, checks, commit and serialized submission; do not edit accepted home or a software installation.
+Input is the reviewed Unix-style tree delta and its explicit approval or standing write grant after the required pull and Forcing Pass. It identifies operations, exact content, effective statuses and the permission boundary. Use ordinary file tools in the authorized private knowledge worktree. Follow Worktree Publication for baseline allocation, checks, commit and serialized submission; do not edit accepted home or a software installation. Before overwriting an existing field or body, compare its current content with the version used for the proposal; reconcile intervening work within the grant rather than silently overwrite it.
 
-The human-facing author applies the approved delta. A bounded worker commits a checked private candidate and returns it to its assigning agent; it does not infer publication or push authority. The designated publisher separately carries an authorized candidate through checked submission.
+The human-facing author applies the authorized delta. A bounded worker commits a checked private candidate and returns it to its assigning agent; it does not infer publication or push authority. The designated publisher separately carries an authorized candidate through checked submission.
 
 ## Local operation mapping
 
@@ -28,11 +28,11 @@ No general YAML, `parent`, `children`, duplicate `content` or `ruled_out` metada
 1. Create required structures and verify returned paths/UUIDs.
 2. Apply moves and complete child ordering/root changes.
 3. Add references once targets exist.
-4. Edit approved body, scope, summary and warnings.
+4. Edit authorized body, scope, summary and warnings.
 5. Apply justified status requests; normalize against the fixed baseline and review actual effects.
 6. Delete last, then normalize and run the entire candidate check again.
 
-If any operation fails, stop dependent operations, preserve the draft and report what actually landed. Do not invent replacement topology during persistence. Fix connected stale guidance within the approved scope through Reconciliation; ask for genuinely missing authority rather than silently expand it.
+If any operation fails, stop dependent operations, preserve the draft and report what actually landed. Before retrying an uncertain operation, inspect whether it already landed; preserve successful operations rather than duplicate them. Do not invent replacement topology during persistence. Fix connected stale guidance within the authorized scope through Reconciliation; ask for genuinely missing authority rather than silently expand it.
 
 ## Status and acceptance
 

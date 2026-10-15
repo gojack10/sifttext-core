@@ -37,11 +37,13 @@ A candidate card contains its ID, name, micro-summary, location, and brief retri
 
 Open the sources needed to understand the answer, its conditions, evidence, and uncertainty. Follow relevant children, links, and search leads. Do not accept a conclusion from its micro-summary.
 
+Batch independent reads when their relevance is already clear and the interface supports it. Read sequentially when one result determines the next useful source.
+
 Reuse a synthesis for the question and conditions it addresses. Revisit its basis when the new question, evidence, or conditions could change its meaning. A source may suggest an idea without proving that idea. Keep suggestions distinct from established facts.
 
 ## 5. Choose the next contribution
 
-Use the current goal, evidence, dependencies, and selected direction to answer or propose a next question or action. Do not choose merely by depth, recency, or open status. Explain the material reason. Ask the human only for unresolved human-owned choices.
+Use the current goal, evidence, dependencies, and selected direction to answer or propose a next question or action. Do not choose merely by depth, recency, or open status. Explain the material reason. Ask the human only for unresolved human-owned choices. Stop loading context when the next authorized contribution has sufficient grounding; resume discovery when a material gap appears or the question changes. This does not waive the bounded contrary-evidence search before a consequential recommendation.
 
 ## 6. Reconsider during the conversation
 
@@ -59,7 +61,7 @@ A negative flag never prevents your own reading or renewed search. Repeated unhe
 
 When reading changes an existing answer or exposes competing ownership or stale structure, revisit the affected local owner and its evidence. Distinguish the operative accepted answer from historical rationale and an unproven replacement; mark disputed claims explicitly and stop dependent work until resolved. Integrate changed understanding with its existing owners rather than automatically saving another parallel answer. This is maintenance within the existing assignment and Commit process, not a separate permission gate.
 
-Respect available context and any declared read or spending limits. Reserve room for dialogue and continuation. Do not fill the main context with the entire candidate map or hide important omissions to make a response fit.
+Respect available context and any declared read or spending limits. Account for model continuations as well as retrieved tokens; many small nodes need not require one inference round per node. Reserve room for dialogue and continuation. Do not fill the main context with the entire candidate map or hide important omissions to make a response fit.
 
 Before context pressure forces a handoff, save at the established Commit boundary the current question, answer and conditions, sources, unresolved questions, unfinished reading, selected direction, and next bounded step. Use existing owners. When a required write approval is pending, keep the pending checkpoint recoverable and distinguish it from landed state.
 

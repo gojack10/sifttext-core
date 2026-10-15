@@ -5,11 +5,11 @@ micro_summary: "Repairs tree proposals against their governing contracts before 
 status: "in_progress"
 see_also: []
 scope: "Mandatory pre-write child for SiftText Commit. Applies to any ideation write: before writing, repair the intended tree delta for DRY violations, collapsed probes, wrong placement, structural-link mistakes, and unclear diff semantics. If an edit survives the pass, the agent must be able to defend why."
-warnings: "Do not treat this as optional review. If an intended edit has collapsed probes, DRY duplication, one-hop links, wrong placement, or unclear diff semantics, repair it before writing.\n  Do not use a blocked write as permission to retry unchanged. The retry must reflect this pass.\nNo proposal or persistence before the affected current design-to-work frontier and outline-first continuation are demonstrated; tidy topology and self-reported coverage are insufficient."
+warnings: "Do not treat this as optional review. If an intended edit has collapsed probes, DRY duplication, one-hop links, wrong placement, or unclear diff semantics, repair it before writing.\n  A blocked write grants no retry authority. Inspect its failure and any landed result; reuse previous arguments only when they remain appropriate and authorized.\nNo proposal or persistence before the affected current design-to-work frontier and outline-first continuation are demonstrated; tidy topology and self-reported coverage are insufficient."
 ---
 ## Applies to Any Tree Write
 
-This child is part of the mandatory pre-write pull. Its discipline applies to any ideation write, not only full end-of-session commits. Before retrying a blocked write, run this repair pass on the intended delta; do not replay the same tool calls unchanged.
+This child is part of the mandatory pre-write pull. Its discipline applies to any ideation write, not only full end-of-session commits. Before retrying a blocked write, inspect its failure and whether it already landed. Review any changed delta, source or affected dependency; an unchanged reviewed delta needs no repeated full pass. Reuse previous arguments only when they remain appropriate and authorized, following Persistence's uncertain-operation and original-request recovery path.
 
 ## Core Command
 
