@@ -311,7 +311,11 @@ pub fn normalize(
     policy.validate(before)?;
     policy.validate(candidate)?;
     let normalized = plan(&before_capture, &candidate_capture, explicit)?;
-    policy.validate(&normalized)?;
+    // plan changes parsed nodes only together with their captured node.md bytes.
+    // Reuse the preceding verdict only for the exact complete inventory.
+    if normalized.inventory != candidate.inventory {
+        policy.validate(&normalized)?;
+    }
     let mut ids: Vec<_> = candidate
         .nodes
         .keys()

@@ -436,9 +436,59 @@ fn creation_derived_only_and_actual_helper_reference_cleanup() {
 }
 
 #[test]
+fn unchanged_normalization_reuses_only_the_exact_validated_inventory() {
+    let project = tempfile::tempdir().unwrap();
+    let policy = crate::outlines_tests::counted_policy(project.path());
+    let calls = project.path().join("build/calls");
+    let before = tempfile::tempdir().unwrap();
+    let after = tempfile::tempdir().unwrap();
+    fixture(before.path(), &[state(Status::NotExamined)]);
+    fixture(after.path(), &[state(Status::NotExamined)]);
+    let original = inventory(after.path());
+    let no_op =
+        status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).unwrap();
+    assert!(no_op.normalized_ids.is_empty());
+    assert_eq!(inventory(after.path()), original);
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2);
+
+    fs::write(&calls, "").unwrap();
+    fs::write(
+        file(after.path(), 1),
+        text(1, &state(Status::NotExamined), true),
+    )
+    .unwrap();
+    let changed =
+        status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).unwrap();
+    assert_eq!(changed.normalized_ids, [id(1)]);
+    assert_eq!(native_state(after.path(), 1).status, Status::InProgress);
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 3);
+
+    // A no-op plan must not bypass the candidate's initial native rejection.
+    let bad = text(1, &state(Status::InProgress), false).replace(
+        "see_also: []",
+        &format!(
+            "see_also: [{{\"target\":\"{}\",\"reason\":\"missing\"}}]",
+            id(99)
+        ),
+    );
+    fs::write(file(after.path(), 1), &bad).unwrap();
+    assert!(
+        status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).is_err()
+    );
+    assert_eq!(fs::read_to_string(file(after.path(), 1)).unwrap(), bad);
+}
+
+#[test]
 fn candidate_child_before_and_derived_races_reject_without_any_patch() {
-    let policy = policy();
-    for change in ["child", "before", "derived", "none"] {
+    for change in [
+        "child",
+        "before",
+        "derived",
+        "none",
+        "noop-child",
+        "noop-none",
+        "noop-policy",
+    ] {
         let before = tempfile::tempdir().unwrap();
         let after = tempfile::tempdir().unwrap();
         let barrier = tempfile::tempdir().unwrap();
@@ -450,17 +500,27 @@ fn candidate_child_before_and_derived_races_reject_without_any_patch() {
             after.path(),
             &[state(Status::NotExamined), state(Status::Resolved)],
         );
-        fs::write(
-            file(after.path(), 1),
-            text(1, &state(Status::NotExamined), true),
-        )
-        .unwrap();
+        if !change.starts_with("noop-") {
+            fs::write(
+                file(after.path(), 1),
+                text(1, &state(Status::NotExamined), true),
+            )
+            .unwrap();
+        }
         let original = inventory(after.path());
+        let temporary_policy = tempfile::tempdir().unwrap();
+        let policy = if change == "noop-policy" {
+            crate::outlines_tests::counted_policy(temporary_policy.path())
+        } else {
+            Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap()
+        };
         let ready = barrier.path().join("ready");
         let release = barrier.path().join("release");
         let ready_worker = ready.clone();
         let release_worker = release.clone();
-        let target = if change == "before" {
+        let target = if change == "noop-policy" {
+            temporary_policy.path().join("build/graph-policy.sha256")
+        } else if change == "before" {
             file(before.path(), 2)
         } else if change == "derived" {
             after
@@ -484,7 +544,7 @@ fn candidate_child_before_and_derived_races_reject_without_any_patch() {
                 assert!(started.elapsed() < Duration::from_secs(10));
                 thread::sleep(Duration::from_millis(5));
             }
-            if change != "none" {
+            if change != "none" && change != "noop-none" {
                 fs::write(target_worker, new_worker).unwrap();
             }
             fs::write(release_worker, b"release").unwrap();
@@ -497,9 +557,16 @@ fn candidate_child_before_and_derived_races_reject_without_any_patch() {
             Some(&PauseBeforeAccept { ready, release }),
         );
         handle.join().unwrap();
-        if change == "none" {
+        if change == "none" || change == "noop-none" {
             assert!(result.is_ok());
-            assert_eq!(native_state(after.path(), 1).status, Status::InProgress);
+            assert_eq!(
+                native_state(after.path(), 1).status,
+                if change == "noop-none" {
+                    Status::NotExamined
+                } else {
+                    Status::InProgress
+                }
+            );
         } else {
             assert!(result.is_err());
             assert_eq!(fs::read_to_string(target).unwrap(), new_bytes);

@@ -318,7 +318,7 @@ fn validated(policy: &Policy, path: &Path) -> crate::candidate_validation::Valid
 }
 
 // Count real helper invocations, never substitute an accepting script.
-fn counted_policy(project: &Path) -> Policy {
+pub(super) fn counted_policy(project: &Path) -> Policy {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = crate::candidate_files(source).unwrap();
     files.extend([
