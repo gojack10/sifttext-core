@@ -832,7 +832,9 @@ impl Policy {
     fn verify_stamp(&self) -> Result<()> {
         let project = &self.project;
         for manifest in ["build/candidate.sha256", "build/graph-policy.sha256"] {
-            let contents = fs::read_to_string(project.join(manifest))?;
+            let contents = fs::read_to_string(project.join(manifest)).map_err(|error| {
+                format!("cannot read build stamp {manifest}: {error}; run sh scripts/build.sh")
+            })?;
             require(!contents.trim().is_empty(), "empty build stamp")?;
             if manifest == "build/graph-policy.sha256" {
                 require(
@@ -855,10 +857,14 @@ impl Policy {
                     stamped.insert(file.to_owned()),
                     "duplicate build stamp entry",
                 )?;
-                require(
-                    sha256(&fs::read(project.join(file))?) == expected,
-                    "checked candidate changed; rebuild and recheck",
-                )?;
+                let bytes = fs::read(project.join(file)).map_err(|error| {
+                    format!("cannot read stamped path {file}: {error}; run sh scripts/build.sh")
+                })?;
+                if sha256(&bytes) != expected {
+                    return Err(format!(
+                        "checked candidate changed: {file}; rebuild and recheck with sh scripts/build.sh"
+                    ).into());
+                }
             }
             if manifest == "build/candidate.sha256" {
                 require(

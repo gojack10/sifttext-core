@@ -169,4 +169,34 @@ fn checked_candidate_stamp_is_still_required() {
     fs::write(dir.path().join("build/candidate.sha256"), "").unwrap();
     fs::write(dir.path().join("build/graph-policy.sha256"), "").unwrap();
     assert!(Policy::checked(dir.path()).is_err());
+
+    // Test edits and incomplete relocated assets must diagnose the stale input,
+    // not masquerade as a product regression or silently refresh the stamp.
+    for file in ["Cargo.toml", "Cargo.lock", "README.md", ".gitignore",
+                 "tests/check.rs", "docs/guide.md", "build/graph-policy"] {
+        let path = dir.path().join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "original").unwrap();
+    }
+    let stamp: String = candidate_files(dir.path()).unwrap().iter()
+        .map(|file| format!("{}  {file}\n", sha256(b"original")))
+        .collect();
+    fs::write(dir.path().join("build/candidate.sha256"), &stamp).unwrap();
+    fs::write(dir.path().join("build/graph-policy.sha256"),
+              format!("{}  build/graph-policy\n", sha256(b"original"))).unwrap();
+    let checked = Policy::checked(dir.path()).unwrap();
+    fs::write(dir.path().join("tests/check.rs"), "edited").unwrap();
+    let error = checked.verify_stamp().unwrap_err().to_string();
+    assert!(error.contains("checked candidate changed: tests/check.rs"), "{error}");
+    assert!(error.contains("sh scripts/build.sh"), "{error}");
+    fs::write(dir.path().join("tests/check.rs"), "original").unwrap();
+    fs::remove_file(dir.path().join("docs/guide.md")).unwrap();
+    let error = checked.verify_stamp().unwrap_err().to_string();
+    assert!(error.contains("cannot read stamped path docs/guide.md"), "{error}");
+    assert!(error.contains("sh scripts/build.sh"), "{error}");
+    assert_eq!(fs::read_to_string(dir.path().join("build/candidate.sha256")).unwrap(), stamp);
+    fs::remove_file(dir.path().join("build/candidate.sha256")).unwrap();
+    let error = checked.verify_stamp().unwrap_err().to_string();
+    assert!(error.contains("cannot read build stamp build/candidate.sha256"), "{error}");
+    assert!(error.contains("sh scripts/build.sh"), "{error}");
 }
