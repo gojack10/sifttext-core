@@ -588,10 +588,10 @@ pub(crate) fn inspect_files(
     let publication = Publication::reuse(store, nodes, &manifest.version, manifest)?;
     publication.unchanged(&store.path)?;
     let mut out = Vec::new();
-    for file in &publication.files {
-        let bytes = file.checked_bytes(&store.path)?;
-        let text = std::str::from_utf8(&bytes)?;
-        if include_files {
+    if include_files {
+        for file in &publication.files {
+            let bytes = file.checked_bytes(&store.path)?;
+            let text = std::str::from_utf8(&bytes)?;
             let path = store.path.join(&file.relative);
             out.push(json!({"path":path,"hash":file.hash,"text":text}));
         }
