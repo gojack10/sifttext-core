@@ -148,7 +148,7 @@ impl<'a> Transition<'a> {
         })
     }
 
-    fn verify(&self) -> Result<()> {
+    pub(crate) fn verify(&self) -> Result<()> {
         self.policy.verify_stamp()?;
         require(
             identity(self.policy)? == self.policy_identity,

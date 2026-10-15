@@ -106,7 +106,7 @@ fn publication_graph_transition_runs_on_exact_candidates_without_accepting_bad_b
     let r = publish::submit(&policy, &q);
     assert_eq!(r.status, "current", "{r:?}");
     assert!(r.published);
-    assert_eq!(r.graph_checks.len(), 2);
+    assert_eq!(r.graph_checks.len(), 1); // Only the actual initial execution.
     for g in &r.graph_checks {
         assert_eq!(g.mode, "preserved");
         assert_eq!(g.candidate_version, r.version);
@@ -559,6 +559,42 @@ fn retained_validation_refuses_foreign_policy_and_same_byte_source_replacement()
 }
 
 #[test]
+fn retained_validation_rechecks_both_complete_inventories_without_reparsing() {
+    for side in ["candidate", "before"] {
+        for action in ["body", "asset", "extra", "replacement"] {
+            let temp = tempfile::tempdir().unwrap();
+            let before = temp.path().join("before");
+            let after = temp.path().join("after");
+            fixture(&before);
+            fixture(&after);
+            for path in [&before, &after] {
+                fs::write(path.join("asset.bin"), b"original asset").unwrap();
+            }
+            let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+            let (report, capture) =
+                gate::validate_with_capture(&policy, &gate_request(&after, Some(&before)), None);
+            assert_eq!(report.status, "current", "{report:?}");
+            let capture = capture.unwrap();
+            assert!(capture.checked(&policy).is_ok());
+            let path = if side == "before" { &before } else { &after };
+            match action {
+                "body" => node(path, 1, "in_progress", "Changed body"),
+                "asset" => fs::write(path.join("asset.bin"), b"changed asset").unwrap(),
+                "extra" => fs::write(path.join("extra.bin"), b"extra").unwrap(),
+                "replacement" => {
+                    let file = file(path, 1);
+                    let saved = temp.path().join("saved");
+                    fs::rename(&file, &saved).unwrap();
+                    fs::copy(&saved, &file).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            assert!(capture.checked(&policy).is_err(), "{side}/{action}");
+        }
+    }
+}
+
+#[test]
 fn retained_validation_never_mints_a_stale_accept_barrier_capture() {
     use std::{
         thread,
@@ -654,7 +690,9 @@ fn publication_asset_race(helper: bool) {
     let r = worker.join().unwrap();
     assert_eq!(r.status, "rejected", "{r:?}");
     assert!(!r.published);
-    assert_eq!(r.graph_checks.last().unwrap().mode, "transition_error");
+    assert_eq!(r.check, "candidate_recheck_rejected");
+    assert_eq!(r.graph_checks.len(), 1);
+    assert_eq!(r.graph_checks[0].mode, "preserved");
     assert_eq!(git(&repo, &["rev-parse", "main"]), base);
     assert_eq!(git(&draft, &["rev-parse", "HEAD"]), sha);
     assert_eq!(git(&draft, &["status", "--porcelain"]), "");

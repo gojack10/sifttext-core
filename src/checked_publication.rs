@@ -1040,7 +1040,7 @@ fn execute(
         None
     };
     r.check = "candidate_validation_rejected";
-    let mut validation = gate::Request {
+    let validation = gate::Request {
         store: view.clone(),
         before: Some(before.path.clone()),
         explicit: q.explicit.clone(),
@@ -1048,12 +1048,13 @@ fn execute(
         pause_before_accept: None,
     };
     let proof = proven.as_ref().map(|(transition, base)| (transition, base));
-    let checked = gate::validate_with_transition(policy, &validation, proof);
+    let (checked, final_capture) = gate::validate_with_capture(policy, &validation, proof);
     r.graph_checks.push(checked.graph.clone());
     r.version = checked.version.clone();
     let valid = checked.status == "current";
     r.validation = Some(checked);
     require(valid, "combined candidate rejected")?;
+    let final_capture = final_capture.ok_or("missing validated candidate")?;
     let source_identity = tracked_identity(view)?;
     let before_identity = tracked_identity(&before.path)?;
     r.check = "derived_view_unavailable";
@@ -1100,13 +1101,18 @@ fn execute(
         git(view, &["write-tree"])? == *r.tree.as_ref().ok_or("missing tree")?,
         "candidate tree changed",
     )?;
-    validation.expected_version = r.version.clone();
-    let (checked, final_capture) = gate::validate_with_capture(policy, &validation, proof);
-    r.graph_checks.push(checked.graph.clone());
-    let valid = checked.status == "current";
-    r.validation = Some(checked);
-    require(valid, "last candidate check rejected")?;
-    let final_capture = final_capture.ok_or("missing validated candidate")?;
+    // Same invocation, request and immutable inputs: reuse every successful
+    // candidate check, never a caller-supplied receipt or logical version alone.
+    // Refresh may change derived files only. Keep complete before/candidate byte
+    // and physical identity barriers and independently pin the transition helper.
+    r.check = "candidate_recheck_rejected";
+    if let Some((transition, _)) = proof {
+        transition.verify()?;
+    }
+    final_capture.checked(policy)?;
+    if let Some((transition, _)) = proof {
+        transition.verify()?;
+    }
     let inspection = crate::outlines::inspect_validated(policy, view, &final_capture)?;
     require(
         inspection.status == "current" && inspection.version == r.version,

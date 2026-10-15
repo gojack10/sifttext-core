@@ -139,8 +139,14 @@ fn native_pre_cas_candidate_cache_ref_and_contender_races() {
         let text = String::from_utf8(out.stdout).unwrap();
         assert_eq!(out.status.code(), Some(1), "{action}: {text}");
         // Exact scalar lines in pinned LEAN, not JSON or a substring verdict.
+        let check = if action == "cache" {
+            // Derived damage is detected by inspection after retained validation.
+            "check:candidate_recheck_rejected"
+        } else {
+            "check:source_or_ref_changed"
+        };
         for scalar in [
-            "check:source_or_ref_changed",
+            check,
             "status:rejected",
             "published:F",
             "rule:e8234ea5-3467-4f2b-8ca2-2bcc5cc80d11",

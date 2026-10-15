@@ -360,6 +360,7 @@ fn state(capture: &Capture, id: &str) -> Result<State> {
 /// caller-supplied captures/versions can manufacture this capability.
 pub(crate) struct ValidatedCapture {
     capture: Capture,
+    before: Option<Capture>,
     policy_identity: String,
 }
 impl ValidatedCapture {
@@ -376,6 +377,9 @@ impl ValidatedCapture {
             "validated capture policy changed",
         )?;
         self.capture.unchanged_all()?;
+        if let Some(before) = &self.before {
+            before.unchanged_all()?;
+        }
         policy.verify_stamp()?;
         require(
             policy.validation_identity()? == self.policy_identity,
@@ -527,7 +531,10 @@ fn check(
     // failure stage or candidate capture/version observations with a new guard.
     // An initial identity-read error can never mint a successful capability.
     let policy_identity = policy.validation_identity();
-    let candidate = report.observe("candidate_capture", Capture::read_for_validation(&request.store))?;
+    let candidate = report.observe(
+        "candidate_capture",
+        Capture::read_for_validation(&request.store),
+    )?;
     let store = &candidate.store;
     report.nodes = store.nodes.len();
     report.version = Some(version(store));
@@ -735,6 +742,7 @@ fn check(
     }
     Ok((report.status == "current").then_some(ValidatedCapture {
         capture: candidate,
+        before,
         policy_identity,
     }))
 }

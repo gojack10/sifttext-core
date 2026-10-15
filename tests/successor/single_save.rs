@@ -165,7 +165,7 @@ fn save_preserves_fast_forward_and_checks_divergence_in_the_original_draft() {
     assert_eq!(second.status, "current", "{second:?}");
     assert_ne!(second.version, first.version);
     assert_eq!(second.validation.as_ref().unwrap().status, "current");
-    assert_eq!(second.graph_checks.len(), 2);
+    assert_eq!(second.graph_checks.len(), 1); // Recheck retains the same successful validation.
     for check in &second.graph_checks {
         assert_eq!(check.mode, "preserved");
         assert_eq!(check.base_version, first.version);
@@ -256,7 +256,7 @@ fn normal_home_submission_preserves_body_only_navigation_and_retained_draft() {
     assert_ne!(second["version"], first["version"]);
     assert_eq!(second["validation"]["status"], "current");
     let checks = second["graph_checks"].as_array().unwrap();
-    assert_eq!(checks.len(), 2);
+    assert_eq!(checks.len(), 1); // One actual validation, retained through the final recheck.
     for check in checks {
         assert_eq!(check["mode"], "preserved");
         assert_eq!(check["base_version"], first["version"]);
