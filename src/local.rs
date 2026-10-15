@@ -381,9 +381,19 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     // Validate and capture the shipped native tree before touching the destination.
     let seed = starter
         .map(|source| -> Result<Store> {
-            let seed = Store::read(source)?;
-            check(policy, source, None, BTreeSet::new())?;
-            Ok(seed)
+            let (report, capture) = candidate_validation::validate_with_capture(
+                policy,
+                &candidate_validation::Request {
+                    store: source.to_owned(),
+                    before: None,
+                    explicit: BTreeSet::new(),
+                    expected_version: None,
+                    pause_before_accept: None,
+                },
+                None,
+            );
+            require(report.status == "current", &report.lean()?)?;
+            Ok(capture.ok_or("missing validated starter capture")?.into_snapshot())
         })
         .transpose()?;
     // A new independent repository cannot inherit an ancestor repo's local
@@ -424,14 +434,13 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
         new_file(&path.join("trees/.keep"), b"")?;
     }
     new_file(&path.join(".gitignore"), IGNORE.as_bytes())?;
+    let checked = check(policy, path, None, BTreeSet::new())?;
     if let Some(seed) = &seed {
         require(
-            candidate_validation::version(&Store::read(path)?)
-                == candidate_validation::version(seed),
+            checked.version.as_deref() == Some(candidate_validation::version(seed).as_str()),
             "copied source changed; preserve the incomplete new home",
         )?;
     }
-    check(policy, path, None, BTreeSet::new())?;
     // The checked store is complete before the pointer exists, so a pointer or
     // exclude failure leaves an inspectable uncommitted home and never claims success.
     let pointer = seed.as_ref().is_some_and(carries_pipeline);

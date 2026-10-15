@@ -363,6 +363,12 @@ pub(crate) struct ValidatedCapture {
     policy_identity: String,
 }
 impl ValidatedCapture {
+    /// Consume checked immutable bytes for copying, not a live-source proof.
+    /// The recipient must validate the materialized destination independently.
+    pub(crate) fn into_snapshot(self) -> Store {
+        self.capture.store
+    }
+
     pub(crate) fn checked(&self, policy: &Policy) -> Result<&Capture> {
         policy.verify_stamp()?;
         require(

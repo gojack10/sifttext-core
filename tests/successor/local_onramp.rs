@@ -65,6 +65,10 @@ fn supplied_init_preserves_edits_and_uses_current_components() {
     );
     assert_eq!(Store::read(&home).unwrap().nodes.len(), 1);
     assert_eq!(
+        crate::candidate_validation::version(&Store::read(&home).unwrap()),
+        crate::candidate_validation::version(&Store::read(&bundle).unwrap()),
+    );
+    assert_eq!(
         local::read(&policy, &home, ROOT).unwrap(),
         fs::read_to_string(home.join(format!("nodes/{ROOT}/node.md"))).unwrap()
     );
@@ -111,6 +115,22 @@ fn supplied_init_preserves_edits_and_uses_current_components() {
     assert_eq!(Store::read(&receipt.view.unwrap()).unwrap().nodes.len(), 2);
     // Independent accepted publication leaves the original reader and authored bytes untouched.
     assert_eq!(Store::read(&home).unwrap().nodes.len(), 1);
+}
+
+#[test]
+fn init_rejects_a_starter_changed_during_capture_before_creating_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let bundle = dir.path().join("bundle");
+    seed(&bundle);
+    let source = bundle.join(format!("nodes/{ROOT}/node.md"));
+    crate::coherent_capture::on_inventory(move || {
+        let mut bytes = fs::read(&source).unwrap();
+        bytes.extend_from_slice(b"Changed during capture.\n");
+        fs::write(source, bytes).unwrap();
+    });
+    let home = dir.path().join("home");
+    assert!(local::init(&policy(), &home, Some(&bundle)).is_err());
+    assert!(!home.exists());
 }
 
 #[test]
