@@ -605,8 +605,14 @@ fn accepted(repo: &Path, reference: &str) -> Result<String> {
             .success(),
         "symbolic accepted ref",
     )?;
-    let tip = git(repo, &["rev-parse", "--verify", reference])?;
-    commit(repo, &tip)?;
+    // Pin both the raw ref and its commit peel in one process. Equality still
+    // rejects tag/blob/tree refs rather than silently accepting a peeled target.
+    let resolved = git(
+        repo,
+        &["rev-parse", reference, &format!("{reference}^{{commit}}")],
+    )?;
+    let (tip, peeled) = resolved.split_once('\n').ok_or("missing commit identity")?;
+    require(oid(tip) && tip == peeled, "commit identity changed")?;
     // Moving a checked-out branch would silently invalidate a user's index/draft.
     let worktrees = git(repo, &["worktree", "list", "--porcelain"])?;
     require(
@@ -615,7 +621,45 @@ fn accepted(repo: &Path, reference: &str) -> Result<String> {
             .any(|l| l == format!("branch {reference}")),
         "accepted ref is checked out; detach its reader first",
     )?;
-    Ok(tip)
+    Ok(tip.to_owned())
+}
+#[cfg(test)]
+#[test]
+fn accepted_ref_requires_exact_commit_and_detached_readers() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path();
+    git(repo, &["init", "-q", "-b", "main"]).unwrap();
+    fs::write(repo.join("node.md"), "committed content").unwrap();
+    git(repo, &["add", "node.md"]).unwrap();
+    git(repo, &["commit", "-qm", "knowledge: ref identity control"]).unwrap();
+    let head = git(repo, &["rev-parse", "HEAD"]).unwrap();
+    let reference = "refs/heads/main";
+    assert!(accepted(repo, reference).is_err()); // Checked-out branch.
+    git(repo, &["checkout", "--detach", "-q"]).unwrap();
+    assert_eq!(accepted(repo, reference).unwrap(), head);
+    for invalid in ["main", "refs/heads/missing", "refs/heads/bad..name"] {
+        assert!(accepted(repo, invalid).is_err());
+    }
+    git(repo, &["symbolic-ref", "refs/heads/alias", reference]).unwrap();
+    assert!(accepted(repo, "refs/heads/alias").is_err());
+    git(repo, &["tag", "-a", "control", "-m", "tag identity"]).unwrap();
+    let tag = git(repo, &["rev-parse", "refs/tags/control"]).unwrap();
+    let tree = git(repo, &["rev-parse", "HEAD^{tree}"]).unwrap();
+    let blob = git(repo, &["rev-parse", "HEAD:node.md"]).unwrap();
+    // Bypass update-ref's own branch type guard to exercise corrupt raw refs.
+    for object in [&tag, &tree, &blob] {
+        fs::write(repo.join(".git/refs/heads/raw"), format!("{object}\n")).unwrap();
+        assert!(accepted(repo, "refs/heads/raw").is_err());
+    }
+    let linked = temp.path().join("reader");
+    git(
+        repo,
+        &["worktree", "add", "-q", linked.to_str().unwrap(), "main"],
+    )
+    .unwrap();
+    assert!(accepted(repo, reference).is_err());
+    git(&linked, &["checkout", "--detach", "-q"]).unwrap();
+    assert_eq!(accepted(repo, reference).unwrap(), head);
 }
 fn authored_tree(repo: &Path, revision: &str) -> Result<()> {
     let tree = run(repo, &["ls-tree", "-rz", revision])?;
