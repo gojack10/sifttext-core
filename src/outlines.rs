@@ -244,6 +244,21 @@ fn decode(text: &str) -> Result<Value> {
     Ok(Value::Object(root))
 }
 impl Publication {
+    pub(crate) fn outline_text(&self, store: &Store, id: &str, full: bool) -> Result<String> {
+        let name = if full {
+            "outline.full.lean"
+        } else {
+            "outline.lean"
+        };
+        let relative = format!("{}/{name}", prefix(store, id)?);
+        let file = self
+            .files
+            .iter()
+            .find(|file| file.relative == relative)
+            .ok_or("no generated outline for this node; read its node.md")?;
+        Ok(String::from_utf8(file.checked_bytes(&store.path)?)?)
+    }
+
     pub(crate) fn reused(&self) -> bool {
         self.stage.is_none()
     }

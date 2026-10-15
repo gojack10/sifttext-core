@@ -1,5 +1,5 @@
 use serde_json::json;
-use sifttext_file_graph::{Policy, Result, Store, local};
+use sifttext_file_graph::{Policy, Result, local};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -142,26 +142,15 @@ fn run() -> Result<()> {
             json!({"status":v.status,"version":v.version,"nodes":v.nodes.len(),"links":v.links.len()})
         }
         [cmd, path, id, rest @ ..] if cmd == "outline" && (rest.is_empty() || rest == ["full"]) => {
-            local::refresh(&policy, Path::new(path))?;
-            let store = Store::read(Path::new(path))?;
-            let id = store.resolve(id)?;
-            let inspection =
-                sifttext_file_graph::outlines::inspect(&policy, Path::new(path), None)?;
-            if inspection.status != "current" {
-                return Err("outline not current; retry after inspecting source".into());
-            }
-            let name = if rest.is_empty() {
-                "outline.lean"
-            } else {
-                "outline.full.lean"
-            };
-            let expected = store.path.join("nodes").join(&id).join(name);
-            let file = inspection
-                .files
-                .iter()
-                .find(|f| f["path"].as_str() == expected.to_str())
-                .ok_or("no generated outline for this node; read its node.md")?;
-            print!("{}", file["text"].as_str().ok_or("invalid outline text")?);
+            print!(
+                "{}",
+                sifttext_file_graph::index::outline(
+                    &policy,
+                    Path::new(path),
+                    id,
+                    !rest.is_empty(),
+                )?
+            );
             return Ok(());
         }
         [cmd, path, query, rest @ ..] if cmd == "search" && rest.len() <= 1 => {

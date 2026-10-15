@@ -358,7 +358,7 @@ pub(crate) fn refresh_for_publication(
         pause,
         &prepared,
         &mut reuse,
-        |tx, store, view| {
+        |tx, store, view, _| {
             let bodies = view
                 .nodes
                 .iter()
@@ -577,8 +577,28 @@ pub(crate) fn with_query<T>(
         pause,
         &[],
         &mut Reuse::default(),
-        query,
+        |tx, store, view, _| query(tx, store, view),
     )
+}
+
+/// Return the requested publication's exact bytes only after the ordinary
+/// refresh transaction and all source/artifact freshness barriers succeed.
+pub fn outline(policy: &Policy, path: &Path, id: &str, full: bool) -> Result<String> {
+    let (view, text) = with_query_prepared(
+        policy,
+        path,
+        None,
+        Mode::Incremental,
+        None,
+        &[],
+        &mut Reuse::default(),
+        |_, store, _, publication| publication.outline_text(store, &store.resolve(id)?, full),
+    )?;
+    require(
+        view.status == "current",
+        "outline not current; inspect authored source",
+    )?;
+    text.ok_or_else(|| "no current outline returned".into())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -590,13 +610,21 @@ fn with_query_prepared<T>(
     pause: Option<&PauseBeforeAccept>,
     prepared: &[(&PreparedIndex, bool)],
     reuse: &mut Reuse,
-    query: impl FnOnce(&rusqlite::Transaction<'_>, &Store, &View) -> Result<T>,
+    query: impl FnOnce(
+        &rusqlite::Transaction<'_>,
+        &Store,
+        &View,
+        &crate::outlines::Publication,
+    ) -> Result<T>,
 ) -> Result<(View, Option<T>)> {
     let store_path = match working_path(path, base) {
         Ok(p) => p,
         Err(error) => {
             return Ok((
-                View::unavailable("error", Refusal::from_error("source_capture", error.as_ref())),
+                View::unavailable(
+                    "error",
+                    Refusal::from_error("source_capture", error.as_ref()),
+                ),
                 None,
             ));
         }
@@ -636,7 +664,10 @@ fn with_query_prepared<T>(
         Ok(s) => s,
         Err(error) => {
             return Ok((
-                View::unavailable("error", Refusal::from_error("source_capture", error.as_ref())),
+                View::unavailable(
+                    "error",
+                    Refusal::from_error("source_capture", error.as_ref()),
+                ),
                 None,
             ));
         }
@@ -645,7 +676,10 @@ fn with_query_prepared<T>(
         Ok(r) => r,
         Err(error) => {
             return Ok((
-                View::unavailable("error", Refusal::from_error("source_validation", error.as_ref())),
+                View::unavailable(
+                    "error",
+                    Refusal::from_error("source_validation", error.as_ref()),
+                ),
                 None,
             ));
         }
@@ -783,7 +817,6 @@ fn with_query_prepared<T>(
         nodes,
         links,
     };
-    let result = query(&tx, &captured.store, &view)?;
     let cached: Option<String> = tx
         .query_row("SELECT value FROM metadata WHERE key='outlines'", [], |r| {
             r.get(0)
@@ -817,6 +850,7 @@ fn with_query_prepared<T>(
             false,
         )?,
     };
+    let result = query(&tx, &captured.store, &view, &publication)?;
     let reused_outlines = publication.reused();
     let staged_outline_files = publication.staged_files();
     let manifest = publication.manifest.clone();

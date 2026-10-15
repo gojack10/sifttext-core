@@ -105,6 +105,50 @@ fn paused(path: &Path, change: impl FnOnce(&Path)) -> index::View {
     t.join().unwrap()
 }
 #[test]
+fn refreshed_outline_reuses_checked_publication_bytes_and_capture() {
+    let d = fixture();
+    let p = d.path();
+    let policy = policy();
+    refresh(p, None);
+    crate::coherent_capture::take_work();
+    refresh(p, None);
+    let baseline = crate::coherent_capture::take_work();
+    for n in [1, 2, 5] {
+        for full in [false, true] {
+            crate::coherent_capture::take_work();
+            let text = index::outline(&policy, p, &id(n), full).unwrap();
+            let work = crate::coherent_capture::take_work();
+            assert_eq!(work.inventories, baseline.inventories);
+            assert_eq!(work.parses, baseline.parses);
+            let file = p.join("nodes").join(id(n)).join(if full {
+                "outline.full.lean"
+            } else {
+                "outline.lean"
+            });
+            let inspected = inspect(p, None);
+            assert_eq!(inspected.status, "current");
+            let checked = inspected
+                .files
+                .iter()
+                .find(|f| f["path"] == file.to_str().unwrap())
+                .unwrap();
+            assert_eq!(text, checked["text"].as_str().unwrap());
+        }
+    }
+    assert!(index::outline(&policy, p, "80000000", false).is_err());
+    assert!(index::outline(&policy, p, &id(99), false).is_err());
+    let artifact = p.join("nodes").join(id(2)).join("outline.lean");
+    fs::write(&artifact, "forged").unwrap();
+    let repaired = index::outline(&policy, p, &id(2), false).unwrap();
+    assert_eq!(repaired, fs::read_to_string(artifact).unwrap());
+    let target = p.join("nodes").join(id(2)).join("node.md");
+    crate::coherent_capture::on_inventory(move || {
+        fs::write(target, "changed during capture").unwrap();
+    });
+    assert!(index::outline(&policy, p, &id(2), false).is_err());
+}
+
+#[test]
 fn complete_publication_costs_tamper_loss_and_stale_inspection() {
     let d = fixture();
     let p = d.path();
