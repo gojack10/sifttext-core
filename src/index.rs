@@ -946,13 +946,14 @@ pub(crate) fn inspect_outlines(
     path: &Path,
     base: Option<&Path>,
 ) -> Result<crate::outlines::Inspection> {
-    inspect_outlines_with(path, base, |s| records(policy, s), |_| Ok(()))
+    inspect_outlines_with(path, base, true, |s| records(policy, s), |_| Ok(()))
 }
 
 pub(crate) fn inspect_validated_outlines(
     policy: &Policy,
     path: &Path,
     validated: &crate::candidate_validation::ValidatedCapture,
+    include_files: bool,
 ) -> Result<crate::outlines::Inspection> {
     let check = |fresh: &Snapshot| -> Result<()> {
         let original = validated.checked(policy)?;
@@ -968,6 +969,7 @@ pub(crate) fn inspect_validated_outlines(
     inspect_outlines_with(
         path,
         None,
+        include_files,
         |s| {
             check(s)?;
             project_records(s, &[], &mut Reuse::default())
@@ -979,6 +981,7 @@ pub(crate) fn inspect_validated_outlines(
 fn inspect_outlines_with(
     path: &Path,
     base: Option<&Path>,
+    include_files: bool,
     records: impl Fn(&Snapshot) -> Result<Vec<Value>>,
     validation_barrier: impl Fn(&Snapshot) -> Result<()>,
 ) -> Result<crate::outlines::Inspection> {
@@ -1075,7 +1078,8 @@ fn inspect_outlines_with(
             })
             .collect();
         require(links == expected_links, "forged indexed links")?;
-        let files = crate::outlines::inspect_files(&captured.store, &rows, &manifest)?;
+        let files =
+            crate::outlines::inspect_files(&captured.store, &rows, &manifest, include_files)?;
         captured.unchanged()?;
         validation_barrier(&captured)?;
         for (p, expected) in [(&cache_dir, dir_id), (&db, db_id)] {

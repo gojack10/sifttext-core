@@ -362,6 +362,7 @@ fn validated_inspection_matches_public_bytes_without_repeating_full_law() {
         "current"
     );
     let capture = validated(&policy, d.path());
+    assert_verification_matches(&policy, d.path(), &capture);
     let calls = temp.path().join("policy/build/calls");
     fs::write(&calls, "").unwrap();
     let public = outlines::inspect(&policy, d.path(), None).unwrap();
@@ -390,7 +391,9 @@ fn validated_inspection_matches_public_bytes_without_repeating_full_law() {
             .status,
         "current"
     );
+    assert_verification_matches(&policy, other.path(), &capture);
     let foreign = counted_policy(&temp.path().join("foreign"));
+    assert_verification_matches(&foreign, d.path(), &capture);
     assert_ne!(
         outlines::inspect_validated(&foreign, d.path(), &capture)
             .unwrap()
@@ -403,6 +406,7 @@ fn validated_inspection_matches_public_bytes_without_repeating_full_law() {
     let replacement = temp.path().join("replacement");
     fs::write(&replacement, &bytes).unwrap();
     fs::rename(replacement, &node).unwrap();
+    assert_verification_matches(&policy, d.path(), &capture);
     assert_ne!(
         outlines::inspect_validated(&policy, d.path(), &capture)
             .unwrap()
@@ -416,12 +420,25 @@ fn validated_inspection_matches_public_bytes_without_repeating_full_law() {
     let capture = validated(&policy, d.path());
     fs::write(&node, "changed").unwrap();
     fs::write(&node, bytes).unwrap();
+    assert_verification_matches(&policy, d.path(), &capture);
     assert_ne!(
         outlines::inspect_validated(&policy, d.path(), &capture)
             .unwrap()
             .status,
         "current"
     );
+}
+
+fn assert_verification_matches(
+    policy: &Policy,
+    path: &Path,
+    capture: &crate::candidate_validation::ValidatedCapture,
+) {
+    let inspection = outlines::inspect_validated(policy, path, capture).unwrap();
+    let verified = outlines::verify_validated(policy, path, capture).unwrap();
+    assert_eq!(verified.status, inspection.status);
+    assert_eq!(verified.version, inspection.version);
+    assert!(verified.files.is_empty());
 }
 
 #[test]
@@ -456,6 +473,7 @@ fn validated_inspection_keeps_independent_sql_manifest_artifact_and_cost_checks(
             "stale",
             "{sql}"
         );
+        assert_verification_matches(&policy, p, &capture);
         assert_eq!(
             index::refresh(&policy, p, None, Mode::Full, None)
                 .unwrap()
@@ -472,6 +490,7 @@ fn validated_inspection_keeps_independent_sql_manifest_artifact_and_cost_checks(
             .status,
         "stale"
     );
+    assert_verification_matches(&policy, p, &capture);
     fs::write(&artifact, original).unwrap();
     let meta = artifact.with_file_name("outline.full.lean.meta.json");
     let original = fs::read(&meta).unwrap();
@@ -484,7 +503,9 @@ fn validated_inspection_keeps_independent_sql_manifest_artifact_and_cost_checks(
             .status,
         "stale"
     );
+    assert_verification_matches(&policy, p, &capture);
     fs::write(meta, original).unwrap();
+    assert_verification_matches(&policy, p, &capture);
     assert_eq!(
         outlines::inspect_validated(&policy, p, &capture)
             .unwrap()

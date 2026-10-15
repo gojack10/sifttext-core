@@ -580,14 +580,18 @@ pub(crate) fn inspect_files(
     store: &Store,
     nodes: &[Value],
     manifest: &Manifest,
+    include_files: bool,
 ) -> Result<Vec<Value>> {
     let publication = Publication::reuse(store, nodes, &manifest.version, manifest)?;
     publication.unchanged(&store.path)?;
     let mut out = Vec::new();
     for file in &publication.files {
         let bytes = file.checked_bytes(&store.path)?;
-        let path = store.path.join(&file.relative);
-        out.push(json!({"path":path,"hash":file.hash,"text":std::str::from_utf8(&bytes)?}));
+        let text = std::str::from_utf8(&bytes)?;
+        if include_files {
+            let path = store.path.join(&file.relative);
+            out.push(json!({"path":path,"hash":file.hash,"text":text}));
+        }
     }
     publication.unchanged(&store.path)?;
     Ok(out)
@@ -795,5 +799,15 @@ pub(crate) fn inspect_validated(
     path: &Path,
     validated: &crate::candidate_validation::ValidatedCapture,
 ) -> Result<Inspection> {
-    crate::index::inspect_validated_outlines(policy, path, validated)
+    crate::index::inspect_validated_outlines(policy, path, validated, true)
+}
+
+/// Publication consumes only status/version. Keep every byte/identity check but
+/// do not allocate the complete forest of artifact texts that it would discard.
+pub(crate) fn verify_validated(
+    policy: &crate::Policy,
+    path: &Path,
+    validated: &crate::candidate_validation::ValidatedCapture,
+) -> Result<Inspection> {
+    crate::index::inspect_validated_outlines(policy, path, validated, false)
 }

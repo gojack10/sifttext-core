@@ -1113,7 +1113,7 @@ fn execute(
     if let Some((transition, _)) = proof {
         transition.verify()?;
     }
-    let inspection = crate::outlines::inspect_validated(policy, view, &final_capture)?;
+    let inspection = crate::outlines::verify_validated(policy, view, &final_capture)?;
     require(
         inspection.status == "current" && inspection.version == r.version,
         "derived candidate changed",
@@ -1137,7 +1137,7 @@ fn execute(
         "accepted advanced again",
     )?;
     clean(view, &sha)?;
-    let inspection = crate::outlines::inspect_validated(policy, view, &final_capture)?;
+    let inspection = crate::outlines::verify_validated(policy, view, &final_capture)?;
     require(
         inspection.status == "current" && inspection.version == r.version,
         "post-publication view changed",
