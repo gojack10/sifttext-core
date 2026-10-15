@@ -225,6 +225,63 @@ fn sparse_inheritance_is_complete_and_base_identity_is_checked() {
 }
 
 #[test]
+fn sparse_override_does_not_hide_base_freshness_changes() {
+    for target in ["base", "overlay"] {
+        let base = fixture(3, false);
+        let overlay = fixture(3, false);
+        let file = |root: &Path| root.join("nodes").join(id(2)).join("node.md");
+        let override_file = file(overlay.path());
+        fs::write(
+            &override_file,
+            fs::read_to_string(&override_file).unwrap() + "Overlay-only body\n",
+        )
+        .unwrap();
+        let capture = Capture::read(overlay.path(), Some(base.path())).unwrap();
+        assert!(
+            capture.store.nodes[&id(2)]
+                .content
+                .contains("Overlay-only body")
+        );
+        capture.unchanged().unwrap();
+        capture.unchanged_all().unwrap();
+        let changed = file(if target == "base" {
+            base.path()
+        } else {
+            overlay.path()
+        });
+        let original = fs::read(&changed).unwrap();
+        fs::write(
+            &changed,
+            [original.as_slice(), b"Changed source\n"].concat(),
+        )
+        .unwrap();
+        assert!(capture.unchanged().is_err(), "{target} authored change");
+        assert!(capture.unchanged_all().is_err(), "{target} authored change");
+        // Restoring bytes does not undo the intervening physical mutation.
+        fs::write(&changed, original).unwrap();
+        assert!(capture.unchanged().is_err(), "{target} restored-byte ABA");
+        assert!(
+            capture.unchanged_all().is_err(),
+            "{target} restored-byte ABA"
+        );
+    }
+}
+
+#[test]
+fn same_byte_asset_hardlink_is_not_a_safe_freshness_recapture() {
+    let d = fixture(3, false);
+    let asset = d.path().join("asset");
+    fs::write(&asset, "unchanged bytes").unwrap();
+    let capture = Capture::read(d.path(), None).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::hard_link(&asset, outside.path().join("alias")).unwrap();
+    // Byte equality alone cannot replace inventory's trust-boundary checks.
+    assert!(capture.unchanged().is_err());
+    assert!(capture.unchanged_all().is_err());
+    assert_eq!(fs::read(asset).unwrap(), b"unchanged bytes");
+}
+
+#[test]
 fn captured_invalid_orders_links_and_markers_are_not_accepted() {
     let d = fixture(3, false);
     let s = Store::read(d.path()).unwrap();
