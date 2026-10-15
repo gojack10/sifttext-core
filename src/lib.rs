@@ -132,6 +132,12 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const LIMIT: usize = 1_048_576;
 const PROCESS_DEADLINE: Duration = Duration::from_secs(10);
 const MAX_POLICY_DEADLINE: Duration = Duration::from_secs(300);
+// Frozen Runtime.bend cannot see a suffix beyond this read boundary.
+const BACKEND_INPUT_BYTES: usize = 1_048_576;
+
+#[cfg(test)]
+#[path = "../tests/successor/process_framing.rs"]
+mod process_framing_tests;
 
 #[cfg(test)]
 #[path = "../tests/successor/policy_deadline.rs"]
@@ -667,27 +673,44 @@ fn graph_words(g: &Graph) -> Result<Vec<usize>> {
     Ok(v)
 }
 
+fn graph_integer_envelope(request: &Graph) -> Result<usize> {
+    let largest = request.nodes.iter().fold(request.assets, |max, n| {
+        n.refs.iter().fold(
+            n.children
+                .iter()
+                .copied()
+                .fold(max.max(n.id).max(n.payload), usize::max),
+            |max, &(t, r)| max.max(t).max(r),
+        )
+    });
+    largest
+        .max(request.roots.iter().copied().max().unwrap_or(0))
+        .max(graph_word_count(request)?)
+        .checked_add(1)
+        .ok_or_else(|| "graph size overflow".into())
+}
+
+fn decimal_budget(words: usize, largest: usize) -> Result<usize> {
+    words
+        .checked_mul(largest.checked_ilog10().unwrap_or(0) as usize + 2)
+        .and_then(|bytes| bytes.checked_sub(1))
+        .ok_or_else(|| "graph size overflow".into())
+}
+
 fn parse_graph(text: &str, request: &Graph) -> Result<Graph> {
     // Move/reorder/rename preserve total edges, roots, nodes and reference counts.
     // Check the complete word budget BEFORE allocating from untrusted counts.
     let count = graph_word_count(request)?;
-    require(text.len() <= LIMIT, "process graph exceeds output limit")?;
+    require(
+        text.len() <= decimal_budget(count, graph_integer_envelope(request)?)?,
+        "process graph exceeds output limit",
+    )?;
     let actual_count = text.split(' ').count();
     require(actual_count <= count, "trailing process output")?;
     require(actual_count >= count, "truncated process graph")?;
     // All output numbers come from the request, collection counts, or one new
     // rename symbol. This is a request-derived envelope, not a store ceiling.
-    let largest = request.nodes.iter().fold(request.assets, |max, n| {
-        n.refs
-            .iter()
-            .fold(max.max(n.id).max(n.payload), |max, &(t, r)| {
-                max.max(t).max(r)
-            })
-    });
-    let envelope = largest
-        .max(count)
-        .checked_add(1)
-        .ok_or("graph size overflow")?;
+    let envelope = graph_integer_envelope(request)?;
     let mut words = reserved(count)?;
     for word in text.split(' ') {
         let value = word.parse::<usize>()?;
@@ -871,23 +894,39 @@ impl Policy {
         let count = graph_word_count(graph)?
             .checked_add(4)
             .ok_or("graph size overflow")?;
-        require(count < LIMIT, "wire exceeds slice limit")?;
         let mut words = reserved(count)?;
         words.extend([1, kind, x, y]);
         words.extend(graph_words(graph)?);
-        let wire = words
-            .iter()
-            .map(usize::to_string)
-            .collect::<Vec<_>>()
-            .join(" ");
-        require(wire.len() < LIMIT, "wire exceeds slice limit")?;
-        invoke_with_deadline(&self.executable, wire.as_bytes(), policy_deadline(graph)?)
+        let wire = wire_text(&words)?;
+        let stdout_bytes = if kind == 0 {
+            "STG1 REJECT\n".len()
+        } else {
+            decimal_budget(
+                graph_word_count(graph)?,
+                graph_integer_envelope(graph)?.max(y),
+            )?
+            .checked_add("STG1 OK \n".len())
+            .ok_or("graph size overflow")?
+        };
+        invoke_bounded_with_deadline(
+            &self.executable,
+            wire.as_bytes(),
+            stdout_bytes,
+            policy_deadline(graph)?,
+        )
     }
 
     pub(crate) fn graph_valid(&self, s: &Store) -> Result<bool> {
         let ids = s.nodes.keys().cloned().collect::<Vec<_>>();
         let graph = encode(s, &ids, &mut Tokens::default());
-        match self.call(0, 0, 0, &graph)?.as_str() {
+        let verdict = self.call(0, 0, 0, &graph).map_err(|error| {
+            if error.to_string() == "policy process output exceeds limit" {
+                "malformed checked graph verdict".into()
+            } else {
+                error
+            }
+        })?;
+        match verdict.as_str() {
             "STG1 VALID\n" => Ok(true),
             "STG1 REJECT\n" => Ok(false),
             _ => Err("malformed checked graph verdict".into()),
@@ -902,12 +941,85 @@ impl Policy {
     }
 }
 
+fn wire_text(words: &[usize]) -> Result<String> {
+    let bytes = words
+        .iter()
+        .try_fold(0usize, |sum, word| {
+            sum.checked_add(word.checked_ilog10().unwrap_or(0) as usize + 2)
+                .ok_or("graph size overflow")
+        })?
+        .saturating_sub(1);
+    require(
+        bytes <= BACKEND_INPUT_BYTES,
+        "wire exceeds frozen backend input limit",
+    )?;
+    let mut wire = String::new();
+    wire.try_reserve_exact(bytes)?;
+    for (i, word) in words.iter().enumerate() {
+        if i != 0 {
+            wire.push(' ');
+        }
+        use std::fmt::Write;
+        write!(wire, "{word}")?;
+    }
+    Ok(wire)
+}
+
+fn process_output(mut pipe: impl Read, limit: usize) -> std::io::Result<Vec<u8>> {
+    let end = limit
+        .checked_add(1)
+        .ok_or_else(|| std::io::Error::other("output size overflow"))?;
+    let mut bytes = Vec::new();
+    let mut chunk = [0; 8192];
+    while bytes.len() < end {
+        let remaining = (end - bytes.len()).min(chunk.len());
+        let n = match pipe.read(&mut chunk[..remaining]) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if n == 0 {
+            return Ok(bytes);
+        }
+        bytes.try_reserve(n).map_err(std::io::Error::other)?;
+        bytes.extend_from_slice(&chunk[..n]);
+        if bytes.len() > limit {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "policy process output exceeds limit",
+            ));
+        }
+    }
+    unreachable!()
+}
+
 // Public for prescribed process-failure tests, not an alternate CLI acceptance path.
 pub fn invoke(executable: &Path, input: &[u8]) -> Result<String> {
     invoke_with_deadline(executable, input, PROCESS_DEADLINE)
 }
 
 fn invoke_with_deadline(executable: &Path, input: &[u8], budget: Duration) -> Result<String> {
+    let stdout_bytes = decimal_budget(input.len().max(1), usize::MAX)?
+        .checked_add("STG1 OK \n".len())
+        .ok_or("output size overflow")?;
+    invoke_bounded_with_deadline(executable, input, stdout_bytes, budget)
+}
+
+#[cfg(test)]
+fn invoke_bounded(executable: &Path, input: &[u8], stdout_bytes: usize) -> Result<String> {
+    invoke_bounded_with_deadline(executable, input, stdout_bytes, PROCESS_DEADLINE)
+}
+
+fn invoke_bounded_with_deadline(
+    executable: &Path,
+    input: &[u8],
+    stdout_bytes: usize,
+    budget: Duration,
+) -> Result<String> {
+    require(
+        input.len() <= BACKEND_INPUT_BYTES,
+        "wire exceeds frozen backend input limit",
+    )?;
+    stdout_bytes.checked_add(1).ok_or("output size overflow")?;
     require(
         !budget.is_zero() && budget <= MAX_POLICY_DEADLINE,
         "policy deadline exceeds resource budget",
@@ -925,46 +1037,70 @@ fn invoke_with_deadline(executable: &Path, input: &[u8], budget: Duration) -> Re
     let stdout = child.stdout.take().ok_or("missing stdout")?;
     let stderr = child.stderr.take().ok_or("missing stderr")?;
     let (tx, rx) = mpsc::channel();
-    for (tag, pipe) in [
-        (0, Box::new(stdout) as Box<dyn Read + Send>),
-        (1, Box::new(stderr) as Box<dyn Read + Send>),
+    for (tag, pipe, limit) in [
+        (0, Box::new(stdout) as Box<dyn Read + Send>, stdout_bytes),
+        (1, Box::new(stderr) as Box<dyn Read + Send>, 0),
     ] {
         let tx = tx.clone();
-        thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let result = pipe
-                .take((LIMIT + 1) as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
-            let _ = tx.send((tag, result));
-        });
+        if let Err(error) = thread::Builder::new().spawn(move || {
+            let _ = tx.send((tag, process_output(pipe, limit)));
+        }) {
+            let _ = child.kill();
+            child.wait()?;
+            return Err(error.into());
+        }
     }
     drop(tx);
-    let deadline = Instant::now() + budget;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
+    let result = (|| -> Result<String> {
+        let deadline = Instant::now() + budget;
+        let mut status = None;
+        let mut output = [None, None];
+        loop {
+            if status.is_none() {
+                status = child.try_wait()?;
+            }
+            while let Ok((tag, bytes)) = rx.try_recv() {
+                output[tag] = Some(match bytes {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        // Closing rejected stdout can cause SIGPIPE; keep its initiating refusal.
+                        if tag == 0 && error.kind() == std::io::ErrorKind::InvalidData {
+                            return Err("policy process output exceeds limit".into());
+                        }
+                        thread::sleep(Duration::from_millis(1));
+                        if let Some(status) = child.try_wait()? {
+                            require(status.success(), "policy process exited nonzero")?;
+                        }
+                        if error.kind() == std::io::ErrorKind::InvalidData {
+                            return Err(if tag == 1 {
+                                "unexpected policy stderr"
+                            } else {
+                                "policy process output exceeds limit"
+                            }
+                            .into());
+                        }
+                        return Err(error.into());
+                    }
+                });
+            }
+            if let Some(status) = status
+                && output[0].is_some()
+                && output[1].is_some()
+            {
+                require(status.success(), "policy process exited nonzero")?;
+                return Ok(std::str::from_utf8(&output[0].take().unwrap())?.to_owned());
+            }
+            if Instant::now() >= deadline {
+                return Err("policy process timed out".into());
+            }
+            thread::sleep(Duration::from_millis(1));
         }
-        if Instant::now() >= deadline {
-            child.kill()?;
-            child.wait()?;
-            return Err("policy process timed out".into());
-        }
-        thread::sleep(Duration::from_millis(1));
-    };
-    let mut output = [Vec::new(), Vec::new()];
-    for _ in 0..2 {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let (tag, bytes) = rx.recv_timeout(remaining.min(Duration::from_secs(1)))?;
-        output[tag] = bytes?;
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+        child.wait()?;
     }
-    require(status.success(), "policy process exited nonzero")?;
-    require(
-        output.iter().map(Vec::len).sum::<usize>() <= LIMIT,
-        "policy process output exceeds limit",
-    )?;
-    require(output[1].is_empty(), "unexpected policy stderr")?;
-    Ok(std::str::from_utf8(&output[0])?.to_owned())
+    result
 }
 
 #[derive(Clone, Debug)]

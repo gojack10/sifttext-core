@@ -215,7 +215,8 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
             | "unexpected policy stderr" => "invalid_helper_response",
             "policy process output exceeds limit"
             | "wire exceeds slice limit"
-            | "transition wire exceeds slice limit" => "resource_exhausted",
+            | "transition wire exceeds slice limit"
+            | "wire exceeds frozen backend input limit" => "resource_exhausted",
             "checked candidate changed; rebuild and recheck"
             | "candidate file set changed; rebuild and recheck"
             | "transition policy identity changed"
@@ -224,6 +225,23 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
         };
     }
     "unknown"
+}
+
+#[cfg(test)]
+mod framing_failure_tests {
+    use super::*;
+
+    #[test]
+    fn frozen_input_refusal_is_resource_exhaustion_not_unknown_or_timeout() {
+        let input = vec![b' '; 1_048_577];
+        // A missing executable proves refusal precedes process creation.
+        let error = crate::invoke(Path::new("not-an-executable"), &input).unwrap_err();
+        assert_eq!(error.to_string(), "wire exceeds frozen backend input limit");
+        for stage in ["graph_policy", "before_graph_policy", "graph_transition"] {
+            assert_eq!(failure_kind(stage, error.as_ref()), "resource_exhausted");
+        }
+        assert_eq!(failure_kind("candidate_capture", error.as_ref()), "unknown");
+    }
 }
 
 #[derive(Debug, Serialize)]
