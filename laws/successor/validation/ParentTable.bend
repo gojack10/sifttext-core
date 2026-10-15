@@ -1,4 +1,4 @@
-# Proof-first experiment only; not connected to runtime.
+# Direct parent table; ParentTableGraph guards sparse raw-wire child identities.
 # ponytail: unary direct addressing uses O(max identity) space and O(identity)
 # lookup. A proved binary trie is needed before claiming logarithmic indexing.
 import Base

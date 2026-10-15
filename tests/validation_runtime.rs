@@ -14,6 +14,12 @@ fn validation_and_unchanged_mutations_use_full_runtime_wire() {
         (format!("1 0 0 0 {GRAPH}"), "STG1 VALID\n"),
         ("1 0 0 0 99 0 0".into(), "STG1 VALID\n"),
         ("1 0 0 0 99 1 1 1 1 10 0 0".into(), "STG1 VALID\n"),
+        // Sparse raw IDs remain supported without allocating a table to their maximum.
+        (
+            "1 0 0 0 99 1 31 2 31 10 1 63 0 63 20 0 0".into(),
+            "STG1 VALID\n",
+        ),
+        ("1 0 0 0 99 1 1 1 1 10 1 65535 0".into(), "STG1 REJECT\n"),
         // Dangling child, unrooted cycle, duplicate roots, empty reference reason.
         ("1 0 0 0 99 1 1 1 1 10 1 2 0".into(), "STG1 REJECT\n"),
         (
@@ -93,6 +99,67 @@ fn validation_and_unchanged_mutations_use_full_runtime_wire() {
                 "refusal advertised a verdict: {text}"
             );
         }
+    }
+}
+
+#[test]
+fn wrong_parent_table_computations_are_rejected_by_equivalence_proof() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let out = Command::new("sh")
+        .arg(root.join("scripts/bend-path.sh"))
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let bend = String::from_utf8(out.stdout).unwrap();
+    let fixture = tempfile::tempdir().unwrap();
+    let laws = fixture.path().join("laws");
+    let validation = laws.join("successor/validation");
+    fs::create_dir_all(&validation).unwrap();
+    fs::copy(root.join("laws/Spec.bend"), laws.join("Spec.bend")).unwrap();
+    for entry in fs::read_dir(root.join("laws/successor/validation")).unwrap() {
+        let entry = entry.unwrap();
+        if entry.path().extension().is_some_and(|ext| ext == "bend") {
+            fs::copy(entry.path(), validation.join(entry.file_name())).unwrap();
+        }
+    }
+    let check = || {
+        Command::new(bend.trim())
+            .arg(validation.join("ParentTableGraph.bend"))
+            .arg("--check-only")
+            .output()
+            .unwrap()
+    };
+    let baseline = check();
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
+    let path = validation.join("ParentTable.bend");
+    let source = fs::read_to_string(&path).unwrap();
+    for (old, new, law) in [
+        (
+            "case Nil{} _:\n      0n",
+            "case Nil{} _:\n      1n",
+            "parent_empty",
+        ),
+        ("children(c, i, build(t))", "build(t)", "parent_equivalent"),
+        (
+            "case 0n:\n      S.member(roots, x)",
+            "case 0n:\n      False{}",
+            "rooted_equivalent",
+        ),
+    ] {
+        assert_eq!(source.matches(old).count(), 1, "mutation anchor: {old}");
+        fs::write(&path, source.replacen(old, new, 1)).unwrap();
+        let mutant = check();
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&mutant.stdout),
+            String::from_utf8_lossy(&mutant.stderr)
+        );
+        assert!(!mutant.status.success(), "wrong computation passed: {law}");
+        assert!(diagnostic.contains(law), "{diagnostic}");
     }
 }
 

@@ -1,7 +1,7 @@
 import Base
 import ../Spec.bend as S
 import ../Runtime.bend as R
-import ./validation/Graph.bend as G
+import ./validation/ParentTableGraph.bend as G
 
 # Only validation changes computation; parser and mutations keep frozen meaning.
 def dispatch(kind: Nat, x: Nat, y: Nat, g: S.Graph) -> IO(Unit):
