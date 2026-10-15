@@ -2,12 +2,12 @@
 use crate::{Entry, Policy, Result, Store, candidate_validation, index, require};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 /// The recognized home marker. Initialization writes it verbatim and never edits it.
@@ -238,6 +238,83 @@ fn new_file(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn git_with_input(path: &Path, args: &[&str], input: Vec<u8>) -> Result<String> {
+    let mut child = git_command(path)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child.stdin.take().ok_or("Git stdin unavailable")?;
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let output = child.wait_with_output()?;
+    writer.join().map_err(|_| "Git stdin writer panicked")??;
+    git_output(output)
+}
+
+fn stage_initialized_home(path: &Path, seed: Option<&Store>) -> Result<()> {
+    let mut files = vec![(PathBuf::from(".gitignore"), 0o100644, IGNORE.as_bytes())];
+    if let Some(seed) = seed {
+        for (rel, entry) in &seed.inventory {
+            if !(rel.starts_with("nodes") || rel.starts_with("trees")) {
+                continue;
+            }
+            match entry {
+                Entry::File(bytes) => files.push((rel.clone(), 0o100644, bytes.as_slice())),
+                Entry::Link(target) => {
+                    files.push((rel.clone(), 0o120000, target.as_os_str().as_encoded_bytes()))
+                }
+                Entry::Dir => {}
+            }
+        }
+    } else {
+        files.push((PathBuf::from("trees/.keep"), 0o100644, b""));
+    }
+
+    if files.iter().any(|(rel, _, _)| {
+        rel.as_os_str().as_encoded_bytes().contains(&b'\n')
+            || (rel != Path::new(".gitignore")
+                && rel
+                    .file_name()
+                    .is_some_and(|name| name == ".gitignore" || name == ".gitattributes"))
+    }) {
+        return git(path, &["add", "--", ".gitignore", "nodes", "trees"]).map(|_| ());
+    }
+    // Git's blob protocol batches object creation without following symlinks or
+    // interpreting pathnames. No commit or ref is created by this stream.
+    let mut blobs = Vec::new();
+    for (index, (_, _, bytes)) in files.iter().enumerate() {
+        let mark = index + 1;
+        blobs.extend_from_slice(format!("blob\nmark :{mark}\ndata {}\n", bytes.len()).as_bytes());
+        blobs.extend_from_slice(bytes);
+        blobs.extend_from_slice(format!("\nget-mark :{mark}\n").as_bytes());
+    }
+    blobs.extend_from_slice(b"done\n");
+    let oids = git_with_input(path, &["fast-import", "--quiet"], blobs)?;
+    let oids: Vec<_> = oids.lines().collect();
+    require(
+        oids.len() == files.len(),
+        "Git returned an incomplete initial object list",
+    )?;
+    let index = files
+        .iter()
+        .zip(oids)
+        .map(|((rel, mode, _), oid)| {
+            require(
+                !oid.is_empty() && oid.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                "Git returned an invalid initial object ID",
+            )?;
+            let mut entry = format!("{mode:o} {oid}\t").into_bytes();
+            entry.extend_from_slice(rel.as_os_str().as_encoded_bytes());
+            entry.push(0);
+            Ok(entry)
+        })
+        .collect::<Result<Vec<_>>>()?
+        .concat();
+    git_with_input(path, &["update-index", "-z", "--index-info"], index)?;
+    Ok(())
+}
+
 fn id() -> Result<String> {
     let mut b = [0u8; 16];
     fs::File::open("/dev/urandom")?.read_exact(&mut b)?;
@@ -368,7 +445,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     if pointer {
         exclude_pointer(path)?;
     }
-    git(path, &["add", "--", ".gitignore", "nodes", "trees"])?;
+    stage_initialized_home(path, seed.as_ref())?;
     let mut commit = git_command(path);
     commit
         .env("GIT_AUTHOR_NAME", &author_name)
@@ -386,6 +463,231 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     Ok(
         json!({"home": fs::canonicalize(path)?, "created": true, "starter_nodes": seed.as_ref().map_or(0, |s| s.nodes.len()), "pointer": pointer.then_some(POINTER), "commit": git(path, &["rev-parse", "HEAD"])?}),
     )
+}
+
+#[cfg(test)]
+#[test]
+fn initial_index_matches_git_add_for_files_and_links() {
+    fn fixture(path: &Path) -> Store {
+        let root = "00000000-0000-4000-8000-000000000001";
+        let child = "00000000-0000-4000-8000-000000000002";
+        fs::create_dir_all(path.join(format!("nodes/{root}/children"))).unwrap();
+        fs::create_dir_all(path.join(format!("nodes/{child}"))).unwrap();
+        fs::create_dir_all(path.join("trees")).unwrap();
+        fs::write(path.join(".gitignore"), IGNORE).unwrap();
+        fs::write(
+            path.join(format!("nodes/{root}/.gitattributes")),
+            b"*.md text eol=lf\n",
+        )
+        .unwrap();
+        fs::write(path.join(format!("nodes/{root}/node.md")), b"root\r\n").unwrap();
+        fs::write(
+            path.join(format!("nodes/{root}/children.order")),
+            format!("{child}\n"),
+        )
+        .unwrap();
+        fs::write(path.join(format!("nodes/{child}/node.md")), b"child\n").unwrap();
+        symlink(
+            format!("../../{child}"),
+            path.join(format!("nodes/{root}/children/{child}")),
+        )
+        .unwrap();
+        symlink(
+            format!("../nodes/{root}"),
+            path.join(format!("trees/{root}")),
+        )
+        .unwrap();
+        let mut inventory = BTreeMap::new();
+        for rel in [
+            format!("nodes/{root}/.gitattributes"),
+            format!("nodes/{root}/node.md"),
+            format!("nodes/{root}/children.order"),
+            format!("nodes/{child}/node.md"),
+        ] {
+            inventory.insert(
+                PathBuf::from(rel.clone()),
+                Entry::File(fs::read(path.join(rel)).unwrap()),
+            );
+        }
+        for rel in [
+            format!("nodes/{root}/children/{child}"),
+            format!("trees/{root}"),
+        ] {
+            inventory.insert(
+                PathBuf::from(rel.clone()),
+                Entry::Link(fs::read_link(path.join(rel)).unwrap()),
+            );
+        }
+        Store {
+            path: path.to_owned(),
+            nodes: BTreeMap::new(),
+            children: BTreeMap::new(),
+            roots: Vec::new(),
+            inventory,
+        }
+    }
+
+    fn init_repo(path: &Path) {
+        fs::create_dir(path).unwrap();
+        git(path, &["init", "--initial-branch=main"]).unwrap();
+        git(path, &["config", "--local", "user.name", "Test User"]).unwrap();
+        git(
+            path,
+            &["config", "--local", "user.email", "test@example.invalid"],
+        )
+        .unwrap();
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let fast = temp.path().join("fast");
+    let baseline = temp.path().join("baseline");
+    init_repo(&fast);
+    init_repo(&baseline);
+    let seed = fixture(&fast);
+    let _baseline_seed = fixture(&baseline);
+    stage_initialized_home(&fast, Some(&seed)).unwrap();
+    git(&baseline, &["add", "--", ".gitignore", "nodes", "trees"]).unwrap();
+    assert_eq!(
+        git(&fast, &["ls-files", "--stage"]).unwrap(),
+        git(&baseline, &["ls-files", "--stage"]).unwrap()
+    );
+    for repo in [&fast, &baseline] {
+        git(repo, &["commit", "-qm", "knowledge: initialize local home"]).unwrap();
+        git(repo, &["checkout", "--detach", "--quiet"]).unwrap();
+        assert!(git(repo, &["symbolic-ref", "-q", "HEAD"]).is_err());
+        assert!(git(repo, &["status", "--porcelain"]).unwrap().is_empty());
+    }
+    assert_eq!(
+        git(&fast, &["ls-tree", "-r", "HEAD"]).unwrap(),
+        git(&baseline, &["ls-tree", "-r", "HEAD"]).unwrap()
+    );
+
+    // The fallback must preserve Git's ignore and pathname semantics.
+    let root = "00000000-0000-4000-8000-000000000001";
+    let nested_ignore = PathBuf::from(format!("nodes/{root}/.gitignore"));
+    let ignored = PathBuf::from(format!("nodes/{root}/ignored.md"));
+    let newline = PathBuf::from(format!("nodes/{root}/line\nbreak.md"));
+    let mut seed = seed;
+    for repo in [&fast, &baseline] {
+        fs::write(repo.join(&nested_ignore), "ignored.md\n").unwrap();
+        fs::write(repo.join(&ignored), "must remain ignored\n").unwrap();
+        fs::write(repo.join(&newline), "newline path\n").unwrap();
+    }
+    seed.inventory
+        .insert(nested_ignore.clone(), Entry::File(b"ignored.md\n".to_vec()));
+    seed.inventory.insert(
+        ignored.clone(),
+        Entry::File(b"must remain ignored\n".to_vec()),
+    );
+    seed.inventory
+        .insert(newline.clone(), Entry::File(b"newline path\n".to_vec()));
+    stage_initialized_home(&fast, Some(&seed)).unwrap();
+    git(&baseline, &["add", "--", ".gitignore", "nodes", "trees"]).unwrap();
+    assert_eq!(
+        git(&fast, &["ls-files", "--stage"]).unwrap(),
+        git(&baseline, &["ls-files", "--stage"]).unwrap()
+    );
+    for repo in [&fast, &baseline] {
+        assert!(
+            git(
+                repo,
+                &[
+                    "ls-files",
+                    "--error-unmatch",
+                    "--",
+                    ignored.to_str().unwrap()
+                ]
+            )
+            .is_err()
+        );
+        git(repo, &["commit", "-qm", "knowledge: stage fallback paths"]).unwrap();
+        assert!(git(repo, &["status", "--porcelain"]).unwrap().is_empty());
+    }
+    assert_eq!(
+        git(&fast, &["ls-tree", "-r", "HEAD"]).unwrap(),
+        git(&baseline, &["ls-tree", "-r", "HEAD"]).unwrap()
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn initial_index_fast_path_preserves_raw_paths_and_symlinks() {
+    use std::os::unix::ffi::OsStrExt;
+
+    fn git_bytes(path: &Path, args: &[&str]) -> Vec<u8> {
+        let output = git_command(path).args(args).output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        output.stdout
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let fast = temp.path().join("fast");
+    let baseline = temp.path().join("baseline");
+    for repo in [&fast, &baseline] {
+        fs::create_dir(repo).unwrap();
+        git(repo, &["init", "--initial-branch=main"]).unwrap();
+        git(repo, &["config", "--local", "user.name", "Test User"]).unwrap();
+        git(
+            repo,
+            &["config", "--local", "user.email", "test@example.invalid"],
+        )
+        .unwrap();
+        fs::create_dir_all(repo.join("nodes/00000000-0000-4000-8000-000000000001")).unwrap();
+        fs::create_dir_all(repo.join("trees")).unwrap();
+        fs::write(repo.join(".gitignore"), IGNORE).unwrap();
+        fs::write(
+            repo.join("nodes/00000000-0000-4000-8000-000000000001/node.md"),
+            b"root\n",
+        )
+        .unwrap();
+        symlink(
+            "../nodes/00000000-0000-4000-8000-000000000001",
+            repo.join("trees/00000000-0000-4000-8000-000000000001"),
+        )
+        .unwrap();
+    }
+    let mut raw_path = b"nodes/00000000-0000-4000-8000-000000000001/raw-".to_vec();
+    raw_path.push(b'\t');
+    raw_path.extend_from_slice(b".md");
+    let raw = PathBuf::from(std::ffi::OsStr::from_bytes(&raw_path));
+    for repo in [&fast, &baseline] {
+        fs::write(repo.join(&raw), b"raw pathname\n").unwrap();
+    }
+    let mut inventory = BTreeMap::new();
+    inventory.insert(
+        PathBuf::from("nodes/00000000-0000-4000-8000-000000000001/node.md"),
+        Entry::File(b"root\n".to_vec()),
+    );
+    inventory.insert(raw, Entry::File(b"raw pathname\n".to_vec()));
+    inventory.insert(
+        PathBuf::from("trees/00000000-0000-4000-8000-000000000001"),
+        Entry::Link(PathBuf::from(
+            "../nodes/00000000-0000-4000-8000-000000000001",
+        )),
+    );
+    let seed = Store {
+        path: fast.clone(),
+        nodes: BTreeMap::new(),
+        children: BTreeMap::new(),
+        roots: Vec::new(),
+        inventory,
+    };
+    stage_initialized_home(&fast, Some(&seed)).unwrap();
+    git(&baseline, &["add", "--", ".gitignore", "nodes", "trees"]).unwrap();
+    assert_eq!(
+        git_bytes(&fast, &["ls-files", "--stage"]),
+        git_bytes(&baseline, &["ls-files", "--stage"])
+    );
+    for repo in [&fast, &baseline] {
+        git(repo, &["commit", "-qm", "knowledge: initialize local home"]).unwrap();
+        git(repo, &["checkout", "--detach", "--quiet"]).unwrap();
+        assert!(git(repo, &["symbolic-ref", "-q", "HEAD"]).is_err());
+        assert!(git_bytes(repo, &["status", "--porcelain"]).is_empty());
+    }
+    assert_eq!(
+        git_bytes(&fast, &["ls-tree", "-r", "HEAD"]),
+        git_bytes(&baseline, &["ls-tree", "-r", "HEAD"])
+    );
 }
 
 #[cfg(test)]
