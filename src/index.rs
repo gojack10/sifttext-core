@@ -946,7 +946,14 @@ pub(crate) fn inspect_outlines(
     path: &Path,
     base: Option<&Path>,
 ) -> Result<crate::outlines::Inspection> {
-    inspect_outlines_with(path, base, true, |s| records(policy, s), |s| s.unchanged())
+    inspect_outlines_with(
+        path,
+        base,
+        true,
+        |p| Snapshot::read(p, base),
+        |s| records(policy, s),
+        |s| s.unchanged(),
+    )
 }
 
 pub(crate) fn inspect_validated_outlines(
@@ -955,29 +962,28 @@ pub(crate) fn inspect_validated_outlines(
     validated: &crate::candidate_validation::ValidatedCapture,
     include_files: bool,
 ) -> Result<crate::outlines::Inspection> {
-    let check = |fresh: &Snapshot| -> Result<()> {
-        let original = validated.checked(policy)?;
-        require(
-            original.same_complete_source(fresh),
-            "outline validation capture mismatch",
-        )
-    };
     inspect_outlines_with(
         path,
         None,
         include_files,
-        |s| {
-            check(s)?;
-            project_records(s, &[], &mut Reuse::default())
+        |p| {
+            let captured = validated.checked(policy)?;
+            require(
+                captured.store.path == p,
+                "outline validation capture mismatch",
+            )?;
+            Ok(captured)
         },
-        check,
+        |s| project_records(s, &[], &mut Reuse::default()),
+        |_| validated.checked(policy).map(|_| ()),
     )
 }
 
-fn inspect_outlines_with(
+fn inspect_outlines_with<C: std::borrow::Borrow<Snapshot>>(
     path: &Path,
     base: Option<&Path>,
     include_files: bool,
+    capture: impl Fn(&Path) -> Result<C>,
     records: impl Fn(&Snapshot) -> Result<Vec<Value>>,
     validation_barrier: impl Fn(&Snapshot) -> Result<()>,
 ) -> Result<crate::outlines::Inspection> {
@@ -990,7 +996,7 @@ fn inspect_outlines_with(
     let db = cache_dir.join("index.sqlite");
     if !db.try_exists()? {
         // No cached view to inspect, but malformed authored input is still an error.
-        let valid = Snapshot::read(&store_path, base).and_then(|s| records(&s));
+        let valid = capture(&store_path).and_then(|s| records(s.borrow()));
         return Ok(Inspection::unavailable(if valid.is_ok() {
             "pending"
         } else {
@@ -1010,11 +1016,14 @@ fn inspect_outlines_with(
     )?;
     connection.busy_timeout(Duration::from_secs(5))?;
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let captured = match Snapshot::read(&store_path, base) {
+    // Ordinary inspection owns a new capture; publication borrows its opaque
+    // invocation-local validation after a full opening check under this lock.
+    let captured = match capture(&store_path) {
         Ok(s) => s,
         Err(_) => return Ok(Inspection::unavailable("error")),
     };
-    let rows = match records(&captured) {
+    let captured = captured.borrow();
+    let rows = match records(captured) {
         Ok(r) => r,
         Err(_) => return Ok(Inspection::unavailable("error")),
     };
@@ -1078,7 +1087,7 @@ fn inspect_outlines_with(
             crate::outlines::inspect_files(&captured.store, &rows, &manifest, include_files)?;
         // Public inspection rechecks this capture; validated inspection instead
         // rechecks its physically identical original (including every asset).
-        validation_barrier(&captured)?;
+        validation_barrier(captured)?;
         for (p, expected) in [(&cache_dir, dir_id), (&db, db_id)] {
             let got = identity(p)?;
             require(

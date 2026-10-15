@@ -380,6 +380,39 @@ pub(super) fn counted_policy(project: &Path) -> Policy {
 }
 
 #[test]
+fn validated_inspection_without_cache_keeps_capability_boundaries() {
+    let temp = tempfile::tempdir().unwrap();
+    let policy = counted_policy(&temp.path().join("policy"));
+    let d = fixture();
+    fs::write(d.path().join("asset"), "original").unwrap();
+    let capture = validated(&policy, d.path());
+    assert!(!d.path().join(".sifttext/index.sqlite").exists());
+    let other = fixture();
+    let foreign = counted_policy(&temp.path().join("foreign"));
+    for include_files in [false, true] {
+        let inspect = |policy: &Policy, path: &Path| {
+            index::inspect_validated_outlines(policy, path, &capture, include_files)
+                .unwrap()
+                .status
+        };
+        assert_eq!(inspect(&policy, d.path()), "pending");
+        assert_eq!(inspect(&policy, other.path()), "error");
+        assert_eq!(inspect(&foreign, d.path()), "error");
+        assert!(!d.path().join(".sifttext").exists());
+    }
+    fs::write(d.path().join("asset"), "changed").unwrap();
+    for include_files in [false, true] {
+        assert_eq!(
+            index::inspect_validated_outlines(&policy, d.path(), &capture, include_files)
+                .unwrap()
+                .status,
+            "error"
+        );
+    }
+    assert!(!d.path().join(".sifttext").exists());
+}
+
+#[test]
 fn validated_inspection_matches_public_bytes_without_repeating_full_law() {
     let temp = tempfile::tempdir().unwrap();
     let policy = counted_policy(&temp.path().join("policy"));
@@ -507,19 +540,28 @@ fn validated_inspection_keeps_complete_asset_and_before_barriers() {
         );
         assert_eq!(report.status, "current", "{report:?}");
         let capture = capture.unwrap();
+        crate::coherent_capture::take_work();
         assert_eq!(
             outlines::verify_validated(&policy, d.path(), &capture)
                 .unwrap()
                 .status,
             "current"
         );
-        // Fresh capture takes two inventories, opening validation takes candidate
-        // then before. Mutate an asset after the last opening inventory was read:
+        assert_eq!(crate::coherent_capture::take_work().inventories, 4);
+        assert_ne!(
+            outlines::verify_validated(&policy, before.path(), &capture)
+                .unwrap()
+                .status,
+            "current",
+            "a validated capture cannot authorize another path"
+        );
+        // Opening validation takes candidate then before; there is no fresh
+        // duplicate capture. Mutate after the last opening inventory was read:
         // only the retained final full-inventory barrier can see this change.
         let asset = root.join("asset");
         let fired = std::rc::Rc::new(std::cell::Cell::new(false));
         let observed = fired.clone();
-        after_inventory(4, move || {
+        after_inventory(2, move || {
             fs::write(asset, "changed").unwrap();
             observed.set(true);
         });
