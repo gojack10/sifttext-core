@@ -97,7 +97,7 @@ fn validation_and_unchanged_mutations_use_full_runtime_wire() {
 }
 
 #[test]
-fn wrong_rooted_computation_is_rejected_by_equivalence_proof() {
+fn wrong_rooted_and_parent_computations_are_rejected_by_equivalence_proof() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out = Command::new("sh")
         .arg(root.join("scripts/bend-path.sh"))
@@ -133,13 +133,28 @@ fn wrong_rooted_computation_is_rejected_by_equivalence_proof() {
     let path = validation.join("Rooted.bend");
     let source = fs::read_to_string(&path).unwrap();
     assert_eq!(source.matches("S.member(roots, x)").count(), 2);
-    fs::write(path, source.replacen("S.member(roots, x)", "False{}", 1)).unwrap();
-    let mutant = check();
-    let diagnostic = format!(
-        "{}{}",
-        String::from_utf8_lossy(&mutant.stdout),
-        String::from_utf8_lossy(&mutant.stderr)
-    );
-    assert!(!mutant.status.success(), "wrong-rooted computation passed");
-    assert!(diagnostic.contains("rooted_equivalent"), "{diagnostic}");
+    for (old, new, law) in [
+        ("S.member(roots, x)", "False{}", "rooted_equivalent"),
+        (
+            "case Nil{}:\n      0n",
+            "case Nil{}:\n      1n",
+            "parent_equivalent",
+        ),
+        (
+            "case True{}:\n      i",
+            "case True{}:\n      +rest = fallback(Unit{})\n      Bool.pick(Nat, Nat.is_eq(rest, 0n), i, rest)",
+            "delayed_parent_equivalent",
+        ),
+    ] {
+        assert!(source.contains(old), "missing mutation anchor: {old}");
+        fs::write(&path, source.replacen(old, new, 1)).unwrap();
+        let mutant = check();
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&mutant.stdout),
+            String::from_utf8_lossy(&mutant.stderr)
+        );
+        assert!(!mutant.status.success(), "wrong computation passed: {law}");
+        assert!(diagnostic.contains(law), "{diagnostic}");
+    }
 }
