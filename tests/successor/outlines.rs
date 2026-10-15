@@ -471,6 +471,77 @@ fn assert_verification_matches(
 }
 
 #[test]
+fn validated_inspection_keeps_complete_asset_and_before_barriers() {
+    fn after_inventory(n: usize, f: impl FnOnce() + 'static) {
+        crate::coherent_capture::on_inventory(move || {
+            if n == 1 {
+                f();
+            } else {
+                after_inventory(n - 1, f);
+            }
+        });
+    }
+    let policy = policy();
+    let d = fixture();
+    let before = fixture();
+    for root in [d.path(), before.path()] {
+        fs::write(root.join("asset"), "original").unwrap();
+    }
+    assert_eq!(
+        index::refresh(&policy, d.path(), None, Mode::Full, None)
+            .unwrap()
+            .status,
+        "current"
+    );
+    for root in [d.path(), before.path()] {
+        let (report, capture) = crate::candidate_validation::validate_with_capture(
+            &policy,
+            &crate::candidate_validation::Request {
+                store: d.path().into(),
+                before: Some(before.path().into()),
+                explicit: Default::default(),
+                expected_version: None,
+                pause_before_accept: None,
+            },
+            None,
+        );
+        assert_eq!(report.status, "current", "{report:?}");
+        let capture = capture.unwrap();
+        assert_eq!(
+            outlines::verify_validated(&policy, d.path(), &capture)
+                .unwrap()
+                .status,
+            "current"
+        );
+        // Fresh capture takes two inventories, opening validation takes candidate
+        // then before. Mutate an asset after the last opening inventory was read:
+        // only the retained final full-inventory barrier can see this change.
+        let asset = root.join("asset");
+        let fired = std::rc::Rc::new(std::cell::Cell::new(false));
+        let observed = fired.clone();
+        after_inventory(4, move || {
+            fs::write(asset, "changed").unwrap();
+            observed.set(true);
+        });
+        assert_eq!(
+            outlines::verify_validated(&policy, d.path(), &capture)
+                .unwrap()
+                .status,
+            "stale"
+        );
+        assert!(fired.get(), "mid-inspection mutation must execute");
+        assert_ne!(
+            outlines::verify_validated(&policy, d.path(), &capture)
+                .unwrap()
+                .status,
+            "current"
+        );
+        assert_verification_matches(&policy, d.path(), &capture);
+        fs::write(root.join("asset"), "original").unwrap();
+    }
+}
+
+#[test]
 fn validated_inspection_keeps_independent_sql_manifest_artifact_and_cost_checks() {
     let policy = policy();
     let d = fixture();

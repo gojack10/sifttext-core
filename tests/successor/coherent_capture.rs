@@ -259,6 +259,28 @@ fn freshness_identity_and_distinct_asset_protections() {
 }
 
 #[test]
+fn complete_capture_equivalence_requires_identity_assets_path_and_no_base() {
+    let d = fixture(3, false);
+    let asset = d.path().join("asset");
+    fs::write(&asset, "old").unwrap();
+    let first = Capture::read(d.path(), None).unwrap();
+    assert!(first.same_complete_source(&Capture::read(d.path(), None).unwrap()));
+    let other = fixture(3, false);
+    assert!(!first.same_complete_source(&Capture::read(other.path(), None).unwrap()));
+    fs::write(&asset, "new").unwrap();
+    assert!(!first.same_complete_source(&Capture::read(d.path(), None).unwrap()));
+    fs::write(&asset, "old").unwrap();
+    let node = d.path().join("nodes").join(id(2)).join("node.md");
+    let replacement = d.path().join("replacement");
+    fs::write(&replacement, fs::read(&node).unwrap()).unwrap();
+    fs::rename(replacement, node).unwrap();
+    assert!(!first.same_complete_source(&Capture::read(d.path(), None).unwrap()));
+    let base = fixture(3, false);
+    let sparse = Capture::read(d.path(), Some(base.path())).unwrap();
+    assert!(!sparse.same_complete_source(&sparse));
+}
+
+#[test]
 fn sparse_inheritance_is_complete_and_base_identity_is_checked() {
     let base = fixture(3, false);
     let overlay = tempfile::tempdir().unwrap();

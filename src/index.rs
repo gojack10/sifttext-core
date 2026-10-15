@@ -946,7 +946,7 @@ pub(crate) fn inspect_outlines(
     path: &Path,
     base: Option<&Path>,
 ) -> Result<crate::outlines::Inspection> {
-    inspect_outlines_with(path, base, true, |s| records(policy, s), |_| Ok(()))
+    inspect_outlines_with(path, base, true, |s| records(policy, s), |s| s.unchanged())
 }
 
 pub(crate) fn inspect_validated_outlines(
@@ -958,11 +958,7 @@ pub(crate) fn inspect_validated_outlines(
     let check = |fresh: &Snapshot| -> Result<()> {
         let original = validated.checked(policy)?;
         require(
-            original.base.is_none()
-                && fresh.base.is_none()
-                && original.store.path == fresh.store.path
-                && original.store.inventory == fresh.store.inventory
-                && original.metadata == fresh.metadata,
+            original.same_complete_source(fresh),
             "outline validation capture mismatch",
         )
     };
@@ -1080,7 +1076,8 @@ fn inspect_outlines_with(
         require(links == expected_links, "forged indexed links")?;
         let files =
             crate::outlines::inspect_files(&captured.store, &rows, &manifest, include_files)?;
-        captured.unchanged()?;
+        // Public inspection rechecks this capture; validated inspection instead
+        // rechecks its physically identical original (including every asset).
         validation_barrier(&captured)?;
         for (p, expected) in [(&cache_dir, dir_id), (&db, db_id)] {
             let got = identity(p)?;

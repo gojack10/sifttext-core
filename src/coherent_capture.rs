@@ -861,6 +861,20 @@ impl Capture {
         self.base_residues.unchanged()?;
         Ok(now)
     }
+    /// Equal immutable inputs and physical identities let a full freshness check
+    /// on either capture protect both. Never use logical/version equality alone.
+    pub(crate) fn same_complete_source(&self, other: &Self) -> bool {
+        self.base.is_none()
+            && other.base.is_none()
+            && self.store.path == other.store.path
+            && self.store.inventory == other.store.inventory
+            && self.metadata == other.metadata
+            && self.physical == other.physical
+            && self.residues.owners == other.residues.owners
+            && self.residues.physical == other.residues.physical
+            && self.residues.history == other.residues.history
+    }
+
     pub fn unchanged(&self) -> Result<()> {
         require(
             logical_inventory(&self.current()?) == logical(&self.store),
