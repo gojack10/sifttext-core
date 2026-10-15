@@ -97,12 +97,12 @@ impl RequestGroup {
         if !self.cancelled {
             // Mark before cleanup: unwinding must not retry a denied group signal.
             self.cancelled = true;
-            if let Err(error) = kill(self.child.id()) {
-                if error.raw_os_error() != Some(libc::ESRCH) {
-                    self.cancel_errno = error.raw_os_error();
-                    if let Err(error) = self.child.kill() {
-                        self.child_kill_errno = error.raw_os_error();
-                    }
+            if let Err(error) = kill(self.child.id())
+                && error.raw_os_error() != Some(libc::ESRCH)
+            {
+                self.cancel_errno = error.raw_os_error();
+                if let Err(error) = self.child.kill() {
+                    self.child_kill_errno = error.raw_os_error();
                 }
             }
         }
