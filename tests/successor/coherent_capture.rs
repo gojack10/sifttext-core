@@ -1,0 +1,323 @@
+use crate::{
+    Entry, Store,
+    coherent_capture::{self, Capture, Relationships},
+};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
+fn id(n: usize) -> String {
+    format!("61000000-0000-4000-8000-{n:012}")
+}
+fn fixture(count: usize, deep: bool) -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    fs::create_dir(d.path().join("trees")).unwrap();
+    for n in 1..=count {
+        let p = d.path().join("nodes").join(id(n));
+        fs::create_dir_all(p.join("children")).unwrap();
+        fs::write(p.join("children/.keep"), "").unwrap();
+        fs::write(p.join("node.md"),format!("---\nid: {:?}\nname: {:?}\nmicro_summary: \"Source summary Ω\"\nstatus: \"in_progress\"\nsee_also: []\ncustom: [1,\"opaque\"]\n---\nBody\r\n",id(n),format!("Node {n}"))).unwrap();
+        let cs = if deep {
+            if n < count { vec![n + 1] } else { vec![] }
+        } else if n == 1 {
+            (2..=count).rev().collect()
+        } else {
+            vec![]
+        };
+        fs::write(
+            p.join("children.order"),
+            cs.iter().map(|n| id(*n) + "\n").collect::<String>(),
+        )
+        .unwrap();
+        for c in cs {
+            std::os::unix::fs::symlink(format!("../../{}", id(c)), p.join("children").join(id(c)))
+                .unwrap();
+        }
+    }
+    std::os::unix::fs::symlink(
+        format!("../nodes/{}", id(1)),
+        d.path().join("trees").join(id(1)),
+    )
+    .unwrap();
+    d
+}
+
+#[test]
+fn single_inventory_parse_and_one_pass_relationship_work() {
+    for deep in [false, true] {
+        let d = fixture(128, deep);
+        coherent_capture::take_work();
+        let s = Store::read(d.path()).unwrap();
+        let work = coherent_capture::take_work();
+        assert_eq!(work.inventories, 1);
+        assert_eq!(work.parses, 128);
+        assert_eq!(work.relationship_entries, s.inventory.len());
+        // Execute the former consumer binding algorithm, counting its real work.
+        let mut legacy_visits = 0;
+        for (id, n) in &s.nodes {
+            let Entry::File(b) = &s.inventory[&PathBuf::from(format!("nodes/{id}/node.md"))] else {
+                panic!()
+            };
+            assert_eq!(
+                crate::parse_markdown(std::str::from_utf8(b).unwrap()).unwrap(),
+                *n
+            );
+            let dir = PathBuf::from(format!("nodes/{id}/children"));
+            let members: Vec<_> = s
+                .inventory
+                .iter()
+                .filter(|(p, e)| {
+                    legacy_visits += 1;
+                    p.parent() == Some(dir.as_path()) && matches!(e, Entry::Link(_))
+                })
+                .collect();
+            assert_eq!(members.len(), s.children[id].len());
+        }
+        let legacy = coherent_capture::take_work();
+        assert_eq!(legacy.parses, 128); // these were extra reparses after Store::read
+        assert_eq!(legacy_visits, 128 * s.inventory.len());
+        let rel = Relationships::new(&s);
+        assert_eq!(rel.parents.len(), 127);
+        assert_eq!(
+            rel.parents[id(128).as_str()],
+            if deep { id(127) } else { id(1) }
+        );
+        println!(
+            "coherent work shape={} nodes=128 inventory_entries={} parses={} binding_visits={} legacy_extra_parses={} legacy_binding_visits={}",
+            if deep { "deep" } else { "wide" },
+            s.inventory.len(),
+            work.parses,
+            work.relationship_entries,
+            legacy.parses,
+            legacy_visits
+        );
+    }
+}
+
+#[test]
+fn real_consumers_reuse_metadata_without_extra_markdown_parses() {
+    let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    let before = fixture(8, false);
+    let after = fixture(8, false);
+    let readable = (1..=8).map(id).collect();
+    for operation in ["index", "candidate", "neighborhood", "status"] {
+        coherent_capture::take_work();
+        match operation {
+            "index" => assert_eq!(
+                crate::index::refresh(
+                    &policy,
+                    before.path(),
+                    None,
+                    crate::index::Mode::Incremental,
+                    None
+                )
+                .unwrap()
+                .status,
+                "current"
+            ),
+            "candidate" => {
+                let request = crate::candidate_validation::Request {
+                    store: before.path().to_owned(),
+                    before: None,
+                    explicit: Default::default(),
+                    expected_version: None,
+                    pause_before_accept: None,
+                };
+                assert_eq!(
+                    crate::candidate_validation::validate(&policy, &request).status,
+                    "current"
+                );
+            }
+            "neighborhood" => {
+                crate::neighborhoods::neighborhood(&policy, before.path(), &id(2), &readable, None)
+                    .unwrap();
+            }
+            "status" => {
+                assert!(
+                    crate::status::normalize(
+                        &policy,
+                        before.path(),
+                        after.path(),
+                        &Default::default(),
+                        None
+                    )
+                    .unwrap()
+                    .normalized_ids
+                    .is_empty()
+                );
+            }
+            _ => unreachable!(),
+        }
+        let work = coherent_capture::take_work();
+        assert_eq!(
+            work.parses,
+            8 * work.inventories,
+            "consumer {operation} reparsed metadata"
+        );
+        println!("consumer={operation} work={work:?}");
+    }
+}
+
+#[test]
+fn exact_inventory_is_the_only_parser_input_and_skew_rejects() {
+    for kind in ["body", "order", "membership", "root", "same_bytes"] {
+        let d = fixture(3, false);
+        let p = d.path().to_owned();
+        coherent_capture::on_inventory(move || {
+            let node = p.join("nodes").join(id(1));
+            match kind {
+                "body" => {
+                    let file = node.join("node.md");
+                    let text = fs::read_to_string(&file).unwrap();
+                    fs::write(file, text + "New body").unwrap();
+                }
+                "order" => {
+                    fs::write(node.join("children.order"), id(2) + "\n" + &id(3) + "\n").unwrap()
+                }
+                "membership" => fs::remove_file(node.join("children").join(id(2))).unwrap(),
+                "root" => fs::remove_file(p.join("trees").join(id(1))).unwrap(),
+                "same_bytes" => {
+                    let file = node.join("node.md");
+                    fs::write(node.join("new"), fs::read(&file).unwrap()).unwrap();
+                    fs::rename(node.join("new"), file).unwrap();
+                }
+                _ => unreachable!(),
+            }
+        });
+        assert!(Capture::read(d.path(), None).is_err(), "skew {kind}");
+    }
+}
+
+#[test]
+fn freshness_identity_and_distinct_asset_protections() {
+    let d = fixture(3, false);
+    fs::write(d.path().join("asset"), "old").unwrap();
+    let captured = Capture::read(d.path(), None).unwrap();
+    fs::write(d.path().join("asset"), "new").unwrap();
+    assert!(captured.unchanged().is_ok()); // index logical boundary
+    assert!(captured.unchanged_all().is_err()); // candidate/status/neighborhood full inventory
+    let file = d.path().join("nodes").join(id(2)).join("node.md");
+    fs::write(file.with_extension("new"), fs::read(&file).unwrap()).unwrap();
+    fs::rename(file.with_extension("new"), file).unwrap();
+    assert!(captured.unchanged().is_err());
+}
+
+#[test]
+fn sparse_inheritance_is_complete_and_base_identity_is_checked() {
+    let base = fixture(3, false);
+    let overlay = tempfile::tempdir().unwrap();
+    fs::create_dir(overlay.path().join("nodes")).unwrap();
+    fs::create_dir(overlay.path().join("trees")).unwrap();
+    std::os::unix::fs::symlink(
+        format!("../nodes/{}", id(1)),
+        overlay.path().join("trees").join(id(1)),
+    )
+    .unwrap();
+    let captured = Capture::read(overlay.path(), Some(base.path())).unwrap();
+    assert_eq!(captured.store.nodes.len(), 3);
+    assert_eq!(captured.store.children[&id(1)], vec![id(3), id(2)]);
+    assert!(!overlay.path().join("nodes").join(id(2)).exists());
+    let file = base.path().join("nodes").join(id(2)).join("children.order");
+    fs::write(file.with_extension("new"), fs::read(&file).unwrap()).unwrap();
+    fs::rename(file.with_extension("new"), file).unwrap();
+    assert!(captured.unchanged().is_err());
+}
+
+#[test]
+fn captured_invalid_orders_links_and_markers_are_not_accepted() {
+    let d = fixture(3, false);
+    let s = Store::read(d.path()).unwrap();
+    let dirs: BTreeMap<_, _> = s
+        .nodes
+        .keys()
+        .map(|id| (id.clone(), s.path.join("nodes").join(id)))
+        .collect();
+    for (p, e) in [
+        (
+            format!("nodes/{}/children.order", id(1)),
+            Entry::File((id(2) + "\n").into_bytes()),
+        ),
+        (
+            format!("nodes/{}/children/{}", id(1), id(2)),
+            Entry::Link(PathBuf::from("/unsafe")),
+        ),
+        ("trees/.keep".to_owned(), Entry::File(vec![1])),
+        (
+            format!("nodes/{}/node.md", id(2)),
+            Entry::File(b"not markdown".to_vec()),
+        ),
+    ] {
+        let mut files = s.inventory.clone();
+        files.insert(PathBuf::from(p), e);
+        assert!(
+            coherent_capture::from_inventory(s.path.clone(), files, dirs.clone(), false).is_err()
+        );
+    }
+    // Accepted cap removal must survive shared capture; this is parsing, not
+    // 1698-node Bend/resource qualification (owned by the capacity task).
+    let large = fixture(1698, false);
+    coherent_capture::take_work();
+    let captured = Store::read(large.path()).unwrap();
+    assert_eq!(captured.nodes.len(), 1698);
+    let work = coherent_capture::take_work();
+    assert_eq!(work.inventories, 1);
+    assert_eq!(work.parses, 1698);
+    assert_eq!(work.relationship_entries, captured.inventory.len());
+    println!(
+        "1698-node coherent parsing: {work:?}; all identities retained, no Bend qualification"
+    );
+}
+
+#[test]
+fn accepted_unbounded_reference_capture_and_exact_order_diagnostic_share_one_pass() {
+    let d = fixture(300, false);
+    let file = d.path().join("nodes").join(id(1)).join("node.md");
+    let references: Vec<_> = (2..=300)
+        .map(|n| serde_json::json!({"target": id(n), "reason": "Synthetic reference"}))
+        .collect();
+    fs::write(
+        &file,
+        fs::read_to_string(&file).unwrap().replace(
+            "see_also: []",
+            &format!("see_also: {}", serde_json::json!(references)),
+        ),
+    )
+    .unwrap();
+    coherent_capture::take_work();
+    let store = Store::read(d.path()).unwrap();
+    assert_eq!(store.nodes[&id(1)].see_also.len(), 299);
+    let work = coherent_capture::take_work();
+    assert_eq!(work.parses, 300);
+    assert_eq!(work.inventories, 1);
+    assert_eq!(work.relationship_entries, store.inventory.len());
+
+    let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    fs::write(
+        d.path().join("nodes").join(id(1)).join("children.order"),
+        id(2) + "\n" + &id(2) + "\n",
+    )
+    .unwrap();
+    coherent_capture::take_work();
+    let report = crate::candidate_validation::validate(
+        &policy,
+        &crate::candidate_validation::Request {
+            store: d.path().into(),
+            before: None,
+            explicit: Default::default(),
+            expected_version: None,
+            pause_before_accept: None,
+        },
+    );
+    assert_eq!(report.status, "rejected");
+    assert_eq!(report.rows.len(), 1);
+    assert_eq!(report.rows[0].source, Some(id(1)));
+    assert_eq!(report.rows[0].target, Some(id(2)));
+    assert_eq!(
+        report.rows[0].law,
+        Some("src/lib.rs:Store.read_view/order_membership")
+    );
+    let work = coherent_capture::take_work();
+    assert_eq!(work.inventories, 1);
+    assert_eq!(work.parses, 1); // reject at the actual parse/order boundary, no binding reparse
+}

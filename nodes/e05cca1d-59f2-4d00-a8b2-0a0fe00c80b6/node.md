@@ -1,0 +1,18 @@
+---
+id: "e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6"
+name: "Using an External Agent"
+micro_summary: "Establishes explicit local file/command access and read/write boundaries for a separately supplied AI harness."
+status: "in_progress"
+see_also: []
+scope: "What an external agent needs to work with local Core, and how browser-only clients differ."
+warnings: "No remote connector grants access to local knowledge. Model and harness setup are separate from installing Core."
+---
+Input: your chosen external harness, the exact verified Core command path, an authorized knowledge home and a bounded task. The harness must be able to read local files; executable work also needs command execution and permission. If these capabilities or paths are missing, stop affected work and ask for them rather than configuring an unrelated hosted service.
+
+Start the agent in the knowledge home and ask it to read AGENTS.md, the Local Core Agent Entrypoint and all six ordered child instructions using ordinary file tools. In a worktree or clone without the generated pointer, provide the entrypoint path or use the verified command's instructions operation. Reuse unchanged reads already loaded. Those instructions own retrieval, private editing, fixed baselines, checks and publication; do not invent a second workflow here.
+
+State what the agent may read, what it may change and who receives the result. Human judgment owns consequential choices and write permission. A hosted model may receive content supplied by its harness; authorize that sharing separately. Never grant whole-home access merely because a connector exists.
+
+For read-only work, return an answer with actual source evidence and uncertainty. For authorized editing, return the draft, exact check results and commit/publication boundary reached. Stop on missing authority, unsafe paths, failed checks or a human pause; preserve drafts and repair within existing scope. The human may reshape the task; clarify ambiguous overrides without waiving unrelated safeguards.
+
+Client-specific children describe access limitations, not guaranteed compatibility or installed integrations. Core provides no MCP server, model runtime or automatic fresh-agent launch.

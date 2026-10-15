@@ -1,0 +1,111 @@
+{
+  "schema": "sifttext.file-graph.expected/1",
+  "case": "move-b-under-a",
+  "description": "Move non-root subtree B from R to the end of A's children. Only R.children and A.children change; B keeps D; UUIDs, node bodies, references, roots and sentinels are unchanged.",
+  "transition": {
+    "operation": "move",
+    "target_label": "B",
+    "new_parent_label": "A",
+    "placement": "append"
+  },
+  "roots": [
+    "2b86be0c-5f0e-51e5-ac09-8edf4513616d",
+    "e7893345-e99e-50fc-acf3-6f1cc1942529"
+  ],
+  "nodes": [
+    {
+      "id": "2b86be0c-5f0e-51e5-ac09-8edf4513616d",
+      "name": "Fixture Root R",
+      "micro_summary": "Synthetic tree-1 root with children A, B and C in that authored order.",
+      "content": "FIXTURE-PAYLOAD-R-001 Synthetic tree-1 root body. Not live knowledge.",
+      "children": [
+        "07ee8992-74b5-5030-ae33-80e0b22a9d7d",
+        "7c0f3712-144a-58f2-aef1-92ea50f32a9e"
+      ],
+      "see_also": []
+    },
+    {
+      "id": "07ee8992-74b5-5030-ae33-80e0b22a9d7d",
+      "name": "Fixture Node A",
+      "micro_summary": "First child of R, childless before any transition, reasoned reference to D.",
+      "content": "FIXTURE-PAYLOAD-A-002 Synthetic node A body. Not live knowledge.",
+      "children": [
+        "b967298c-5e7e-5c41-af3e-349bf42a8056"
+      ],
+      "see_also": [
+        {
+          "target": "834efb9d-9e1b-545c-a5c5-bc3fae4615ec",
+          "reason": "A references D so that a move of B must leave this target UUID and reason byte-identical."
+        }
+      ]
+    },
+    {
+      "id": "b967298c-5e7e-5c41-af3e-349bf42a8056",
+      "name": "Fixture Node B",
+      "micro_summary": "Second child of R and sole authored parent of D before any transition.",
+      "content": "FIXTURE-PAYLOAD-B-003 Synthetic node B body. Not live knowledge.",
+      "children": [
+        "834efb9d-9e1b-545c-a5c5-bc3fae4615ec"
+      ],
+      "see_also": []
+    },
+    {
+      "id": "7c0f3712-144a-58f2-aef1-92ea50f32a9e",
+      "name": "Fixture Node C",
+      "micro_summary": "Third child of R, childless and unreferenced.",
+      "content": "FIXTURE-PAYLOAD-C-004 Synthetic node C body. Not live knowledge.",
+      "children": [],
+      "see_also": []
+    },
+    {
+      "id": "834efb9d-9e1b-545c-a5c5-bc3fae4615ec",
+      "name": "Fixture Node D",
+      "micro_summary": "Descendant of R through B and target of the reasoned reference authored on A.",
+      "content": "FIXTURE-PAYLOAD-D-005 Synthetic node D body. Not live knowledge.",
+      "children": [],
+      "see_also": []
+    },
+    {
+      "id": "e7893345-e99e-50fc-acf3-6f1cc1942529",
+      "name": "Fixture Root S",
+      "micro_summary": "Synthetic tree-2 root with one child E.",
+      "content": "FIXTURE-PAYLOAD-S-006 Synthetic tree-2 root body. Not live knowledge.",
+      "children": [
+        "7a93368b-3854-575d-b900-76f4ff8ff7b4"
+      ],
+      "see_also": []
+    },
+    {
+      "id": "7a93368b-3854-575d-b900-76f4ff8ff7b4",
+      "name": "Fixture Node E",
+      "micro_summary": "Only child of S, holding the cross-tree reasoned reference to B.",
+      "content": "FIXTURE-PAYLOAD-E-007 Synthetic node E body. Not live knowledge.",
+      "children": [],
+      "see_also": [
+        {
+          "target": "b967298c-5e7e-5c41-af3e-349bf42a8056",
+          "reason": "E references B so that a move of B under A must keep target identity and navigation intact."
+        }
+      ]
+    }
+  ],
+  "sentinels": [
+    {
+      "path": "sentinels/payload_alpha.txt",
+      "content": "FIXTURE-SENTINEL-CODE-001\n# Deterministic stand-in code payload, outside relationship data.\nSENTINEL_ALPHA = \"élan → kept\"\n"
+    },
+    {
+      "path": "evidence/note_beta.txt",
+      "content": "FIXTURE-SENTINEL-EVIDENCE-002\nDeterministic stand-in evidence payload, outside relationship data.\nMultibyte UTF-8 probe: é, →, 中\n"
+    }
+  ],
+  "derived_parents": {
+    "2b86be0c-5f0e-51e5-ac09-8edf4513616d": "none",
+    "07ee8992-74b5-5030-ae33-80e0b22a9d7d": "2b86be0c-5f0e-51e5-ac09-8edf4513616d",
+    "b967298c-5e7e-5c41-af3e-349bf42a8056": "07ee8992-74b5-5030-ae33-80e0b22a9d7d",
+    "7c0f3712-144a-58f2-aef1-92ea50f32a9e": "2b86be0c-5f0e-51e5-ac09-8edf4513616d",
+    "834efb9d-9e1b-545c-a5c5-bc3fae4615ec": "b967298c-5e7e-5c41-af3e-349bf42a8056",
+    "e7893345-e99e-50fc-acf3-6f1cc1942529": "none",
+    "7a93368b-3854-575d-b900-76f4ff8ff7b4": "e7893345-e99e-50fc-acf3-6f1cc1942529"
+  }
+}

@@ -1,0 +1,29 @@
+[package]
+name = "sifttext-file-graph"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+tiktoken-rs = "=0.6.0"
+# Already locked; needed for O_NOFOLLOW/O_NONBLOCK on native file opens.
+libc = "=0.2.190"
+# Already locked transitively; the vendored Leviathan query TOKEN grammar needs it directly.
+regex = "=1.13.1"
+# Exact accepted Leviathan SQLite dependency; no external SQLite service.
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+
+# Full source-stamp hashing stays checked, but need not run unoptimized SHA rounds.
+[profile.dev.package.sha2]
+opt-level = 3
+
+# One-shot native commands initialize the pinned tokenizer on each invocation.
+[profile.dev.package.tiktoken-rs]
+opt-level = 3
+
+# Private compiler-only experiment; dev-layout consumers are unchanged.
+[profile.dev.package.sifttext-file-graph]
+opt-level = 2

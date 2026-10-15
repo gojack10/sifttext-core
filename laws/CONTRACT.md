@@ -1,0 +1,18 @@
+# Frozen bounded contract
+
+This is the six-group human contract, frozen before implementation. Letters explain full UUID identities. Serialization and CLI spelling are provisional engineering choices. No deletion, status, migration, database, daemon, sandbox or concurrent-publication guarantee is added.
+
+Fixture: two trees. Tree 1 root R has children [A,B,C]; B has descendant D. Tree 2 has root S and child E. All actual IDs are stable full UUIDs; display letters are explanatory labels. Include A -> D and E -> B reasoned references, authored node contents/name/micro-summary, and sentinel code/evidence files outside the relationship data. Fixture IDs/bytes deterministic, not live private knowledge.
+
+1. Move non-root subtree B under A (append when this slice's helper has no explicit placement argument): R children become [A,C]; A children [B]; B still has D. UUIDs, B/D canonical paths, all node contents, references and sentinels unchanged. Native mv of the child entry + explicit order-file updates must reconstruct exactly this graph. Support validating completed ordinary private-draft native operations, not merely a bespoke in-memory toy move.
+2. Same-parent reorder B after C in the original fixture: R children [A,C,B]; parentage, references, node content, sentinels and unrelated sibling order unchanged.
+3. Rename target display name while retaining UUID: references retain target identity and derived navigation reflects new display name. This is preservation evidence, not extra status/migration scope.
+4. Reject cyclic move B under D, root moved as non-root, duplicate IDs/parentage, missing or duplicate order members, an order UUID that is not a child, dangling explicit reference target, blank relationship reason, unsafe child entry escaping the permitted node store. Malformed UTF-8/input/process output, nonzero subprocess exit or unavailable checked executable cannot produce an acceptance verdict. Unrelated files are preserved on rejection; malformed private drafts remain inspectable and cannot be marked valid.
+5. Rebuild graph without any SQLite/index; compare exact expected graph and before/after Git diff. Revert fixture operations via ordinary retained Git history and demonstrate restoration. This is bounded native reconstruction/rollback, not full crash recovery or arbitrary concurrent-publication proof.
+6. Positive valid-operation tests are mandatory. Include deliberate violating implementation/case caught by the checked-law gate. A validator that rejects all valid moves, or deletes extra nodes/content, must fail the frozen acceptance contract. Bind successful checks to exact candidate revision/content; if candidate changes, rerun checks before merge.
+
+## Model/native split
+
+The pure model uses injective natural-number names for full UUIDs, node payloads and reference reasons. Rust's complete candidate inventory interns exact bytes (not a lossy hash) before encoding. Zero reason means blank; nonzero means nonblank, established by the native parser. Child order is the ordered list; native child-entry membership must match it exactly before encoding. Roots are explicitly identified by root shortcuts, not inferred from absence of parents. No second authored parent field.
+
+Checked policy must validate the graph, compute move-append and same-parent reorder, and reject invalid operations. Frozen executable specification and laws are in this directory. Proof claims are about this finite, fuel-bounded pure model and its frozen cases; encoding, compiler/runtime, UTF-8, filesystem, subprocess, Git, display rendering and byte preservation require empirical native checks. A check-only verdict is not a Lean-kernel verdict. No unavailable kernel is silently substituted.

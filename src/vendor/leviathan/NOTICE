@@ -1,0 +1,13 @@
+Leviathan
+Copyright 2026 Joshua Baker
+
+This product includes SQLite (public domain), compiled in via the
+rusqlite / libsqlite3-sys crates. See THIRD_PARTY.md for all dependencies
+and their licenses.
+
+SiftText modifies the pinned retrieval region in search.rs to reconcile
+content-backed FTS5 postings incrementally inside a source-checked SQLite
+transaction. Permission predicates and BM25 weights are invocation-local.
+Stable UUID-to-rowid mapping additionally avoids unrelated posting rewrites
+on insertion/deletion, preserving logical browse ordering and upstream query
+ranking behavior. See THIRD_PARTY.md in this directory.

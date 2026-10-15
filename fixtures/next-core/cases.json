@@ -1,0 +1,2377 @@
+{
+  "schema": "sifttext.next-core.cases/1",
+  "task": "Q1 independent expected cases, materialised in the Q2 node.md + trees/ representation (move/reorder/rename slice only)",
+  "provenance": {
+    "authored_by": "Qwen worker lane, hand-prescribed from laws/CONTRACT.md groups 1-4 and the reviewed ordered-placement decision in Flat Relationship Store. No value in this file was produced by running the implementation under test.",
+    "implementation_used_as_oracle": false,
+    "governing_revisions": {
+      "Strengthen Graph Assurance": "2026-10-06T19:17:59.088514+00:00",
+      "Checked Law Boundary": "2026-10-06T09:18:32.696369+00:00",
+      "Flat Relationship Store": "2026-10-06T09:23:44.481396+00:00",
+      "Restore Markdown Storage": "2026-10-06T19:17:55.373785+00:00",
+      "Checked Graph Slice": "2026-10-06T19:18:59.711808+00:00"
+    },
+    "base_revision": "84e56ac12a24aada71501f675f83cbb538776826",
+    "representation_adapted_by": "Q2 Markdown native integration: spelling and materialisation only. Prescriptions were authored by Q1 against the provisional JSON payload layout and re-expressed here for node.md/trees/; no expected graph, request, preservation claim, wrong-result control or draft verdict was changed.",
+    "revision": "Imported Markdown storage 047f25a204026482a3e13040a5eb029434bd9653 on base 84e56ac12a24aada71501f675f83cbb538776826"
+  },
+  "scope": {
+    "operations": [
+      "move",
+      "reorder",
+      "rename"
+    ],
+    "excluded": [
+      "node creation",
+      "deletion",
+      "status change",
+      "new placement arguments",
+      "general Markdown editing beyond the reviewed slice",
+      "publication",
+      "sandbox",
+      "crash recovery"
+    ],
+    "statement": "These cases prescribe the existing reviewed slice only. A PASS here is about this fixture and the interface it exercises; it is not proof of the whole Core, nor of the compiled policy's universal adequacy."
+  },
+  "interface": {
+    "read_from": "src/main.rs and src/lib.rs at the imported Markdown revision 047f25a204026482a3e13040a5eb029434bd9653 (not invented)",
+    "cli": "sifttext-file-graph validate|inspect STORE ; move|reorder|rename STORE NODE ARG ; validate-draft BEFORE AFTER KIND NODE ARG",
+    "notes": [
+      "NODE and ARG are resolved by unique-prefix resolution; an absent or ambiguous prefix is a rejection, not a guess.",
+      "For rename, ARG is the new display name, not a UUID.",
+      "Rejection prints 'rejected: ' on stderr and exits nonzero; the store is not written.",
+      "validate-draft compares the completed ordinary native draft against the checked operation byte-for-byte and graph-for-graph.",
+      "The store is the node.md + trees/ layout: nodes/<UUID>/node.md plus nodes/<UUID>/children/<UUID> symlinks and nodes/<UUID>/children.order, with trees/<root-UUID> -> ../nodes/<root-UUID>.",
+      "A checked rename replaces only the JSON string value of the node.md name metadata with a compact JSON string; reserialising the file is a different candidate and must be rejected, not normalised."
+    ]
+  },
+  "conventions": {
+    "expected_graphs": "Keyed by full UUID. nodes/<uuid> carries exactly name, micro_summary, content, children (the only authored parentage and sibling order) and see_also. No authored parent or order field.",
+    "derived_parents": "Derived view recomputed from children by the checker; prescribed here so a wrong derivation is detected.",
+    "label_tokens": "In paths and prescriptions, {L} resolves to labels[L] and '*' means every node UUID of the graph being examined.",
+    "paths": "Store-relative POSIX paths. A child entry path is the child symlink; children.order is the authored sequence; node.md is the authored payload (front matter plus the verbatim Markdown body). Root shortcuts live under trees/ and are not part of any prescribed changed-path inventory.",
+    "placement": "move appends the node to the end of the destination parent's children (laws/CONTRACT.md group 1); reorder places the node immediately after the named sibling inside the same parent; rename changes only the display name.",
+    "same_parent_move": "Moving a node under its current parent is accepted by the frozen spec and is an append, i.e. a move to the end of that parent's sequence; it is prescribed here as reviewed-spec behaviour, not as a new placement argument.",
+    "payload_bytes": "The data layer keeps the neutral field name content for the authored body. In node.md it is every byte after the closing metadata fence; a rename changes only the JSON string value of the name key and no other byte."
+  },
+  "labels": {
+    "T": "a1000000-0000-4000-8000-000000000001",
+    "P": "a1000002-0000-4000-8000-000000000002",
+    "X": "a1000004-0000-4000-8000-000000000004",
+    "Y": "a1000006-0000-4000-8000-000000000006",
+    "Q": "a1000008-0000-4000-8000-000000000008",
+    "U": "a100000a-0000-4000-8000-00000000000a",
+    "W": "a100000c-0000-4000-8000-00000000000c",
+    "Z": "b2000000-0000-4000-8000-000000000010",
+    "M": "b2000002-0000-4000-8000-000000000012"
+  },
+  "prefixes": {
+    "unique": {
+      "P": "a1000002",
+      "X": "a1000004",
+      "Y": "a1000006",
+      "U": "a100000a",
+      "M": "b2000002"
+    },
+    "ambiguous": "a100000",
+    "absent": "ffffffff"
+  },
+  "baseline": {
+    "description": "Two trees. Tree 1 root T has authored children [P,Q,U,W]; P holds X; X holds Y (depth three). Tree 2 root Z has child M. Five reasoned references, three unrelated ordinary files, two resources inside canonical node directories.",
+    "roots": [
+      "a1000000-0000-4000-8000-000000000001",
+      "b2000000-0000-4000-8000-000000000010"
+    ],
+    "nodes": {
+      "a1000000-0000-4000-8000-000000000001": {
+        "name": "Next Root T",
+        "micro_summary": "Tree-1 root with authored children P, Q, U and W in that order.",
+        "content": "NEXTCORE-PAYLOAD-T-01 Synthetic tree-1 root body. Not live knowledge.",
+        "children": [
+          "a1000002-0000-4000-8000-000000000002",
+          "a1000008-0000-4000-8000-000000000008",
+          "a100000a-0000-4000-8000-00000000000a",
+          "a100000c-0000-4000-8000-00000000000c"
+        ],
+        "see_also": []
+      },
+      "a1000002-0000-4000-8000-000000000002": {
+        "name": "Next Node P",
+        "micro_summary": "First child of T, authored parent of X and referrer of Y.",
+        "content": "NEXTCORE-PAYLOAD-P-02 Synthetic subtree root P carrying X and Y. Not live knowledge.",
+        "children": [
+          "a1000004-0000-4000-8000-000000000004"
+        ],
+        "see_also": [
+          {
+            "target": "a1000006-0000-4000-8000-000000000006",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          }
+        ]
+      },
+      "a1000004-0000-4000-8000-000000000004": {
+        "name": "Next Node X",
+        "micro_summary": "Child of P and authored parent of Y.",
+        "content": "NEXTCORE-PAYLOAD-X-03 Synthetic child of P and authored parent of Y. Not live knowledge.",
+        "children": [
+          "a1000006-0000-4000-8000-000000000006"
+        ],
+        "see_also": []
+      },
+      "a1000006-0000-4000-8000-000000000006": {
+        "name": "Next Node Y",
+        "micro_summary": "Leaf descendant of X and target of the reference authored on P.",
+        "content": "NEXTCORE-PAYLOAD-Y-04 Synthetic deepest node in tree 1. Not live knowledge.",
+        "children": [],
+        "see_also": []
+      },
+      "a1000008-0000-4000-8000-000000000008": {
+        "name": "Next Node Q",
+        "micro_summary": "Second child of T, childless, holding a sibling reference to P.",
+        "content": "NEXTCORE-PAYLOAD-Q-05 Synthetic sibling of P with a reference to P. Not live knowledge.",
+        "children": [],
+        "see_also": [
+          {
+            "target": "a1000002-0000-4000-8000-000000000002",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          }
+        ]
+      },
+      "a100000a-0000-4000-8000-00000000000a": {
+        "name": "Next Node U",
+        "micro_summary": "Third child of T, childless and unreferenced.",
+        "content": "NEXTCORE-PAYLOAD-U-06 Synthetic sibling that must keep its authored position. Not live knowledge.",
+        "children": [],
+        "see_also": []
+      },
+      "a100000c-0000-4000-8000-00000000000c": {
+        "name": "Next Node W",
+        "micro_summary": "Fourth child of T, childless, holding a cross-tree reference to Z.",
+        "content": "NEXTCORE-PAYLOAD-W-07 Synthetic last sibling in tree 1 before any transition. Not live knowledge.",
+        "children": [],
+        "see_also": [
+          {
+            "target": "b2000000-0000-4000-8000-000000000010",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          }
+        ]
+      },
+      "b2000000-0000-4000-8000-000000000010": {
+        "name": "Next Root Z",
+        "micro_summary": "Tree-2 root with the single authored child M.",
+        "content": "NEXTCORE-PAYLOAD-Z-08 Synthetic tree-2 root body. Not live knowledge.",
+        "children": [
+          "b2000002-0000-4000-8000-000000000012"
+        ],
+        "see_also": []
+      },
+      "b2000002-0000-4000-8000-000000000012": {
+        "name": "Next Node M",
+        "micro_summary": "Only child of Z, holding cross-tree references to X and P.",
+        "content": "NEXTCORE-PAYLOAD-M-09 Synthetic only child of Z with cross-tree references. Not live knowledge.",
+        "children": [],
+        "see_also": [
+          {
+            "target": "a1000004-0000-4000-8000-000000000004",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "target": "a1000002-0000-4000-8000-000000000002",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ]
+      }
+    },
+    "derived_parents": {
+      "a1000000-0000-4000-8000-000000000001": "none",
+      "a1000002-0000-4000-8000-000000000002": "a1000000-0000-4000-8000-000000000001",
+      "a1000004-0000-4000-8000-000000000004": "a1000002-0000-4000-8000-000000000002",
+      "a1000006-0000-4000-8000-000000000006": "a1000004-0000-4000-8000-000000000004",
+      "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+      "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+      "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+      "b2000000-0000-4000-8000-000000000010": "none",
+      "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+    },
+    "sentinels": [
+      {
+        "path": "attachments/alpha.txt",
+        "content": "NEXTCORE-SENTINEL-01\nUnrelated ordinary file.\nMultibyte UTF-8 probe: é, →, 中\n"
+      },
+      {
+        "path": "notes/beta.md",
+        "content": "NEXTCORE-SENTINEL-02\nAnother unrelated ordinary file that must stay byte-identical.\n"
+      }
+    ],
+    "node_resources": [
+      {
+        "path": "nodes/{X}/code/deep.bin",
+        "content": "NEXTCORE-RESOURCE-03\nOrdinary resource inside the canonical directory of X.\n"
+      },
+      {
+        "path": "nodes/{Y}/code/deepest.txt",
+        "content": "NEXTCORE-RESOURCE-04\nOrdinary resource inside the canonical directory of the descendant Y.\n"
+      },
+      {
+        "path": "nodes/{U}/code/untouched.txt",
+        "content": "NEXTCORE-RESOURCE-05\nOrdinary resource inside an unrelated sibling directory.\n"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "c1-move-x-under-z",
+      "kind": "valid",
+      "request": {
+        "operation": "move",
+        "node": "{X}",
+        "arg": "{Z}",
+        "arg_kind": "uuid"
+      },
+      "description": "Move the subtree X (carrying descendant Y) from P to the end of Z's children in the other tree.",
+      "expected": {
+        "roots": [
+          "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010"
+        ],
+        "nodes": {
+          "a1000000-0000-4000-8000-000000000001": {
+            "children": [
+              "a1000002-0000-4000-8000-000000000002",
+              "a1000008-0000-4000-8000-000000000008",
+              "a100000a-0000-4000-8000-00000000000a",
+              "a100000c-0000-4000-8000-00000000000c"
+            ]
+          },
+          "a1000002-0000-4000-8000-000000000002": {
+            "children": []
+          },
+          "a1000004-0000-4000-8000-000000000004": {
+            "children": [
+              "a1000006-0000-4000-8000-000000000006"
+            ]
+          },
+          "a1000006-0000-4000-8000-000000000006": {
+            "children": []
+          },
+          "a1000008-0000-4000-8000-000000000008": {
+            "children": []
+          },
+          "a100000a-0000-4000-8000-00000000000a": {
+            "children": []
+          },
+          "a100000c-0000-4000-8000-00000000000c": {
+            "children": []
+          },
+          "b2000000-0000-4000-8000-000000000010": {
+            "children": [
+              "b2000002-0000-4000-8000-000000000012",
+              "a1000004-0000-4000-8000-000000000004"
+            ]
+          },
+          "b2000002-0000-4000-8000-000000000012": {
+            "children": []
+          }
+        },
+        "derived_parents": {
+          "a1000000-0000-4000-8000-000000000001": "none",
+          "a1000002-0000-4000-8000-000000000002": "a1000000-0000-4000-8000-000000000001",
+          "a1000004-0000-4000-8000-000000000004": "b2000000-0000-4000-8000-000000000010",
+          "a1000006-0000-4000-8000-000000000006": "a1000004-0000-4000-8000-000000000004",
+          "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+          "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+          "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010": "none",
+          "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+        }
+      },
+      "changed_paths": [
+        "nodes/{P}/children/{X}",
+        "nodes/{P}/children.order",
+        "nodes/{Z}/children/{X}",
+        "nodes/{Z}/children.order"
+      ],
+      "preserved": {
+        "descendants_carried": [
+          {
+            "node": "{X}",
+            "children": [
+              "{Y}"
+            ]
+          }
+        ],
+        "identity_unchanged": [
+          "*"
+        ],
+        "canonical_dirs_unchanged": [
+          "{X}",
+          "{Y}"
+        ],
+        "content_unchanged": [
+          "*"
+        ],
+        "micro_summary_unchanged": [
+          "*"
+        ],
+        "name_unchanged": [
+          "*"
+        ],
+        "references_unchanged": [
+          {
+            "source": "{P}",
+            "target": "{Y}",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          },
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          },
+          {
+            "source": "{W}",
+            "target": "{Z}",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          },
+          {
+            "source": "{M}",
+            "target": "{X}",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ],
+        "unrelated_sibling_order": [
+          {
+            "parent": "{T}",
+            "order": [
+              "{P}",
+              "{Q}",
+              "{U}",
+              "{W}"
+            ]
+          },
+          {
+            "parent": "{Z}",
+            "order_before_move": [
+              "{M}"
+            ],
+            "order": [
+              "{M}",
+              "{X}"
+            ]
+          },
+          {
+            "parent": "{P}",
+            "order": []
+          },
+          {
+            "parent": "{X}",
+            "order": [
+              "{Y}"
+            ]
+          }
+        ],
+        "roots_unchanged": true,
+        "asset_bytes_unchanged": [
+          "attachments/alpha.txt",
+          "notes/beta.md",
+          "nodes/{X}/code/deep.bin",
+          "nodes/{Y}/code/deepest.txt",
+          "nodes/{U}/code/untouched.txt"
+        ]
+      },
+      "wrong_results": [
+        {
+          "id": "c1-w1-prepend",
+          "why_wrong": "Destination sequence shows X before M: the reviewed rule appends, it does not prepend or insert at a position no argument named.",
+          "patch": {
+            "nodes": {
+              "b2000000-0000-4000-8000-000000000010": {
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004",
+                  "b2000002-0000-4000-8000-000000000012"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c1-w2-left-in-old-parent",
+          "why_wrong": "X is still listed by P, producing two authored parents for one node.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c1-w3-descendant-dropped",
+          "why_wrong": "The moved subtree lost its own descendant Y.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "children": []
+              }
+            }
+          }
+        },
+        {
+          "id": "c1-w4-unrelated-sibling-lost",
+          "why_wrong": "An unrelated sibling U disappeared from T's sequence while the move was applied.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c1-w5-reference-retargeted",
+          "why_wrong": "M's cross-tree reference was silently re-pointed at the new parent Z instead of keeping target X.",
+          "patch": {
+            "nodes": {
+              "b2000002-0000-4000-8000-000000000012": {
+                "see_also": [
+                  {
+                    "target": "b2000000-0000-4000-8000-000000000010",
+                    "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+                  },
+                  {
+                    "target": "a1000002-0000-4000-8000-000000000002",
+                    "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c1-w6-content-churn",
+          "why_wrong": "The moved node's authored body was rewritten during the move.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "content": "NEXTCORE-PAYLOAD-X-03 rewritten by the mover. Not live knowledge."
+              }
+            }
+          }
+        },
+        {
+          "id": "c1-w7-root-set-churn",
+          "why_wrong": "Tree 2 stopped being a discovered root after receiving a child from tree 1.",
+          "patch": {
+            "roots": [
+              "a1000000-0000-4000-8000-000000000001"
+            ]
+          }
+        },
+        {
+          "id": "c1-w8-payload-file-churn",
+          "why_wrong": "Filesystem inventory claims X's authored payload file changed although no field of X changed.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{X}/node.md"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "c2-reorder-w-after-p",
+      "kind": "valid",
+      "request": {
+        "operation": "reorder",
+        "node": "{W}",
+        "arg": "{P}",
+        "arg_kind": "uuid"
+      },
+      "description": "Reorder the last child W of T to sit immediately after P. Sequence only: parentage, the other two siblings' relative order and every payload stay as authored.",
+      "expected": {
+        "roots": [
+          "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010"
+        ],
+        "nodes": {
+          "a1000000-0000-4000-8000-000000000001": {
+            "children": [
+              "a1000002-0000-4000-8000-000000000002",
+              "a100000c-0000-4000-8000-00000000000c",
+              "a1000008-0000-4000-8000-000000000008",
+              "a100000a-0000-4000-8000-00000000000a"
+            ]
+          },
+          "a1000002-0000-4000-8000-000000000002": {
+            "children": [
+              "a1000004-0000-4000-8000-000000000004"
+            ]
+          },
+          "a1000004-0000-4000-8000-000000000004": {
+            "children": [
+              "a1000006-0000-4000-8000-000000000006"
+            ]
+          },
+          "a1000006-0000-4000-8000-000000000006": {
+            "children": []
+          },
+          "a1000008-0000-4000-8000-000000000008": {
+            "children": []
+          },
+          "a100000a-0000-4000-8000-00000000000a": {
+            "children": []
+          },
+          "a100000c-0000-4000-8000-00000000000c": {
+            "children": []
+          },
+          "b2000000-0000-4000-8000-000000000010": {
+            "children": [
+              "b2000002-0000-4000-8000-000000000012"
+            ]
+          },
+          "b2000002-0000-4000-8000-000000000012": {
+            "children": []
+          }
+        },
+        "derived_parents": {
+          "a1000000-0000-4000-8000-000000000001": "none",
+          "a1000002-0000-4000-8000-000000000002": "a1000000-0000-4000-8000-000000000001",
+          "a1000004-0000-4000-8000-000000000004": "a1000002-0000-4000-8000-000000000002",
+          "a1000006-0000-4000-8000-000000000006": "a1000004-0000-4000-8000-000000000004",
+          "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+          "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+          "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010": "none",
+          "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+        }
+      },
+      "changed_paths": [
+        "nodes/{T}/children.order"
+      ],
+      "preserved": {
+        "descendants_carried": [
+          {
+            "node": "{P}",
+            "children": [
+              "{X}"
+            ]
+          }
+        ],
+        "identity_unchanged": [
+          "*"
+        ],
+        "canonical_dirs_unchanged": [
+          "{W}"
+        ],
+        "content_unchanged": [
+          "*"
+        ],
+        "micro_summary_unchanged": [
+          "*"
+        ],
+        "name_unchanged": [
+          "*"
+        ],
+        "references_unchanged": [
+          {
+            "source": "{P}",
+            "target": "{Y}",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          },
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          },
+          {
+            "source": "{W}",
+            "target": "{Z}",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          },
+          {
+            "source": "{M}",
+            "target": "{X}",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ],
+        "unrelated_sibling_order": [
+          {
+            "parent": "{T}",
+            "unrelated": [
+              "{P}",
+              "{Q}",
+              "{U}"
+            ],
+            "order": [
+              "{P}",
+              "{Q}",
+              "{U}"
+            ]
+          },
+          {
+            "parent": "{Z}",
+            "order": [
+              "{M}"
+            ]
+          },
+          {
+            "parent": "{P}",
+            "order": [
+              "{X}"
+            ]
+          },
+          {
+            "parent": "{X}",
+            "order": [
+              "{Y}"
+            ]
+          }
+        ],
+        "roots_unchanged": true,
+        "asset_bytes_unchanged": [
+          "attachments/alpha.txt",
+          "notes/beta.md",
+          "nodes/{U}/code/untouched.txt"
+        ],
+        "child_entries_unchanged": [
+          "nodes/{T}/children/{W}"
+        ]
+      },
+      "wrong_results": [
+        {
+          "id": "c2-w1-after-q",
+          "why_wrong": "W landed after Q instead of immediately after the named sibling P.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000c-0000-4000-8000-00000000000c",
+                  "a100000a-0000-4000-8000-00000000000a"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c2-w2-front",
+          "why_wrong": "Reorder to the front although the request named P as the anchor.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a100000c-0000-4000-8000-00000000000c",
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c2-w3-noop",
+          "why_wrong": "The authored sequence was left untouched, so the requested reorder never happened.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            },
+            "changed_paths": []
+          }
+        },
+        {
+          "id": "c2-w4-parentage-churn",
+          "why_wrong": "A same-parent reorder also reparented W under P.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              },
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c2-w5-symlink-churn",
+          "why_wrong": "Filesystem inventory claims the child entry itself moved, although a same-parent reorder only rewrites the authored sequence.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{T}/children/{W}"
+            ]
+          }
+        },
+        {
+          "id": "c2-w6-unrelated-order-churn",
+          "why_wrong": "The unrelated siblings Q and U swapped relative positions.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a100000c-0000-4000-8000-00000000000c",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a1000008-0000-4000-8000-000000000008"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "c3-rename-p",
+      "kind": "valid",
+      "request": {
+        "operation": "rename",
+        "node": "{P}",
+        "arg": "Renamed Next Node P",
+        "arg_kind": "display_name"
+      },
+      "description": "Rename P's display name while keeping its UUID, its subtree, both inbound references and every body byte-identical. Navigation for the referrers Q and M shows the new display name.",
+      "expected": {
+        "roots": [
+          "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010"
+        ],
+        "nodes": {
+          "a1000000-0000-4000-8000-000000000001": {
+            "children": [
+              "a1000002-0000-4000-8000-000000000002",
+              "a1000008-0000-4000-8000-000000000008",
+              "a100000a-0000-4000-8000-00000000000a",
+              "a100000c-0000-4000-8000-00000000000c"
+            ]
+          },
+          "a1000002-0000-4000-8000-000000000002": {
+            "name": "Renamed Next Node P",
+            "children": [
+              "a1000004-0000-4000-8000-000000000004"
+            ]
+          },
+          "a1000004-0000-4000-8000-000000000004": {
+            "children": [
+              "a1000006-0000-4000-8000-000000000006"
+            ]
+          },
+          "a1000006-0000-4000-8000-000000000006": {
+            "children": []
+          },
+          "a1000008-0000-4000-8000-000000000008": {
+            "children": []
+          },
+          "a100000a-0000-4000-8000-00000000000a": {
+            "children": []
+          },
+          "a100000c-0000-4000-8000-00000000000c": {
+            "children": []
+          },
+          "b2000000-0000-4000-8000-000000000010": {
+            "children": [
+              "b2000002-0000-4000-8000-000000000012"
+            ]
+          },
+          "b2000002-0000-4000-8000-000000000012": {
+            "children": []
+          }
+        },
+        "derived_parents": {
+          "a1000000-0000-4000-8000-000000000001": "none",
+          "a1000002-0000-4000-8000-000000000002": "a1000000-0000-4000-8000-000000000001",
+          "a1000004-0000-4000-8000-000000000004": "a1000002-0000-4000-8000-000000000002",
+          "a1000006-0000-4000-8000-000000000006": "a1000004-0000-4000-8000-000000000004",
+          "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+          "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+          "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010": "none",
+          "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+        },
+        "navigation": [
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "name": "Renamed Next Node P",
+            "micro_summary": "First child of T, authored parent of X and referrer of Y."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "name": "Renamed Next Node P",
+            "micro_summary": "First child of T, authored parent of X and referrer of Y."
+          }
+        ]
+      },
+      "changed_paths": [
+        "nodes/{P}/node.md"
+      ],
+      "preserved": {
+        "descendants_carried": [
+          {
+            "node": "{P}",
+            "children": [
+              "{X}"
+            ]
+          }
+        ],
+        "identity_unchanged": [
+          "*"
+        ],
+        "canonical_dirs_unchanged": [
+          "{X}",
+          "{Y}"
+        ],
+        "content_unchanged": [
+          "*"
+        ],
+        "micro_summary_unchanged": [
+          "*"
+        ],
+        "name_unchanged": [
+          "{T}",
+          "{X}",
+          "{Y}",
+          "{Q}",
+          "{U}",
+          "{W}",
+          "{Z}",
+          "{M}"
+        ],
+        "references_unchanged": [
+          {
+            "source": "{P}",
+            "target": "{Y}",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          },
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          },
+          {
+            "source": "{W}",
+            "target": "{Z}",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          },
+          {
+            "source": "{M}",
+            "target": "{X}",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ],
+        "unrelated_sibling_order": [
+          {
+            "parent": "{T}",
+            "order": [
+              "{P}",
+              "{Q}",
+              "{U}",
+              "{W}"
+            ]
+          },
+          {
+            "parent": "{X}",
+            "order": [
+              "{Y}"
+            ]
+          },
+          {
+            "parent": "{P}",
+            "order": [
+              "{X}"
+            ]
+          },
+          {
+            "parent": "{Z}",
+            "order": [
+              "{M}"
+            ]
+          }
+        ],
+        "roots_unchanged": true,
+        "asset_bytes_unchanged": [
+          "attachments/alpha.txt",
+          "notes/beta.md",
+          "nodes/{X}/code/deep.bin",
+          "nodes/{Y}/code/deepest.txt",
+          "nodes/{U}/code/untouched.txt"
+        ],
+        "child_entries_unchanged": [
+          "nodes/{T}/children/{P}",
+          "nodes/{P}/children/{X}"
+        ]
+      },
+      "wrong_results": [
+        {
+          "id": "c3-w1-summary-churn",
+          "why_wrong": "The rename also rewrote the authored micro-summary.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "micro_summary": "Rewritten while renaming."
+              }
+            }
+          }
+        },
+        {
+          "id": "c3-w2-content-churn",
+          "why_wrong": "The rename also rewrote the authored body.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "content": "NEXTCORE-PAYLOAD-P-02 rewritten while renaming. Not live knowledge."
+              }
+            }
+          }
+        },
+        {
+          "id": "c3-w3-reference-by-name",
+          "why_wrong": "An inbound reference was rewritten to point at the new display name instead of the retained UUID.",
+          "patch": {
+            "nodes": {
+              "a1000008-0000-4000-8000-000000000008": {
+                "see_also": [
+                  {
+                    "target": "Renamed Next Node P",
+                    "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c3-w4-reason-churn",
+          "why_wrong": "The mandatory reason text was paraphrased by the rename.",
+          "patch": {
+            "nodes": {
+              "b2000002-0000-4000-8000-000000000012": {
+                "see_also": [
+                  {
+                    "target": "a1000004-0000-4000-8000-000000000004",
+                    "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+                  },
+                  {
+                    "target": "a1000002-0000-4000-8000-000000000002",
+                    "reason": "Renamed, so the reason was tidied."
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c3-w5-identity-churn",
+          "why_wrong": "The rename was implemented as a new node with a fresh UUID.",
+          "patch": {
+            "nodes": {
+              "a100000e-0000-4000-8000-00000000000e": {
+                "name": "Renamed Next Node P",
+                "micro_summary": "First child of T, authored parent of X and referrer of Y.",
+                "content": "NEXTCORE-PAYLOAD-P-02 Synthetic subtree root P carrying X and Y. Not live knowledge.",
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004"
+                ],
+                "see_also": []
+              }
+            }
+          }
+        },
+        {
+          "id": "c3-w6-sibling-churn",
+          "why_wrong": "The rename disturbed T's authored sequence.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "c4-move-p-under-m",
+      "kind": "valid",
+      "request": {
+        "operation": "move",
+        "node": "{P}",
+        "arg": "{M}",
+        "arg_kind": "uuid"
+      },
+      "description": "Cross-tree move of the whole subtree P (X and Y included) under M in tree 2. T keeps [Q,U,W] in order; roots and every reference are unchanged.",
+      "expected": {
+        "roots": [
+          "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010"
+        ],
+        "nodes": {
+          "a1000000-0000-4000-8000-000000000001": {
+            "children": [
+              "a1000008-0000-4000-8000-000000000008",
+              "a100000a-0000-4000-8000-00000000000a",
+              "a100000c-0000-4000-8000-00000000000c"
+            ]
+          },
+          "a1000002-0000-4000-8000-000000000002": {
+            "children": [
+              "a1000004-0000-4000-8000-000000000004"
+            ]
+          },
+          "a1000004-0000-4000-8000-000000000004": {
+            "children": [
+              "a1000006-0000-4000-8000-000000000006"
+            ]
+          },
+          "a1000006-0000-4000-8000-000000000006": {
+            "children": []
+          },
+          "a1000008-0000-4000-8000-000000000008": {
+            "children": []
+          },
+          "a100000a-0000-4000-8000-00000000000a": {
+            "children": []
+          },
+          "a100000c-0000-4000-8000-00000000000c": {
+            "children": []
+          },
+          "b2000000-0000-4000-8000-000000000010": {
+            "children": [
+              "b2000002-0000-4000-8000-000000000012"
+            ]
+          },
+          "b2000002-0000-4000-8000-000000000012": {
+            "children": [
+              "a1000002-0000-4000-8000-000000000002"
+            ]
+          }
+        },
+        "derived_parents": {
+          "a1000000-0000-4000-8000-000000000001": "none",
+          "a1000002-0000-4000-8000-000000000002": "b2000002-0000-4000-8000-000000000012",
+          "a1000004-0000-4000-8000-000000000004": "a1000002-0000-4000-8000-000000000002",
+          "a1000006-0000-4000-8000-000000000006": "a1000004-0000-4000-8000-000000000004",
+          "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+          "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+          "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010": "none",
+          "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+        }
+      },
+      "changed_paths": [
+        "nodes/{T}/children/{P}",
+        "nodes/{T}/children.order",
+        "nodes/{M}/children/{P}",
+        "nodes/{M}/children.order"
+      ],
+      "preserved": {
+        "descendants_carried": [
+          {
+            "node": "{P}",
+            "children": [
+              "{X}"
+            ]
+          },
+          {
+            "node": "{X}",
+            "children": [
+              "{Y}"
+            ]
+          }
+        ],
+        "identity_unchanged": [
+          "*"
+        ],
+        "canonical_dirs_unchanged": [
+          "{P}",
+          "{X}",
+          "{Y}"
+        ],
+        "content_unchanged": [
+          "*"
+        ],
+        "micro_summary_unchanged": [
+          "*"
+        ],
+        "name_unchanged": [
+          "*"
+        ],
+        "references_unchanged": [
+          {
+            "source": "{P}",
+            "target": "{Y}",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          },
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          },
+          {
+            "source": "{W}",
+            "target": "{Z}",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          },
+          {
+            "source": "{M}",
+            "target": "{X}",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ],
+        "unrelated_sibling_order": [
+          {
+            "parent": "{T}",
+            "order": [
+              "{Q}",
+              "{U}",
+              "{W}"
+            ]
+          },
+          {
+            "parent": "{M}",
+            "order_before_move": [],
+            "order": [
+              "{P}"
+            ]
+          },
+          {
+            "parent": "{P}",
+            "order": [
+              "{X}"
+            ]
+          },
+          {
+            "parent": "{X}",
+            "order": [
+              "{Y}"
+            ]
+          },
+          {
+            "parent": "{Z}",
+            "order": [
+              "{M}"
+            ]
+          }
+        ],
+        "roots_unchanged": true,
+        "asset_bytes_unchanged": [
+          "attachments/alpha.txt",
+          "notes/beta.md",
+          "nodes/{X}/code/deep.bin",
+          "nodes/{Y}/code/deepest.txt",
+          "nodes/{U}/code/untouched.txt"
+        ]
+      },
+      "wrong_results": [
+        {
+          "id": "c4-w1-inner-descendant-lost",
+          "why_wrong": "The subtree moved but X lost its own child Y.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "children": []
+              }
+            }
+          }
+        },
+        {
+          "id": "c4-w2-root-followed-subtree",
+          "why_wrong": "Moving P into tree 2 dragged T's root discovery with it, so T is no longer a root.",
+          "patch": {
+            "roots": [
+              "b2000000-0000-4000-8000-000000000010"
+            ]
+          }
+        },
+        {
+          "id": "c4-w3-old-parent-order-untouched",
+          "why_wrong": "T still lists P although P's entry was reparented.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c4-w4-self-parent",
+          "why_wrong": "The implementation attached P under itself while trying to honour the destination.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004",
+                  "a1000002-0000-4000-8000-000000000002"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c4-w5-inbound-reason-lost",
+          "why_wrong": "Q's reference to the moved node lost its mandatory reason.",
+          "patch": {
+            "nodes": {
+              "a1000008-0000-4000-8000-000000000008": {
+                "see_also": [
+                  {
+                    "target": "a1000002-0000-4000-8000-000000000002",
+                    "reason": ""
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c4-w6-canonical-path-churn",
+          "why_wrong": "Filesystem inventory claims the canonical directory of the moved descendant changed, although only entries and sequences move.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{Y}/code/deepest.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "c5-move-p-under-t-same-parent-append",
+      "kind": "valid",
+      "request": {
+        "operation": "move",
+        "node": "{P}",
+        "arg": "{T}",
+        "arg_kind": "uuid"
+      },
+      "description": "Move P under its current parent T. The frozen model appends, so P becomes the last child of T and the other three siblings keep their relative order. Parentage is unchanged and only the authored sequence is rewritten.",
+      "expected": {
+        "roots": [
+          "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010"
+        ],
+        "nodes": {
+          "a1000000-0000-4000-8000-000000000001": {
+            "children": [
+              "a1000008-0000-4000-8000-000000000008",
+              "a100000a-0000-4000-8000-00000000000a",
+              "a100000c-0000-4000-8000-00000000000c",
+              "a1000002-0000-4000-8000-000000000002"
+            ]
+          },
+          "a1000002-0000-4000-8000-000000000002": {
+            "children": [
+              "a1000004-0000-4000-8000-000000000004"
+            ]
+          },
+          "a1000004-0000-4000-8000-000000000004": {
+            "children": [
+              "a1000006-0000-4000-8000-000000000006"
+            ]
+          },
+          "a1000006-0000-4000-8000-000000000006": {
+            "children": []
+          },
+          "a1000008-0000-4000-8000-000000000008": {
+            "children": []
+          },
+          "a100000a-0000-4000-8000-00000000000a": {
+            "children": []
+          },
+          "a100000c-0000-4000-8000-00000000000c": {
+            "children": []
+          },
+          "b2000000-0000-4000-8000-000000000010": {
+            "children": [
+              "b2000002-0000-4000-8000-000000000012"
+            ]
+          },
+          "b2000002-0000-4000-8000-000000000012": {
+            "children": []
+          }
+        },
+        "derived_parents": {
+          "a1000000-0000-4000-8000-000000000001": "none",
+          "a1000002-0000-4000-8000-000000000002": "a1000000-0000-4000-8000-000000000001",
+          "a1000004-0000-4000-8000-000000000004": "a1000002-0000-4000-8000-000000000002",
+          "a1000006-0000-4000-8000-000000000006": "a1000004-0000-4000-8000-000000000004",
+          "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+          "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+          "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010": "none",
+          "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+        }
+      },
+      "changed_paths": [
+        "nodes/{T}/children.order"
+      ],
+      "preserved": {
+        "descendants_carried": [
+          {
+            "node": "{P}",
+            "children": [
+              "{X}"
+            ]
+          }
+        ],
+        "identity_unchanged": [
+          "*"
+        ],
+        "canonical_dirs_unchanged": [
+          "{P}"
+        ],
+        "content_unchanged": [
+          "*"
+        ],
+        "micro_summary_unchanged": [
+          "*"
+        ],
+        "name_unchanged": [
+          "*"
+        ],
+        "references_unchanged": [
+          {
+            "source": "{P}",
+            "target": "{Y}",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          },
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          },
+          {
+            "source": "{W}",
+            "target": "{Z}",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          },
+          {
+            "source": "{M}",
+            "target": "{X}",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ],
+        "unrelated_sibling_order": [
+          {
+            "parent": "{T}",
+            "unrelated": [
+              "{Q}",
+              "{U}",
+              "{W}"
+            ],
+            "order": [
+              "{Q}",
+              "{U}",
+              "{W}"
+            ]
+          },
+          {
+            "parent": "{P}",
+            "order": [
+              "{X}"
+            ]
+          },
+          {
+            "parent": "{X}",
+            "order": [
+              "{Y}"
+            ]
+          },
+          {
+            "parent": "{Z}",
+            "order": [
+              "{M}"
+            ]
+          }
+        ],
+        "roots_unchanged": true,
+        "asset_bytes_unchanged": [
+          "attachments/alpha.txt",
+          "notes/beta.md",
+          "nodes/{U}/code/untouched.txt"
+        ],
+        "child_entries_unchanged": [
+          "nodes/{T}/children/{P}"
+        ]
+      },
+      "wrong_results": [
+        {
+          "id": "c5-w1-unchanged",
+          "why_wrong": "The same-parent move left the sequence untouched, so the append never happened.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            },
+            "changed_paths": []
+          }
+        },
+        {
+          "id": "c5-w2-before-w",
+          "why_wrong": "P landed before W instead of at the end.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c5-w3-reparented",
+          "why_wrong": "The same-parent move was treated as a reparenting and detached P from T.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c5-w4-entry-churn",
+          "why_wrong": "Filesystem inventory claims the child entry was relinked, although the entry stayed under the same parent.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{T}/children/{P}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "c6-move-y-under-u-by-unique-prefix",
+      "kind": "valid",
+      "request": {
+        "operation": "move",
+        "node": "a1000006",
+        "arg": "a100000a",
+        "arg_kind": "unique_prefix"
+      },
+      "description": "Same reviewed move requested through unique-prefix resolution: the leaf Y moves from X to U. Only the two affected sequences and the two child entries change.",
+      "expected": {
+        "roots": [
+          "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010"
+        ],
+        "nodes": {
+          "a1000000-0000-4000-8000-000000000001": {
+            "children": [
+              "a1000002-0000-4000-8000-000000000002",
+              "a1000008-0000-4000-8000-000000000008",
+              "a100000a-0000-4000-8000-00000000000a",
+              "a100000c-0000-4000-8000-00000000000c"
+            ]
+          },
+          "a1000002-0000-4000-8000-000000000002": {
+            "children": [
+              "a1000004-0000-4000-8000-000000000004"
+            ]
+          },
+          "a1000004-0000-4000-8000-000000000004": {
+            "children": []
+          },
+          "a1000006-0000-4000-8000-000000000006": {
+            "children": []
+          },
+          "a1000008-0000-4000-8000-000000000008": {
+            "children": []
+          },
+          "a100000a-0000-4000-8000-00000000000a": {
+            "children": [
+              "a1000006-0000-4000-8000-000000000006"
+            ]
+          },
+          "a100000c-0000-4000-8000-00000000000c": {
+            "children": []
+          },
+          "b2000000-0000-4000-8000-000000000010": {
+            "children": [
+              "b2000002-0000-4000-8000-000000000012"
+            ]
+          },
+          "b2000002-0000-4000-8000-000000000012": {
+            "children": []
+          }
+        },
+        "derived_parents": {
+          "a1000000-0000-4000-8000-000000000001": "none",
+          "a1000002-0000-4000-8000-000000000002": "a1000000-0000-4000-8000-000000000001",
+          "a1000004-0000-4000-8000-000000000004": "a1000002-0000-4000-8000-000000000002",
+          "a1000006-0000-4000-8000-000000000006": "a100000a-0000-4000-8000-00000000000a",
+          "a1000008-0000-4000-8000-000000000008": "a1000000-0000-4000-8000-000000000001",
+          "a100000a-0000-4000-8000-00000000000a": "a1000000-0000-4000-8000-000000000001",
+          "a100000c-0000-4000-8000-00000000000c": "a1000000-0000-4000-8000-000000000001",
+          "b2000000-0000-4000-8000-000000000010": "none",
+          "b2000002-0000-4000-8000-000000000012": "b2000000-0000-4000-8000-000000000010"
+        }
+      },
+      "changed_paths": [
+        "nodes/{X}/children/{Y}",
+        "nodes/{X}/children.order",
+        "nodes/{U}/children/{Y}",
+        "nodes/{U}/children.order"
+      ],
+      "preserved": {
+        "descendants_carried": [
+          {
+            "node": "{Y}",
+            "children": []
+          }
+        ],
+        "identity_unchanged": [
+          "*"
+        ],
+        "canonical_dirs_unchanged": [
+          "{Y}"
+        ],
+        "content_unchanged": [
+          "*"
+        ],
+        "micro_summary_unchanged": [
+          "*"
+        ],
+        "name_unchanged": [
+          "*"
+        ],
+        "references_unchanged": [
+          {
+            "source": "{P}",
+            "target": "{Y}",
+            "reason": "P references its own deep descendant Y so a move of X must leave this target and reason byte-identical."
+          },
+          {
+            "source": "{Q}",
+            "target": "{P}",
+            "reason": "Q references sibling P so a rename of P must keep this target UUID and show the new display name in navigation."
+          },
+          {
+            "source": "{W}",
+            "target": "{Z}",
+            "reason": "W references the other tree root Z so an unrelated move must not disturb cross-tree references."
+          },
+          {
+            "source": "{M}",
+            "target": "{X}",
+            "reason": "M in tree 2 references X across trees so a cross-tree move of X must keep target identity and navigation intact."
+          },
+          {
+            "source": "{M}",
+            "target": "{P}",
+            "reason": "M in tree 2 also references P across trees so a move of the subtree P keeps this target UUID byte-identical."
+          }
+        ],
+        "unrelated_sibling_order": [
+          {
+            "parent": "{T}",
+            "order": [
+              "{P}",
+              "{Q}",
+              "{U}",
+              "{W}"
+            ]
+          },
+          {
+            "parent": "{Z}",
+            "order": [
+              "{M}"
+            ]
+          },
+          {
+            "parent": "{P}",
+            "order": [
+              "{X}"
+            ]
+          }
+        ],
+        "roots_unchanged": true,
+        "asset_bytes_unchanged": [
+          "attachments/alpha.txt",
+          "notes/beta.md",
+          "nodes/{Y}/code/deepest.txt",
+          "nodes/{U}/code/untouched.txt"
+        ]
+      },
+      "wrong_results": [
+        {
+          "id": "c6-w1-prefix-guess",
+          "why_wrong": "The ambiguous prefix a100000 was resolved to the first match instead of being rejected.",
+          "patch": {
+            "nodes": {
+              "a100000a-0000-4000-8000-00000000000a": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c6-w2-old-parent-still-lists",
+          "why_wrong": "X still lists Y after the move.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "children": [
+                  "a1000006-0000-4000-8000-000000000006"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "c6-w3-payload-churn",
+          "why_wrong": "The unrelated reference author P had its payload rewritten.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{P}/node.md"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i1-move-x-under-y-cycle",
+      "kind": "invalid",
+      "request": {
+        "operation": "move",
+        "node": "{X}",
+        "arg": "{Y}",
+        "arg_kind": "uuid"
+      },
+      "reason_class": "cyclic-move",
+      "description": "X must not become a child of its own descendant Y.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i1-w1-accepted-cycle",
+          "why_wrong": "The request was accepted, producing a cycle: Y parents X and X parents Y.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "children": []
+              },
+              "a1000006-0000-4000-8000-000000000006": {
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i1-move-x-under-y-cycle-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{U}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i1-move-x-under-y-cycle-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i2-move-root-t-under-p",
+      "kind": "invalid",
+      "request": {
+        "operation": "move",
+        "node": "{T}",
+        "arg": "{P}",
+        "arg_kind": "uuid"
+      },
+      "reason_class": "root-moved-as-non-root",
+      "description": "A root has no movable child entry; T must not become a non-root.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i2-w1-root-demoted",
+          "why_wrong": "T became P's child, so tree 1 lost its root and T also became its own descendant.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "children": [
+                  "a1000004-0000-4000-8000-000000000004",
+                  "a1000000-0000-4000-8000-000000000001"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i2-move-root-t-under-p-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{M}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i2-move-root-t-under-p-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i3-reorder-w-after-x-foreign",
+      "kind": "invalid",
+      "request": {
+        "operation": "reorder",
+        "node": "{W}",
+        "arg": "{X}",
+        "arg_kind": "uuid"
+      },
+      "reason_class": "reorder-across-parents",
+      "description": "X is not a sibling of W, so a same-parent reorder cannot be performed.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i3-w1-implicit-reparent",
+          "why_wrong": "The implementation turned the illegal reorder into a move of W into X's children.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "children": [
+                  "a1000006-0000-4000-8000-000000000006",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              },
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i3-reorder-w-after-x-foreign-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{Y}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i3-reorder-w-after-x-foreign-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i4-reorder-w-after-w",
+      "kind": "invalid",
+      "request": {
+        "operation": "reorder",
+        "node": "{W}",
+        "arg": "{W}",
+        "arg_kind": "uuid"
+      },
+      "reason_class": "reorder-after-self",
+      "description": "A node cannot be its own placement anchor.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i4-w1-duplicated-member",
+          "why_wrong": "W was inserted as a second member of its own parent's sequence.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002",
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i4-reorder-w-after-w-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{Q}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i4-reorder-w-after-w-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i5-rename-p-blank",
+      "kind": "invalid",
+      "request": {
+        "operation": "rename",
+        "node": "{P}",
+        "arg": "   ",
+        "arg_kind": "display_name"
+      },
+      "reason_class": "blank-display-name",
+      "description": "A display name must be non-blank; the blank request must not touch the store.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i5-w1-blank-accepted",
+          "why_wrong": "The blank name was written to the authored payload.",
+          "patch": {
+            "nodes": {
+              "a1000002-0000-4000-8000-000000000002": {
+                "name": "   "
+              }
+            }
+          }
+        },
+        {
+          "id": "i5-rename-p-blank-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{W}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i5-rename-p-blank-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i6-move-ambiguous-prefix",
+      "kind": "invalid",
+      "request": {
+        "operation": "move",
+        "node": "a100000",
+        "arg": "{M}",
+        "arg_kind": "ambiguous_prefix"
+      },
+      "reason_class": "ambiguous-uuid-prefix",
+      "description": "The prefix a100000 matches T, P, X, Y, Q, U and W. Resolution must fail instead of choosing one.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i6-w1-first-match-chosen",
+          "why_wrong": "The first lexicographic match (T) was chosen and the root move was attempted.",
+          "patch": {
+            "nodes": {
+              "b2000002-0000-4000-8000-000000000012": {
+                "children": [
+                  "a1000000-0000-4000-8000-000000000001"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i6-w2-second-match-chosen",
+          "why_wrong": "The second match (P) was chosen and its subtree was moved.",
+          "patch": {
+            "nodes": {
+              "a1000000-0000-4000-8000-000000000001": {
+                "children": [
+                  "a1000008-0000-4000-8000-000000000008",
+                  "a100000a-0000-4000-8000-00000000000a",
+                  "a100000c-0000-4000-8000-00000000000c"
+                ]
+              },
+              "b2000002-0000-4000-8000-000000000012": {
+                "children": [
+                  "a1000002-0000-4000-8000-000000000002"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i6-move-ambiguous-prefix-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{X}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i6-move-ambiguous-prefix-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i7-rename-absent-prefix",
+      "kind": "invalid",
+      "request": {
+        "operation": "rename",
+        "node": "ffffffff",
+        "arg": "Ghost name",
+        "arg_kind": "display_name"
+      },
+      "reason_class": "absent-uuid-prefix",
+      "description": "No node id starts with ffffffff.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i7-w1-created-node",
+          "why_wrong": "A node was created for the absent identifier.",
+          "patch": {
+            "nodes": {
+              "ffffffff-0000-4000-8000-000000000001": {
+                "name": "Ghost name",
+                "micro_summary": "Invented by the rejection path.",
+                "content": "Should not exist.",
+                "children": [],
+                "see_also": []
+              }
+            }
+          }
+        },
+        {
+          "id": "i7-rename-absent-prefix-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{Z}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i7-rename-absent-prefix-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "i8-move-node-under-itself",
+      "kind": "invalid",
+      "request": {
+        "operation": "move",
+        "node": "{X}",
+        "arg": "{X}",
+        "arg_kind": "uuid"
+      },
+      "reason_class": "self-parent",
+      "description": "A node cannot become its own parent.",
+      "expected_state": "baseline",
+      "changed_paths": [],
+      "wrong_results": [
+        {
+          "id": "i8-w1-self-parent-accepted",
+          "why_wrong": "X became a child of itself.",
+          "patch": {
+            "nodes": {
+              "a1000004-0000-4000-8000-000000000004": {
+                "children": [
+                  "a1000006-0000-4000-8000-000000000006",
+                  "a1000004-0000-4000-8000-000000000004"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "i8-move-node-under-itself-w-mutated-payload",
+          "why_wrong": "The request was rejected, but the store still rewrote an unrelated node's authored payload.",
+          "patch": {
+            "changed_paths_extra": [
+              "nodes/{U}/node.md"
+            ]
+          }
+        },
+        {
+          "id": "i8-move-node-under-itself-w-mutated-asset",
+          "why_wrong": "The request was rejected, but the store still appended bytes to an unrelated ordinary file.",
+          "patch": {
+            "changed_paths_extra": [
+              "attachments/alpha.txt"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "drafts": [
+    {
+      "id": "d1-ordinary-native-move-accepted",
+      "case": "c1-move-x-under-z",
+      "expect": "accepted",
+      "edits": [
+        {
+          "op": "mv",
+          "from": "nodes/{P}/children/{X}",
+          "to": "nodes/{Z}/children/{X}"
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{P}/children.order",
+          "children": []
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{Z}/children.order",
+          "children": [
+            "{M}",
+            "{X}"
+          ]
+        }
+      ],
+      "why": "Completed ordinary private-draft edits equivalent to the checked move: native mv of the child entry plus both explicit order files."
+    },
+    {
+      "id": "d2-prepended-move-rejected",
+      "case": "c1-move-x-under-z",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "mv",
+          "from": "nodes/{P}/children/{X}",
+          "to": "nodes/{Z}/children/{X}"
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{P}/children.order",
+          "children": []
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{Z}/children.order",
+          "children": [
+            "{X}",
+            "{M}"
+          ]
+        }
+      ],
+      "why": "Nearby wrong result: the draft prepends X instead of appending it, so it must not match the checked append operation."
+    },
+    {
+      "id": "d3-unrelated-sibling-churn-rejected",
+      "case": "c1-move-x-under-z",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "mv",
+          "from": "nodes/{P}/children/{X}",
+          "to": "nodes/{Z}/children/{X}"
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{P}/children.order",
+          "children": []
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{Z}/children.order",
+          "children": [
+            "{M}",
+            "{X}"
+          ]
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{T}/children.order",
+          "children": [
+            "{P}",
+            "{Q}",
+            "{W}",
+            "{U}"
+          ]
+        }
+      ],
+      "why": "Nearby wrong result: the correct move plus an unrelated reorder of T's siblings smuggled into the same draft."
+    },
+    {
+      "id": "d4-move-draft-descendant-dropped-rejected",
+      "case": "c1-move-x-under-z",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "mv",
+          "from": "nodes/{P}/children/{X}",
+          "to": "nodes/{Z}/children/{X}"
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{P}/children.order",
+          "children": []
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{Z}/children.order",
+          "children": [
+            "{M}",
+            "{X}"
+          ]
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{X}/children.order",
+          "children": []
+        }
+      ],
+      "why": "Nearby wrong result: the moved subtree lost its own descendant entry Y."
+    },
+    {
+      "id": "d5-rename-draft-accepted",
+      "case": "c3-rename-p",
+      "expect": "accepted",
+      "edits": [
+        {
+          "op": "write_node_md",
+          "path": "nodes/{P}/node.md",
+          "changes": {
+            "name": "Renamed Next Node P"
+          },
+          "byte_form": "native_rename"
+        }
+      ],
+      "why": "Ordinary native rename draft in the exact candidate byte form the current interface requires."
+    },
+    {
+      "id": "d6-rename-draft-content-churn-rejected",
+      "case": "c3-rename-p",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "write_node_md",
+          "path": "nodes/{P}/node.md",
+          "changes": {
+            "name": "Renamed Next Node P",
+            "content": "NEXTCORE-PAYLOAD-P-02 rewritten while renaming. Not live knowledge."
+          },
+          "byte_form": "native_rename"
+        }
+      ],
+      "why": "Nearby wrong result: the rename draft also rewrote the authored body."
+    },
+    {
+      "id": "d7-rename-draft-byte-form-rejected",
+      "case": "c3-rename-p",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "write_node_md",
+          "path": "nodes/{P}/node.md",
+          "changes": {
+            "name": "Renamed Next Node P"
+          },
+          "byte_form": "reserialised"
+        }
+      ],
+      "why": "Same graph, different bytes: validate-draft compares exact candidate bytes, so a differently serialised payload must be rejected rather than normalised."
+    },
+    {
+      "id": "d8-reorder-draft-accepted",
+      "case": "c2-reorder-w-after-p",
+      "expect": "accepted",
+      "edits": [
+        {
+          "op": "write_order",
+          "path": "nodes/{T}/children.order",
+          "children": [
+            "{P}",
+            "{W}",
+            "{Q}",
+            "{U}"
+          ]
+        }
+      ],
+      "why": "A same-parent reorder draft touches only the authored sequence."
+    },
+    {
+      "id": "d9-reorder-draft-entry-churn-rejected",
+      "case": "c2-reorder-w-after-p",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "write_order",
+          "path": "nodes/{T}/children.order",
+          "children": [
+            "{P}",
+            "{W}",
+            "{Q}",
+            "{U}"
+          ]
+        },
+        {
+          "op": "mv",
+          "from": "nodes/{T}/children/{W}",
+          "to": "nodes/{P}/children/{W}"
+        }
+      ],
+      "why": "Nearby wrong result: the reorder draft also reparented the child entry, which the checked reorder never does."
+    },
+    {
+      "id": "d10-same-parent-move-draft-accepted",
+      "case": "c5-move-p-under-t-same-parent-append",
+      "expect": "accepted",
+      "edits": [
+        {
+          "op": "write_order",
+          "path": "nodes/{T}/children.order",
+          "children": [
+            "{Q}",
+            "{U}",
+            "{W}",
+            "{P}"
+          ]
+        }
+      ],
+      "why": "The same-parent append move changes only the authored sequence; the child entry stays where it is."
+    },
+    {
+      "id": "d11-unrelated-asset-churn-rejected",
+      "case": "c1-move-x-under-z",
+      "expect": "rejected",
+      "edits": [
+        {
+          "op": "mv",
+          "from": "nodes/{P}/children/{X}",
+          "to": "nodes/{Z}/children/{X}"
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{P}/children.order",
+          "children": []
+        },
+        {
+          "op": "write_order",
+          "path": "nodes/{Z}/children.order",
+          "children": [
+            "{M}",
+            "{X}"
+          ]
+        },
+        {
+          "op": "append_bytes",
+          "path": "attachments/alpha.txt",
+          "content": "tampered\n"
+        }
+      ],
+      "why": "A draft that tampers with an unrelated ordinary file must be rejected even when the graph part is right."
+    }
+  ]
+}
