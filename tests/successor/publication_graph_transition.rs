@@ -181,6 +181,45 @@ fn publication_graph_transition_runs_on_exact_candidates_without_accepting_bad_b
 }
 
 #[test]
+fn publication_recovery_without_transition_still_rejects_invalid_accepted_knowledge() {
+    let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    for mutation in ["graph", "tokens", "status", "blank"] {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fixture(&repo);
+        match mutation {
+            "graph" => fs::remove_file(repo.join("trees").join(id(1))).unwrap(),
+            "tokens" => node(&repo, 1, "in_progress", &" a".repeat(5001)),
+            "status" => node(&repo, 1, "unknown", "Body"),
+            "blank" => node(&repo, 1, "resolved", " \t"),
+            _ => unreachable!(),
+        }
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-qm", "invalid accepted fixture"]);
+        let base = git(&repo, &["rev-parse", "HEAD"]);
+        git(&repo, &["checkout", "--detach", "-q", &base]);
+        let r = publish::submit(&policy, &request(&repo, None, None));
+        assert_eq!(r.status, "rejected", "{mutation}: {r:?}");
+        assert_eq!(r.check, "candidate_validation_rejected", "{r:?}");
+        let expected = match mutation {
+            "graph" => "placement_count",
+            "tokens" => "crystallization_over_limit",
+            "status" => "status_or_reason_type",
+            "blank" => "resolved_body_blank",
+            _ => unreachable!(),
+        };
+        assert!(r.validation.as_ref().unwrap().rows.iter().any(|row| row.check == expected), "{r:?}");
+        assert!(!r.published, "{mutation}: {r:?}");
+        assert!(r.view.is_none());
+        assert_eq!(r.graph_checks.len(), 1);
+        assert_eq!(r.graph_checks[0].mode, "full_law");
+        assert_eq!(git(&repo, &["rev-parse", "main"]), base);
+        assert_eq!(git(&repo, &["status", "--porcelain"]), "");
+    }
+}
+
+#[test]
 fn publication_graph_transition_absent_mismatched_or_mutated_capabilities_never_skip_checks() {
     let temp = tempfile::tempdir().unwrap();
     let before = temp.path().join("before");

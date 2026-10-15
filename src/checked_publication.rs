@@ -1013,29 +1013,34 @@ fn execute(
             crate::real_dir(&path)?;
         }
     }
-    // A branch name or prior receipt file is not a proof. Bootstrap from the
-    // exact accepted detached view in this process, with complete authored
-    // candidate checks before obtaining the opaque graph capability.
-    let (base_check, base_capture) = gate::validate_with_capture(
-        policy,
-        &gate::Request {
-            store: before.path.clone(),
-            before: None,
-            explicit: BTreeSet::new(),
-            expected_version: None,
-            pause_before_accept: None,
-        },
-        None,
-    );
-    let proven = if draft.is_some() && base_check.status == "current" {
-        r.check = "graph_transition_unavailable";
-        let transition = crate::graph_transition::Transition::checked(policy)?;
-        let base = transition.prove_validated(base_capture.ok_or("missing validated base")?)?;
-        require(
-            Some(base.version()) == base_check.version.as_deref(),
-            "base changed after validation",
-        )?;
-        Some((transition, base))
+    // Only draft submissions consume a transition capability. Recovery still
+    // validates both graphs and retains both complete inventories below.
+    let proven = if draft.is_some() {
+        // A branch name or prior receipt is not a proof: bootstrap from the
+        // exact accepted detached view in this process.
+        let (base_check, base_capture) = gate::validate_with_capture(
+            policy,
+            &gate::Request {
+                store: before.path.clone(),
+                before: None,
+                explicit: BTreeSet::new(),
+                expected_version: None,
+                pause_before_accept: None,
+            },
+            None,
+        );
+        if base_check.status == "current" {
+            r.check = "graph_transition_unavailable";
+            let transition = crate::graph_transition::Transition::checked(policy)?;
+            let base = transition.prove_validated(base_capture.ok_or("missing validated base")?)?;
+            require(
+                Some(base.version()) == base_check.version.as_deref(),
+                "base changed after validation",
+            )?;
+            Some((transition, base))
+        } else {
+            None
+        }
     } else {
         None
     };
