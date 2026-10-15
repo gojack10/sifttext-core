@@ -706,7 +706,18 @@ mod history_batch_tests {
 }
 
 type Identity = (u64, u64, i64, i64);
+#[cfg(test)]
+thread_local! {
+    pub(crate) static IDENTITY_SPAWN_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
 fn identities(path: &Path, residues: &Residues) -> Result<BTreeMap<PathBuf, Identity>> {
+    identities_with_workers(path, residues, 4)
+}
+pub(crate) fn identities_with_workers(
+    path: &Path,
+    residues: &Residues,
+    workers: usize,
+) -> Result<BTreeMap<PathBuf, Identity>> {
     let mut out = BTreeMap::new();
     for dir in [path.to_path_buf(), path.join("nodes"), path.join("trees")] {
         let m = fs::symlink_metadata(&dir)?;
@@ -720,17 +731,77 @@ fn identities(path: &Path, residues: &Residues) -> Result<BTreeMap<PathBuf, Iden
         };
         out.insert(dir, (m.dev(), m.ino(), times.0, times.1));
     }
-    fn walk(p: &Path, out: &mut BTreeMap<PathBuf, Identity>) -> Result<()> {
-        for entry in crate::entries(p)? {
-            let m = fs::symlink_metadata(&entry)?;
-            out.insert(entry.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
-            if m.is_dir() && entry.file_name().is_some_and(|n| n == "children") {
-                walk(&entry, out)?;
+    let paths = crate::entries(&path.join("nodes"))?;
+    if paths.len() >= 64 && workers > 1 {
+        // Each complete physical sweep still settles before byte work starts or
+        // its result is accepted. Only disjoint node subtrees run concurrently.
+        let (startup, batches) = std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            let mut startup = Ok(());
+            for chunk in paths.chunks(paths.len().div_ceil(workers)) {
+                #[cfg(test)]
+                if IDENTITY_SPAWN_FAILURE.with(|failure| failure.get() == Some(handles.len())) {
+                    startup = Err(std::io::Error::other("injected identity spawn failure"));
+                    break;
+                }
+                match std::thread::Builder::new().spawn_scoped(scope, move || {
+                    let mut batch = BTreeMap::new();
+                    node_identities(chunk, residues, &mut batch)
+                        .map(|()| batch)
+                        .map_err(|error| {
+                            error
+                                .downcast::<std::io::Error>()
+                                .map(|error| *error)
+                                .map_err(|error| error.to_string())
+                        })
+                }) {
+                    Ok(handle) => handles.push(handle),
+                    Err(error) => {
+                        startup = Err(error);
+                        break;
+                    }
+                }
             }
+            let batches = handles
+                .into_iter()
+                .map(|handle| handle.join())
+                .collect::<Vec<_>>();
+            (startup, batches)
+        });
+        startup?;
+        for batch in batches {
+            let batch = batch.map_err(|_| "identity worker panicked")?.map_err(
+                |error| -> Box<dyn std::error::Error> {
+                    match error {
+                        Ok(error) => error.into(),
+                        Err(message) => message.into(),
+                    }
+                },
+            )?;
+            out.extend(batch);
         }
-        Ok(())
+    } else {
+        node_identities(&paths, residues, &mut out)?;
     }
-    for dir in crate::entries(&path.join("nodes"))? {
+    identity_walk(&path.join("trees"), &mut out)?;
+    Ok(out)
+}
+fn identity_walk(p: &Path, out: &mut BTreeMap<PathBuf, Identity>) -> Result<()> {
+    for entry in crate::entries(p)? {
+        let m = fs::symlink_metadata(&entry)?;
+        out.insert(entry.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
+        if m.is_dir() && entry.file_name().is_some_and(|n| n == "children") {
+            identity_walk(&entry, out)?;
+        }
+    }
+    Ok(())
+}
+fn node_identities(
+    paths: &[PathBuf],
+    residues: &Residues,
+    out: &mut BTreeMap<PathBuf, Identity>,
+) -> Result<()> {
+    for dir in paths {
         let m = fs::symlink_metadata(&dir)?;
         require(m.is_dir(), "unsafe node directory")?;
         if residues.contains(&crate::name(&dir)?) {
@@ -742,12 +813,11 @@ fn identities(path: &Path, residues: &Residues) -> Result<BTreeMap<PathBuf, Iden
             let m = fs::symlink_metadata(&p)?;
             out.insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
             if file == "children" {
-                walk(&p, &mut out)?;
+                identity_walk(&p, out)?;
             }
         }
     }
-    walk(&path.join("trees"), &mut out)?;
-    Ok(out)
+    Ok(())
 }
 
 pub(crate) struct Capture {

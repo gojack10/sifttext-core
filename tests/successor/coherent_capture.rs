@@ -159,6 +159,45 @@ fn parallel_node_inventory_preserves_serial_bytes_links_and_refusals() {
 }
 
 #[test]
+fn parallel_identity_sweeps_preserve_maps_and_typed_refusals() {
+    for deep in [false, true] {
+        let d = fixture(128, deep);
+        let residues = coherent_capture::residues(d.path()).unwrap();
+        let serial = coherent_capture::identities_with_workers(d.path(), &residues, 1).unwrap();
+        assert_eq!(
+            coherent_capture::identities_with_workers(d.path(), &residues, 4).unwrap(),
+            serial
+        );
+        let capture = Capture::read(d.path(), None).unwrap();
+        capture.unchanged_all().unwrap();
+        let file = d.path().join("nodes").join(id(128)).join("node.md");
+        let bytes = fs::read(&file).unwrap();
+        fs::remove_file(&file).unwrap();
+        let error = coherent_capture::identities_with_workers(d.path(), &residues, 4).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        fs::write(&file, bytes).unwrap();
+        assert!(capture.unchanged_all().is_err()); // same-byte inode replacement
+        coherent_capture::IDENTITY_SPAWN_FAILURE.with(|failure| failure.set(Some(1)));
+        let refused = coherent_capture::identities_with_workers(d.path(), &residues, 4);
+        coherent_capture::IDENTITY_SPAWN_FAILURE.with(|failure| failure.set(None));
+        assert!(
+            refused
+                .unwrap_err()
+                .to_string()
+                .contains("injected identity spawn failure")
+        );
+        // A failed launch drains its already-started batch; subsequent sweeps work.
+        assert_eq!(
+            coherent_capture::identities_with_workers(d.path(), &residues, 4).unwrap(),
+            coherent_capture::identities_with_workers(d.path(), &residues, 1).unwrap()
+        );
+    }
+}
+
+#[test]
 fn real_consumers_reuse_metadata_without_extra_markdown_parses() {
     let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
     let before = fixture(8, false);
