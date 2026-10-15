@@ -449,7 +449,8 @@ fn unchanged_normalization_reuses_only_the_exact_validated_inventory() {
         status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).unwrap();
     assert!(no_op.normalized_ids.is_empty());
     assert_eq!(inventory(after.path()), original);
-    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2);
+    // Identical complete inventories reuse the one checked before verdict.
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 1);
 
     fs::write(&calls, "").unwrap();
     fs::write(
@@ -476,6 +477,17 @@ fn unchanged_normalization_reuses_only_the_exact_validated_inventory() {
         status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).is_err()
     );
     assert_eq!(fs::read_to_string(file(after.path(), 1)).unwrap(), bad);
+
+    // Equal inventories must not mint authority from the candidate side: a malformed
+    // pair fails on the before verdict alone, refusing before any staging.
+    fs::write(&calls, "").unwrap();
+    fs::write(file(before.path(), 1), &bad).unwrap();
+    assert!(
+        status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).is_err()
+    );
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 1);
+    assert_eq!(inventory(before.path()), inventory(after.path()));
+    assert_eq!(fs::read_to_string(file(before.path(), 1)).unwrap(), bad);
 }
 
 #[test]

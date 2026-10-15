@@ -309,7 +309,12 @@ pub fn normalize(
     let before = &before_capture.store;
     let candidate = &candidate_capture.store;
     policy.validate(before)?;
-    policy.validate(candidate)?;
+    // The checked verdict is a function of the captured inventory alone: validate ->
+    // graph_valid -> encode reads nodes/roots/children/inventory and never Store::path.
+    // Reuse the preceding verdict only for a byte-identical complete inventory.
+    if candidate.inventory != before.inventory {
+        policy.validate(candidate)?;
+    }
     let normalized = plan(&before_capture, &candidate_capture, explicit)?;
     // plan changes parsed nodes only together with their captured node.md bytes.
     // Reuse the preceding verdict only for the exact complete inventory.
