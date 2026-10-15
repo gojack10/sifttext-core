@@ -111,6 +111,9 @@ mod generated_metadata_tests;
 #[cfg(test)]
 #[path = "../tests/successor/status.rs"]
 mod status_tests;
+#[cfg(test)]
+#[path = "../tests/successor/status_gate.rs"]
+mod status_gate_tests;
 
 #[cfg(test)]
 #[path = "../tests/successor/neighborhoods.rs"]

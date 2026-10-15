@@ -110,26 +110,46 @@ pub fn child_gate(
     children: &BTreeMap<String, Vec<String>>,
     explicit: &BTreeSet<String>,
 ) -> Result<()> {
-    loop {
-        let blocked: Vec<_> = states
-            .iter()
-            .filter(|(id, state)| {
-                state.status == Status::Resolved
-                    && children[*id].iter().any(|c| states[c].status.blocks())
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        if blocked.is_empty() {
-            return Ok(());
+    let mut blocked: Vec<_> = states
+        .iter()
+        .filter(|(id, state)| {
+            state.status == Status::Resolved
+                && children[*id].iter().any(|c| states[c].status.blocks())
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
+    if blocked.is_empty() {
+        return Ok(());
+    }
+    // Build only when reopening is needed. Each reopened node visits its parents
+    // once, rather than scanning the entire store at every ancestor level.
+    let mut parents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (id, kids) in children {
+        if states.get(id).is_some_and(|s| s.status == Status::Resolved) {
+            for child in kids {
+                parents.entry(child).or_default().push(id);
+            }
         }
+    }
+    while !blocked.is_empty() {
+        let mut next = BTreeSet::new();
         for id in blocked {
             require(
                 !explicit.contains(&id),
                 "active direct child blocks resolution",
             )?;
             states.get_mut(&id).unwrap().status = Status::InProgress;
+            for parent in parents.get(id.as_str()).into_iter().flatten() {
+                next.insert((*parent).to_owned());
+            }
         }
+        // Preserve sorted waves, including the original partial state on error.
+        blocked = next
+            .into_iter()
+            .filter(|id| states[id].status == Status::Resolved)
+            .collect();
     }
+    Ok(())
 }
 
 fn node_path(id: &str) -> PathBuf {
