@@ -24,6 +24,15 @@ opt-level = 3
 [profile.dev.package.tiktoken-rs]
 opt-level = 3
 
+[profile.dev.package.fancy-regex]
+opt-level = 3
+[profile.dev.package.regex]
+opt-level = 3
+[profile.dev.package.regex-automata]
+opt-level = 3
+[profile.dev.package.regex-syntax]
+opt-level = 3
+
 # Private compiler-only experiment; dev-layout consumers are unchanged.
 [profile.dev.package.sifttext-file-graph]
 opt-level = 2
