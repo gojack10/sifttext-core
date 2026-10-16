@@ -4,12 +4,19 @@ If you are running this command yourself, ask your agent to run it and follow th
 
 Set up SiftText for the user's project. Ask which project if it is unclear.
 
-Clone https://github.com/gojack10/sifttext-core into a new software checkout. Read its `AGENTS.md` and every file it requires before running setup.
+Check that the machine runs macOS 15 or newer, or Linux with glibc 2.35 or newer, on arm64 or x86_64. The installer needs Git, curl, tar and shasum or sha256sum. Reuse the configured Git identity. Ask the user to choose an identity if none is available, and obtain permission for any missing tools or privileged changes.
 
-Follow the checkout's instructions to build Core and run `install-local.sh`. Choose a new application directory outside the project. Keep the software checkout and application separate from the knowledge home. Preserve existing installations and knowledge.
+Download the installer to a temporary file.
 
-Install missing tools within the user's permissions. Ask before making privileged changes. Follow the bundled guidance to select the knowledge home's Git identity.
+```sh
+installer=$(mktemp)
+curl -fsSL https://github.com/gojack10/sifttext-core/releases/latest/download/install.sh -o "$installer"
+```
 
-Follow the installer's printed paths to read the knowledge instructions. Use the installed command to verify its runtime and retrieve the knowledge outline. If a check fails, preserve the files and report the failing command with its error.
+Read the downloaded file, then run `sh "$installer"`. It verifies and installs the precompiled package for this machine. The default application directory is `~/.local/share/sifttext` and the knowledge home is `~/sifttext`. To choose other locations, pass the application directory and knowledge-home path as the two arguments. Preserve existing knowledge and keep software outside its home.
 
-Tell the user where SiftText and their knowledge are installed. Continue their project using the local instructions.
+Use the printed local command to run `runtime-check` and `instructions` for the knowledge home. Read the returned entry and its required files before project work. If installation or verification fails, preserve the files and report the failing command and error.
+
+Managed installations check official releases opportunistically after four hours and apply compatible updates. Network failures leave local work available. When an update reports a conflict, use its retained private worktree to reconcile the knowledge and run `sifttext update --resume` through the installed launcher. Ask the user about any unresolved consequential choice.
+
+For knowledge from hosted SiftText, read the migration guide in the knowledge home. Continue the user's project through the local instructions and verify a useful save by retrieving it. Report the application path, knowledge home and accepted commit.

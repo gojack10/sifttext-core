@@ -10,7 +10,7 @@ Your agents maintain the knowledge. You can inspect it and steer the work when y
 
 ## Get started
 
-Source-build alpha.
+Precompiled releases support macOS 15+ and Linux with glibc 2.35+, on arm64 and x86_64.
 
 Ask an agent with local file and terminal access to run this command and follow its instructions for your project.
 
@@ -18,7 +18,7 @@ Ask an agent with local file and terminal access to run this command and follow 
 curl -fsSL https://sifttext.com/install
 ```
 
-**Agents:** read [AGENTS.md](AGENTS.md).
+Agents installing SiftText should follow [INSTALL.md](INSTALL.md). Contributors working on Core should read [AGENTS.md](AGENTS.md).
 
 ## How it works
 
@@ -27,6 +27,8 @@ Knowledge lives in local Markdown files with Git history. Related questions form
 Agents edit in private Git worktrees. Checked submission validates the combined structure before accepting a change. Git history supports inspection and recovery.
 
 The knowledge repository stays separate from your project code and Core installation. Installed use requires Git and the complete application directory.
+
+Managed installations check official releases opportunistically after four hours. Compatible updates activate between operations. Knowledge merges preserve customer changes and retain conflicts in private worktrees for the agent to resolve. Run the installed launcher with `update --status`, `update --resume` or `update --rollback` to inspect or recover an update.
 
 ## Development
 
