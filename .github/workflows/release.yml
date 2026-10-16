@@ -1,0 +1,79 @@
+name: Build release candidates
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version
+        required: true
+        default: v0.1.0
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: macos-15-intel
+            platform: darwin-x64
+          - runner: ubuntu-22.04
+            platform: linux-x64
+          - runner: ubuntu-22.04-arm
+            platform: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare build tools
+        run: |
+          if [ "$(uname -s)" = Darwin ]; then brew install gnu-tar; fi
+          sh scripts/setup-tools.sh
+          . scripts/tool-pins.sh
+          platform_pins
+          test "$PLATFORM" = '${{ matrix.platform }}'
+      - name: Build optimized package
+        env:
+          VERSION: ${{ inputs.version }}
+        run: sh scripts/package-release.sh "$VERSION" "$RUNNER_TEMP/release"
+      - name: Qualify relocated installed runtime
+        run: |
+          mkdir "$RUNNER_TEMP/portable"
+          tar -xzf "$RUNNER_TEMP/release/sifttext-${{ matrix.platform }}.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/portable"
+          SIFTTEXT_PORTABLE_PACKAGE="$RUNNER_TEMP/portable" sh scripts/with-tools.sh cargo test --locked --test portable_runtime -- --ignored --nocapture
+          sh scripts/with-tools.sh cargo test --locked updates::tests --lib -- --nocapture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release/sifttext-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'linux-x64'
+        with:
+          name: knowledge-and-identity
+          path: |
+            ${{ runner.temp }}/release/sifttext-knowledge.tar.gz
+            ${{ runner.temp }}/release/release-info.json
+          if-no-files-found: error
+  assemble:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Assemble verified release identities
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cp install.sh release/install.sh
+          node scripts/release-manifest.mjs "$VERSION" release
+          cd release
+          sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: github-release
+          path: release/
+          if-no-files-found: error

@@ -99,6 +99,7 @@ mod prepared_index_reuse_tests;
 mod retrieval_contention_tests;
 pub mod status;
 pub mod token_metadata;
+pub mod updates;
 
 #[cfg(test)]
 #[path = "../tests/successor/token_metadata.rs"]

@@ -198,7 +198,7 @@ fn git_config_value(path: &Path, key: &str) -> Result<String> {
 }
 
 // Reader movement must not run inherited filters, hooks, fsmonitor or lazy fetch.
-fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
     git_output(
         git_command(path)
             .env("GIT_CONFIG_NOSYSTEM", "1")

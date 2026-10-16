@@ -22,7 +22,11 @@ shasum -a 256 build/graph-policy > build/graph-policy.sha256
 "$BEND" laws/successor/GraphTransition.bend --check-only
 "$BEND" laws/successor/GraphTransition.bend -o build/graph-transition
 shasum -a 256 build/graph-transition > build/graph-transition.sha256
-cargo build --locked
+case "${1:-}" in
+  '') cargo build --locked ;;
+  --release) cargo build --locked --release --bin sifttext ;;
+  *) echo 'usage: sh scripts/build.sh [--release]' >&2; exit 1 ;;
+esac
 { printf '%s\n' Cargo.toml Cargo.lock README.md .gitignore rust-toolchain.toml;
   for dir in src laws scripts tests fixtures docs; do
     if [ -d "$dir" ]; then find "$dir" -type f | LC_ALL=C sort; fi

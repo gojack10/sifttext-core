@@ -8,6 +8,10 @@ use std::{
 const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived retrieval
 
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
+sifttext update                            Check and apply compatible official product updates
+sifttext update --status                    Show installed identities and pending update state
+sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
+sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext init HOME                         Copy the embedded first-party KB (from native files) to a NEW Git home
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
@@ -45,6 +49,12 @@ fn run() -> Result<()> {
         println!("{HELP}");
         return Ok(());
     }
+    if args.first().is_some_and(|arg| arg == "update") {
+        let mode = match args.as_slice() { [_] => "", [_, mode] if ["--status", "--resume", "--rollback"].contains(&mode.as_str()) => mode, _ => return Err("unknown update arguments".into()) };
+        let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT").ok_or("use the managed installation launcher for updates")?;
+        println!("{}", serde_json::to_string_pretty(&sifttext_file_graph::updates::update(Path::new(&root), mode)?)?);
+        return Ok(());
+    }
     let runtime = local::runtime()?;
     let policy = Policy::checked(&runtime)?;
     // Bundle/bootstrap assets belong to this packaged onramp, not the generic
@@ -53,6 +63,7 @@ fn run() -> Result<()> {
     sifttext_file_graph::graph_transition::Transition::checked(&policy)?;
     let output = match args.as_slice() {
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
+        [cmd, root, home] if cmd == "install-home" => sifttext_file_graph::updates::initialize(&policy, &absolute(root)?, &absolute(home)?)?,
         [cmd, home] if cmd == "init" => {
             sifttext_file_graph::native_kb::init(&policy, &absolute(home)?)?
         }
@@ -201,8 +212,14 @@ fn absolute(path: &str) -> Result<PathBuf> {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
+    let result = (|| -> Result<()> {
+        let _operation = if updating { None } else { sifttext_file_graph::updates::operation_lock()? };
+        run()
+    })();
+    if let Err(error) = result {
         eprintln!("rejected: {error}");
         std::process::exit(1);
     }
+    if !updating { sifttext_file_graph::updates::opportunistic(); }
 }
