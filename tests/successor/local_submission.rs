@@ -83,6 +83,87 @@ fn fixture(dir: &Path) -> (Policy, PathBuf, Request, PathBuf) {
     )
 }
 #[test]
+fn reviewed_submit_returns_findings_then_repairs_and_publishes_normally() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap();
+    let (policy, home, mut q, _) = fixture(&dir);
+    let draft = q.draft.as_ref().unwrap().clone();
+    let original = q.commit.clone().unwrap();
+    let base = git(&home, &["rev-parse", "main"]);
+    let rejected = super::submit_reviewed(
+        &policy,
+        &q,
+        b"rules v1",
+        |candidate, diff, message, rules| {
+            assert!(String::from_utf8_lossy(diff).contains("Recoveryanchor"));
+            assert!(String::from_utf8_lossy(message).contains("knowledge: recover save"));
+            Ok(crate::checked_publication::SemanticVerdict {
+                candidate: candidate.into(),
+                rules: crate::sha256(rules),
+                passed: false,
+                findings: vec![crate::checked_publication::SemanticFinding {
+                    node: "recovery-anchor".into(),
+                    rule: "content-specific-message".into(),
+                    reason: "Explain the stored recovery behavior in the commit message.".into(),
+                }],
+            })
+        },
+    )
+    .unwrap();
+    assert_eq!(rejected["status"], "rejected");
+    assert_eq!(rejected["semantic_findings"][0]["node"], "recovery-anchor");
+    assert_eq!(
+        rejected["semantic_findings"][0]["rule"],
+        "content-specific-message"
+    );
+    assert_eq!(git(&home, &["rev-parse", "main"]), base);
+    assert!(draft.exists());
+    assert_eq!(git(&draft, &["rev-parse", "HEAD"]), original);
+
+    let node = fs::read_dir(draft.join("nodes"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+        .join("node.md");
+    fs::write(
+        &node,
+        fs::read_to_string(&node).unwrap() + "\nReviewed recovery details.",
+    )
+    .unwrap();
+    git(&draft, &["add", "nodes"]);
+    git(
+        &draft,
+        &["commit", "-qm", "knowledge: explain recovery behavior"],
+    );
+    q.commit = Some(git(&draft, &["rev-parse", "HEAD"]));
+    let published = super::submit_reviewed(
+        &policy,
+        &q,
+        b"rules v1",
+        |candidate, diff, message, rules| {
+            assert!(String::from_utf8_lossy(diff).contains("Reviewed recovery details."));
+            assert!(
+                String::from_utf8_lossy(message).contains("knowledge: explain recovery behavior")
+            );
+            Ok(crate::checked_publication::SemanticVerdict {
+                candidate: candidate.into(),
+                rules: crate::sha256(rules),
+                passed: true,
+                findings: vec![],
+            })
+        },
+    )
+    .unwrap();
+    assert_eq!(published["status"], "current", "{published}");
+    assert_eq!(published["home_advance"]["status"], "current");
+    assert_eq!(published["worktree_removed"], true);
+    assert!(!draft.exists());
+    assert_ne!(git(&home, &["rev-parse", "main"]), base);
+}
+
+#[test]
 fn ignored_user_file_survives_submission_refusal() {
     for relative in [
         "private-note",
@@ -394,7 +475,7 @@ fn completed_save_retry_recovers_lost_success_receipt() {
         q.draft.as_ref().unwrap(),
         &["symbolic-ref", "--quiet", "HEAD"],
     );
-    let lost = super::submit_inner(&policy, &q, || Err("lost success receipt".into()));
+    let lost = super::submit_inner(&policy, &q, None, || Err("lost success receipt".into()));
     assert!(
         lost.unwrap_err()
             .to_string()

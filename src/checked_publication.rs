@@ -63,6 +63,26 @@ impl Barrier {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SemanticVerdict {
+    /// Full candidate commit reviewed by the caller.
+    pub candidate: String,
+    /// SHA-256 of the exact rule bytes reviewed by the caller.
+    pub rules: String,
+    pub passed: bool,
+    #[serde(default)]
+    pub findings: Vec<SemanticFinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticFinding {
+    pub node: String,
+    pub rule: String,
+    pub reason: String,
+}
+
+type SemanticReviewer<'a> = dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict> + 'a;
+
+#[derive(Debug, Serialize)]
 pub struct Receipt {
     pub status: &'static str,
     pub check: &'static str,
@@ -83,6 +103,8 @@ pub struct Receipt {
     pub draft_index_available: bool,
     /// Both computed and final exact-candidate graph checks, not proof tokens.
     pub graph_checks: Vec<gate::GraphCheck>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub semantic_findings: Vec<SemanticFinding>,
     pub elapsed_ms: u128,
 }
 impl Receipt {
@@ -340,7 +362,10 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
         "rebase-merge",
         "rebase-apply",
     ] {
-        require(!git_dir.join(name).try_exists()?, "unfinished Git operation")?;
+        require(
+            !git_dir.join(name).try_exists()?,
+            "unfinished Git operation",
+        )?;
     }
     Ok(())
 }
@@ -349,17 +374,47 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
 fn clean_checks_operation_markers_in_each_worktree_git_directory() {
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("repo");
-    git(temp.path(), &["init", "-q", "-b", "main", repo.to_str().unwrap()]).unwrap();
+    git(
+        temp.path(),
+        &["init", "-q", "-b", "main", repo.to_str().unwrap()],
+    )
+    .unwrap();
     git(&repo, &["commit", "--allow-empty", "-qm", "fixture"]).unwrap();
     let head = git(&repo, &["rev-parse", "HEAD"]).unwrap();
     let linked = temp.path().join("linked");
-    git(&repo, &["worktree", "add", "-q", "--detach", linked.to_str().unwrap(), &head]).unwrap();
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "--detach",
+            linked.to_str().unwrap(),
+            &head,
+        ],
+    )
+    .unwrap();
     for view in [&repo, &linked] {
         clean(view, &head).unwrap();
         let git_dir = PathBuf::from(git(view, &["rev-parse", "--absolute-git-dir"]).unwrap());
-        for name in ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"] {
+        for name in [
+            "MERGE_HEAD",
+            "CHERRY_PICK_HEAD",
+            "REVERT_HEAD",
+            "rebase-merge",
+            "rebase-apply",
+        ] {
             let marker = git_dir.join(name);
-            assert_eq!(marker, PathBuf::from(git(view, &["rev-parse", "--path-format=absolute", "--git-path", name]).unwrap()));
+            assert_eq!(
+                marker,
+                PathBuf::from(
+                    git(
+                        view,
+                        &["rev-parse", "--path-format=absolute", "--git-path", name]
+                    )
+                    .unwrap()
+                )
+            );
             if name.starts_with("rebase-") {
                 fs::create_dir(&marker).unwrap();
             } else {
@@ -776,7 +831,26 @@ fn accepted_index(
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()))
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None)
+}
+
+/// Submit through the normal structural checks, then require a caller-provided
+/// semantic verdict bound to this exact candidate commit and rule snapshot.
+/// Core does not select a provider or decide whether review is mandatory.
+pub fn submit_reviewed(
+    policy: &Policy,
+    request: &Request,
+    rules: &[u8],
+    mut review: impl FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict>,
+) -> Receipt {
+    submit_inner(
+        policy,
+        request,
+        false,
+        None,
+        &mut |_, _| Ok(()),
+        Some((rules, &mut review)),
+    )
 }
 
 /// Check and accept the combination in the submitted worktree. The caller owns
@@ -793,7 +867,25 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record)
+    submit_inner(policy, request, true, previous_heads, &mut record, None)
+}
+
+pub(crate) fn save_prepared_reviewed(
+    policy: &Policy,
+    request: &Request,
+    rules: &[u8],
+    previous_heads: Option<(&str, &str)>,
+    review: &mut dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict>,
+    mut record: impl FnMut(&str, &str) -> Result<()>,
+) -> Receipt {
+    submit_inner(
+        policy,
+        request,
+        true,
+        previous_heads,
+        &mut record,
+        Some((rules, review)),
+    )
 }
 
 fn submit_inner(
@@ -802,6 +894,7 @@ fn submit_inner(
     in_draft: bool,
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
+    review: Option<(&[u8], &mut SemanticReviewer<'_>)>,
 ) -> Receipt {
     let start = Instant::now();
     let mut receipt = Receipt {
@@ -821,6 +914,7 @@ fn submit_inner(
         accepted_index_available: false,
         draft_index_available: false,
         graph_checks: vec![],
+        semantic_findings: vec![],
         elapsed_ms: 0,
     };
     if execute(
@@ -830,6 +924,7 @@ fn submit_inner(
         in_draft,
         previous_heads,
         record,
+        review,
     )
     .is_err()
         && receipt.published
@@ -848,6 +943,7 @@ fn execute(
     in_draft: bool,
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
+    mut review: Option<(&[u8], &mut SemanticReviewer<'_>)>,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
     crate::real_dir(&q.repo)?;
@@ -1153,6 +1249,22 @@ fn execute(
         indexed.status == "current" && indexed.version == r.version,
         "derived candidate mismatch",
     )?;
+    if let Some((rules, reviewer)) = review.as_mut() {
+        r.check = "semantic_review_rejected";
+        let diff = run(
+            &repo,
+            &["diff", "--binary", "--no-ext-diff", &main, &sha, "--"],
+        )?;
+        require(diff.status.success(), "candidate diff unavailable")?;
+        let message = run(&repo, &["show", "-s", "--format=%B", submitted])?;
+        require(message.status.success(), "submission message unavailable")?;
+        let candidate = sha.as_str();
+        let rules = *rules;
+        let verdict = reviewer(candidate, &diff.stdout, &message.stdout, rules)?;
+        let bound = verdict.candidate == candidate && verdict.rules == crate::sha256(rules);
+        r.semantic_findings = verdict.findings;
+        require(bound && verdict.passed, "semantic review rejected or stale")?;
+    }
     if let Some(barrier) = &q.pause_before_publish {
         barrier.wait(&[&repo, &common], view)?;
     }

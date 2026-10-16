@@ -58,12 +58,26 @@ fn persist(path: &Path, pending: &Pending) -> Result<()> {
 }
 
 pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
-    submit_inner(policy, request, || Ok(()))
+    submit_inner(policy, request, None, || Ok(()))
+}
+
+pub fn submit_reviewed(
+    policy: &Policy,
+    request: &checked_publication::Request,
+    rules: &[u8],
+    mut review: impl FnMut(&str, &[u8], &[u8], &[u8]) -> Result<checked_publication::SemanticVerdict>,
+) -> Result<Value> {
+    require(request.draft.is_some(), "review requires a submitted draft")?;
+    submit_inner(policy, request, Some((rules, &mut review)), || Ok(()))
 }
 
 fn submit_inner(
     policy: &Policy,
     request: &checked_publication::Request,
+    mut review: Option<(
+        &[u8],
+        &mut dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<checked_publication::SemanticVerdict>,
+    )>,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
     require(
@@ -157,17 +171,31 @@ fn submit_inner(
         )
     } else {
         let previous_heads = pending.prepared_heads.clone();
-        let receipt = checked_publication::save_prepared(
-            policy,
-            request,
-            previous_heads
-                .as_ref()
-                .map(|(from, to)| (from.as_str(), to.as_str())),
-            |from, to| {
-                pending.prepared_heads = Some((from.to_owned(), to.to_owned()));
-                persist(&journal, &pending)
-            },
-        );
+        let record = |from: &str, to: &str| {
+            pending.prepared_heads = Some((from.to_owned(), to.to_owned()));
+            persist(&journal, &pending)
+        };
+        let receipt = if let Some((rules, reviewer)) = review.as_mut() {
+            checked_publication::save_prepared_reviewed(
+                policy,
+                request,
+                *rules,
+                previous_heads
+                    .as_ref()
+                    .map(|(from, to)| (from.as_str(), to.as_str())),
+                &mut **reviewer,
+                record,
+            )
+        } else {
+            checked_publication::save_prepared(
+                policy,
+                request,
+                previous_heads
+                    .as_ref()
+                    .map(|(from, to)| (from.as_str(), to.as_str())),
+                record,
+            )
+        };
         if receipt.status != "current" {
             if !receipt.published && pending.completed_head.is_none() {
                 // An uncompleted refusal returns to explicit repair/resubmission.
