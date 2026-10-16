@@ -1,6 +1,7 @@
 //! Deterministic post-CAS process death and post-removal cleanup recovery.
 use super::submit;
 use crate::{
+    checked_publication,
     Policy,
     checked_publication::{Barrier, Request},
     local,
@@ -93,6 +94,7 @@ fn reviewed_submit_returns_findings_then_repairs_and_publishes_normally() {
     let rejected = super::submit_reviewed(
         &policy,
         &q,
+        checked_publication::ReviewMode::Hard,
         b"rules v1",
         |candidate, diff, message, rules| {
             assert!(String::from_utf8_lossy(diff).contains("Recoveryanchor"));
@@ -141,6 +143,7 @@ fn reviewed_submit_returns_findings_then_repairs_and_publishes_normally() {
     let published = super::submit_reviewed(
         &policy,
         &q,
+        checked_publication::ReviewMode::Hard,
         b"rules v1",
         |candidate, diff, message, rules| {
             assert!(String::from_utf8_lossy(diff).contains("Reviewed recovery details."));
@@ -157,6 +160,42 @@ fn reviewed_submit_returns_findings_then_repairs_and_publishes_normally() {
     )
     .unwrap();
     assert_eq!(published["status"], "current", "{published}");
+    assert_eq!(published["home_advance"]["status"], "current");
+    assert_eq!(published["worktree_removed"], true);
+    assert!(!draft.exists());
+    assert_ne!(git(&home, &["rev-parse", "main"]), base);
+}
+
+#[test]
+fn advisory_findings_publish_through_normal_submission() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap();
+    let (policy, home, q, _) = fixture(&dir);
+    let draft = q.draft.as_ref().unwrap().clone();
+    let base = git(&home, &["rev-parse", "main"]);
+    let published = super::submit_reviewed(
+        &policy,
+        &q,
+        checked_publication::ReviewMode::Advisory,
+        b"rules v1",
+        |candidate, diff, message, rules| {
+            assert!(String::from_utf8_lossy(diff).contains("Recoveryanchor"));
+            assert!(String::from_utf8_lossy(message).contains("knowledge: recover save"));
+            Ok(checked_publication::SemanticVerdict {
+                candidate: candidate.into(),
+                rules: crate::sha256(rules),
+                passed: false,
+                findings: vec![checked_publication::SemanticFinding {
+                    node: "recovery-anchor".into(),
+                    rule: "content-specific-message".into(),
+                    reason: "Explain the stored recovery behavior.".into(),
+                }],
+            })
+        },
+    )
+    .unwrap();
+    assert_eq!(published["status"], "current", "{published}");
+    assert_eq!(published["semantic_findings"][0]["node"], "recovery-anchor");
     assert_eq!(published["home_advance"]["status"], "current");
     assert_eq!(published["worktree_removed"], true);
     assert!(!draft.exists());

@@ -62,6 +62,12 @@ impl Barrier {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ReviewMode {
+    Advisory,
+    Hard,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SemanticVerdict {
     /// Full candidate commit reviewed by the caller.
@@ -840,6 +846,7 @@ pub fn submit(policy: &Policy, request: &Request) -> Receipt {
 pub fn submit_reviewed(
     policy: &Policy,
     request: &Request,
+    mode: ReviewMode,
     rules: &[u8],
     mut review: impl FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict>,
 ) -> Receipt {
@@ -849,7 +856,7 @@ pub fn submit_reviewed(
         false,
         None,
         &mut |_, _| Ok(()),
-        Some((rules, &mut review)),
+        Some((mode, rules, &mut review)),
     )
 }
 
@@ -873,6 +880,7 @@ pub(crate) fn save_prepared(
 pub(crate) fn save_prepared_reviewed(
     policy: &Policy,
     request: &Request,
+    mode: ReviewMode,
     rules: &[u8],
     previous_heads: Option<(&str, &str)>,
     review: &mut dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict>,
@@ -884,7 +892,7 @@ pub(crate) fn save_prepared_reviewed(
         true,
         previous_heads,
         &mut record,
-        Some((rules, review)),
+        Some((mode, rules, review)),
     )
 }
 
@@ -894,7 +902,7 @@ fn submit_inner(
     in_draft: bool,
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
-    review: Option<(&[u8], &mut SemanticReviewer<'_>)>,
+    review: Option<(ReviewMode, &[u8], &mut SemanticReviewer<'_>)>,
 ) -> Receipt {
     let start = Instant::now();
     let mut receipt = Receipt {
@@ -943,7 +951,7 @@ fn execute(
     in_draft: bool,
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
-    mut review: Option<(&[u8], &mut SemanticReviewer<'_>)>,
+    mut review: Option<(ReviewMode, &[u8], &mut SemanticReviewer<'_>)>,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
     crate::real_dir(&q.repo)?;
@@ -1249,7 +1257,7 @@ fn execute(
         indexed.status == "current" && indexed.version == r.version,
         "derived candidate mismatch",
     )?;
-    if let Some((rules, reviewer)) = review.as_mut() {
+    if let Some((mode, rules, reviewer)) = review.as_mut() {
         r.check = "semantic_review_rejected";
         let diff = run(
             &repo,
@@ -1263,7 +1271,10 @@ fn execute(
         let verdict = reviewer(candidate, &diff.stdout, &message.stdout, rules)?;
         let bound = verdict.candidate == candidate && verdict.rules == crate::sha256(rules);
         r.semantic_findings = verdict.findings;
-        require(bound && verdict.passed, "semantic review rejected or stale")?;
+        require(
+            bound && (matches!(mode, ReviewMode::Advisory) || verdict.passed),
+            "semantic review rejected or stale",
+        )?;
     }
     if let Some(barrier) = &q.pause_before_publish {
         barrier.wait(&[&repo, &common], view)?;

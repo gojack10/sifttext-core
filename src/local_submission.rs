@@ -64,17 +64,19 @@ pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result
 pub fn submit_reviewed(
     policy: &Policy,
     request: &checked_publication::Request,
+    mode: checked_publication::ReviewMode,
     rules: &[u8],
     mut review: impl FnMut(&str, &[u8], &[u8], &[u8]) -> Result<checked_publication::SemanticVerdict>,
 ) -> Result<Value> {
     require(request.draft.is_some(), "review requires a submitted draft")?;
-    submit_inner(policy, request, Some((rules, &mut review)), || Ok(()))
+    submit_inner(policy, request, Some((mode, rules, &mut review)), || Ok(()))
 }
 
 fn submit_inner(
     policy: &Policy,
     request: &checked_publication::Request,
     mut review: Option<(
+        checked_publication::ReviewMode,
         &[u8],
         &mut dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<checked_publication::SemanticVerdict>,
     )>,
@@ -175,10 +177,11 @@ fn submit_inner(
             pending.prepared_heads = Some((from.to_owned(), to.to_owned()));
             persist(&journal, &pending)
         };
-        let receipt = if let Some((rules, reviewer)) = review.as_mut() {
+        let receipt = if let Some((mode, rules, reviewer)) = review.as_mut() {
             checked_publication::save_prepared_reviewed(
                 policy,
                 request,
+                *mode,
                 *rules,
                 previous_heads
                     .as_ref()

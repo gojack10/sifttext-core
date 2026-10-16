@@ -100,6 +100,7 @@ fn publication_empty_git_baseline_recovers_then_accepts_first_real_root() {
         let rejected = checked_publication::submit_reviewed(
             &policy,
             &q,
+            checked_publication::ReviewMode::Hard,
             rules,
             |actual, diff, message, _rules| {
                 assert_ne!(
@@ -124,6 +125,7 @@ fn publication_empty_git_baseline_recovers_then_accepts_first_real_root() {
     let published = checked_publication::submit_reviewed(
         &policy,
         &q,
+        checked_publication::ReviewMode::Hard,
         rules,
         |candidate, diff, message, rules| {
             assert_ne!(
@@ -177,6 +179,7 @@ fn invalid_candidate_never_invokes_semantic_reviewer() {
     let rejected = checked_publication::submit_reviewed(
         &policy,
         &q,
+        checked_publication::ReviewMode::Hard,
         b"rules v1",
         |candidate, _, _message, rules| {
             called.store(true, Ordering::SeqCst);
@@ -213,6 +216,7 @@ fn candidate_mutated_after_passing_review_is_refused_and_draft_recovers() {
             checked_publication::submit_reviewed(
                 &policy,
                 &q,
+                checked_publication::ReviewMode::Hard,
                 b"rules v1",
                 |candidate, _, _message, rules| {
                     reviewed.store(true, Ordering::SeqCst);
@@ -264,6 +268,7 @@ fn candidate_mutated_after_passing_review_is_refused_and_draft_recovers() {
     let recovered = checked_publication::submit_reviewed(
         &policy,
         &q,
+        checked_publication::ReviewMode::Hard,
         b"rules v1",
         |candidate, _, _message, rules| {
             Ok(checked_publication::SemanticVerdict {
