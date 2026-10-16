@@ -10,11 +10,13 @@ Your agents maintain the knowledge. You can inspect it and steer the work when y
 
 ## Get started
 
-**Status:** source-build alpha. The curl installer and final Knowledge Base bundle are pending.
+Source-build alpha.
 
-Give an agent with local file and terminal access this prompt:
+Ask an agent with local file and terminal access to run this command and follow its instructions for your project.
 
-> Follow https://github.com/gojack10/sifttext-core/blob/main/AGENTS.md to set up SiftText for [my project]. Use it to maintain our developing understanding as we work. Ask before installing tools that need my permission.
+```sh
+curl -fsSL https://sifttext.com/install
+```
 
 **Agents:** read [AGENTS.md](AGENTS.md).
 
