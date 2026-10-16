@@ -1,36 +1,42 @@
 # SiftText
 
-Build an understanding you can keep working from.
+> Build an understanding your agents can keep working from.
 
-Use SiftText with your AI agent to investigate a project over time. Each finding connects to the question that produced it. When new evidence challenges an earlier decision, you can follow how the thinking changed and continue the investigation.
-
-Suppose your agent recommends a supplier for its low prices. When deliveries start arriving late, it can revisit the choice using the original research.
-
-Your agents maintain the knowledge. You can inspect it and steer the work when you want.
+We believe agents will do far more of our work, so people need a way to question their decisions without following every conversation. We're building SiftText to help your agents preserve the reasons behind those decisions across sessions, with you free to inspect or redirect the work. As circumstances change and models improve, we want that record to help future agents question earlier assumptions and discover possibilities we missed.
 
 ## Get started
 
-Precompiled releases support macOS 15+ and Linux with glibc 2.35+, on arm64 and x86_64.
+Give your agent this installation request:
 
-Ask an agent with local file and terminal access to run this command and follow its instructions for your project.
+> Install SiftText for local project memory by following https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md and handle setup within my permissions.
 
-```sh
-curl -fsSL https://sifttext.com/install
-```
+After setup, your agent reads the installed instructions before continuing your project or asking what you would like to work on.
 
-Agents installing SiftText should follow [INSTALL.md](INSTALL.md). Contributors working on Core should read [AGENTS.md](AGENTS.md).
+For direct terminal installation, follow [INSTALL.md](INSTALL.md) to inspect and verify the downloaded installer before executing that same file.
+
+## What installation does
+
+The precompiled [v0.1.0 release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. With Git and the download tools available, installation puts the application at `~/.local/share/sifttext` and initializes knowledge at `~/sifttext`. Keeping those locations separate from project code lets your knowledge survive software replacement.
+
+Managed v0.1.0 installations check official releases opportunistically after four hours and apply compatible updates between operations. To keep those updates disabled, have your agent use `SIFTTEXT_NO_UPDATE=1` for installation and every later invocation.
+
+Continue local work during a blocked update while your agent reconciles the knowledge merge in its retained private worktree within your permission.
+
+## Inspect a release
+
+Each [release record](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) includes SHA256SUMS with the source revision used to build its packages. Follow that revision in the [source repository](https://github.com/gojack10/sifttext-core) to inspect the installer, then use [INSTALL.md](INSTALL.md) to compare the downloaded bytes and verify their checksum before execution.
+
+The checksums depend on the publisher's GitHub account and HTTPS delivery. Because v0.1.0 is unsigned and unnotarized, users requiring signed build provenance must wait for a release that supplies it.
 
 ## How it works
 
-Knowledge lives in local Markdown files with Git history. Related questions form branches that agents explore through outlines and search. The bundled instructions guide agents in maintaining those relationships as work develops.
+Knowledge lives in local Markdown files with Git history. Related questions form branches that agents explore through outlines and search, using the bundled instructions to find the relevant research as a project develops.
 
-Agents edit in private Git worktrees. Checked submission validates the combined structure before accepting a change. Git history supports inspection and recovery.
-
-The knowledge repository stays separate from your project code and Core installation. Installed use requires Git and the complete application directory.
-
-Managed installations check official releases opportunistically after four hours. Compatible updates activate between operations. Knowledge merges preserve customer changes and retain conflicts in private worktrees for the agent to resolve. Run the installed launcher with `update --status`, `update --resume` or `update --rollback` to inspect or recover an update.
+To change that knowledge, an agent edits in a private Git worktree and submits it for validation of the combined structure. Accepted changes remain in Git history for later inspection or recovery.
 
 ## Development
+
+To inspect or adapt Core under the [PolyForm Perimeter license](LICENSE), begin with [AGENTS.md](AGENTS.md) and its local instruction pipeline. That route lets an agent handle an authorized source-development assignment from the checkout.
 
 ### Install from source
 
@@ -42,13 +48,11 @@ sh scripts/build.sh
 sh install-local.sh "$HOME/sifttext-core-app"
 ```
 
-Prerequisites: Git, curl, tar, shasum, a C compiler/linker and Clang 14+. On macOS, use Xcode Command Line Tools. On Ubuntu/Debian, install `clang build-essential git curl ca-certificates perl`.
+Prerequisites are Git, curl, tar, shasum, a C compiler/linker and Clang 14+. Use Xcode Command Line Tools on macOS. On Ubuntu/Debian, install `clang build-essential git curl ca-certificates perl` within your installation permissions.
 
-Setup downloads verified [Bend](https://github.com/bendlang/bend) 2.0.27 and Rust 1.95.0 as needed into checkout-local `.tools/`. Initialization requires a selected Git name and email. Your agent can help configure that identity for the knowledge home.
+Setup acquires verified [Bend](https://github.com/bendlang/bend) 2.0.27 and Rust 1.95.0 into checkout-local `.tools/` when needed. Before initialization, select a Git name and email for the knowledge repository using the identity procedure in the local instructions.
 
-Choose a new application directory. Knowledge defaults to `~/sifttext`, or an absolute path supplied as the installer's second argument. Keep these destinations separate, with existing canonical parent directories. Recognized knowledge homes and existing edits are preserved.
-
-The installer prints a prompt with your local paths. Give it to your agent and start working on your project.
+Choose a new absolute application path whose parent already exists, with no symlink components. To keep knowledge outside the application, use the default `~/sifttext` or supply another absolute path as the installer's second argument. Once it recognizes or initializes that home, the installer prints a handoff using the resulting local paths.
 
 Source-build and installed workflows were tested on macOS 26.4/arm64 and Ubuntu 24.04.4/aarch64 at `991aca3`.
 
@@ -61,8 +65,8 @@ sh scripts/with-tools.sh cargo test --locked
 sh scripts/law-mutations.sh
 ```
 
-Run the installed `sifttext -h` for command help.
+For command help, run the installed `sifttext -h`.
 
 ## License
 
-[PolyForm Perimeter 1.0.1](LICENSE) permits source access and restricts providing competing products. [Leviathan](https://github.com/elstongun/leviathan) retains its Apache-2.0 terms. Bundled upstream skills retain their MIT notices.
+[PolyForm Perimeter 1.0.1](LICENSE) permits source access while restricting competing products. Upstream components retain their own terms, including Apache-2.0 for [Leviathan](https://github.com/elstongun/leviathan) and the MIT notices in bundled skills.

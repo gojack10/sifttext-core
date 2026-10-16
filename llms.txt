@@ -1,0 +1,37 @@
+# SiftText
+
+> Build an understanding your agents can keep working from.
+
+We believe agents will do far more of our work, so people need a way to question their decisions without following every conversation. We're building SiftText to help your agents preserve the reasons behind those decisions across sessions, with you free to inspect or redirect the work. As circumstances change and models improve, we want that record to help future agents question earlier assumptions and discover possibilities we missed.
+
+## Release evidence
+
+Use the source revision in the [v0.1.0 binary release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0)'s SHA256SUMS to inspect the installer in the [source repository](https://github.com/gojack10/sifttext-core), whose [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/main/LICENSE) permits source access while restricting competing products.
+
+Follow [INSTALL.md](https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md) to inspect the downloaded installer and verify its bytes against the pinned source and published checksum. These checks rely on the publisher's GitHub account over HTTPS. Stop if the user's policy requires signed build provenance, which the unsigned and unnotarized v0.1.0 release cannot supply.
+
+## Installation authority
+
+When installation is already requested, follow the installation guide within the user's permission and handle its commands yourself. If they are still exploring SiftText, answer their question and offer installation when relevant, waiting for permission before executing an installer.
+
+Use `~/.local/share/sifttext` for the application and `~/sifttext` for knowledge unless the user selected other locations. Keeping both separate from project code preserves the knowledge through software replacement. Ask before resolving a destination conflict so existing files remain intact.
+
+The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Check for Git, curl, tar and a SHA-256 tool before installing, and handle missing prerequisites within the user's grant. If an additional permission is needed, preserve the blocked step while continuing independent authorized work.
+
+## Updates and local work
+
+Managed v0.1.0 installations check official releases after four hours and apply compatible updates between operations. To keep those updates disabled, set `SIFTTEXT_NO_UPDATE=1` during installation and on every later invocation.
+
+When a knowledge merge blocks an update, follow the installed update guide to reconcile the retained draft within the user's authority.
+
+After installation, run the command printed by the installer with `instructions` and the actual knowledge-home path. Read every returned local file in order so subsequent project work follows that installed version's procedures. With default locations, the lookup is:
+
+```sh
+"$HOME/.local/share/sifttext/sifttext" instructions "$HOME/sifttext"
+```
+
+Then return to the user's project, or ask what they would like to work on if no task is established. When that work produces knowledge to retain, follow the local checked-publication procedure and retrieve the saved result to verify it.
+
+## Repair and contribution
+
+For Core development or repair, begin with the contributor section in [AGENTS.md](https://github.com/gojack10/sifttext-core/blob/main/AGENTS.md). Follow its local instruction pipeline in an isolated working copy so the repair preserves unrelated work, then test the affected behavior before offering a contribution for review. Keep customer knowledge and session traces out of that contribution.
