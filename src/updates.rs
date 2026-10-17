@@ -575,6 +575,32 @@ fn resume(root: &Path, state: &mut State) -> Result<Value> {
         Some(pending.upstream.clone()),
     )
 }
+fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
+    let app_changed = current.version != manifest.application.version;
+    if !app_changed {
+        require(
+            current.source == manifest.application.source
+                && manifest
+                    .application
+                    .assets
+                    .get(&platform()?)
+                    .is_some_and(|asset| asset.sha256 == state.application_sha256),
+            "official application identity changed without a new version; retain active bytes",
+        )?;
+    }
+    if !app_changed && state.knowledge == manifest.knowledge.revision {
+        return Ok(
+            json!({"status":"current","application":current.version,"knowledge":state.knowledge}),
+        );
+    }
+    Ok(json!({
+        "status":"update_available",
+        "application":manifest.application.version,
+        "knowledge":manifest.knowledge.revision,
+        "guide":state.home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
+        "command":"sifttext update"
+    }))
+}
 fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
     validate_manifest(manifest)?;
     let current = package(&root.join(&state.application))?;
@@ -829,7 +855,12 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
     download(MANIFEST, file.path(), 1_048_576)?;
     let manifest: Manifest = load(file.path())?;
     validate_manifest(&manifest)?;
-    let result = apply(root, &mut state, &manifest)?;
+    let result = if mode == "--opportunistic" {
+        let current = package(&root.join(&state.application))?;
+        opportunistic_notice(&current, &state, &manifest)?
+    } else {
+        apply(root, &mut state, &manifest)?
+    };
     state.success = now();
     persist(&root.join("state.json"), &state)?;
     Ok(result)
@@ -988,6 +1019,59 @@ mod tests {
             previous: None,
         }
     }
+    #[test]
+    fn opportunistic_notice_reports_updates_without_applying_them() {
+        let state = state();
+        let current = Package {
+            version: "v1".into(),
+            source: "a".repeat(40),
+            knowledge: "a".repeat(64),
+            format: 1,
+        };
+        let asset = Asset {
+            url: format!("{RELEASES}v1/fixture.tar.gz"),
+            sha256: state.application_sha256.clone(),
+        };
+        let mut manifest = Manifest {
+            schema: 1,
+            application: Application {
+                version: "v1".into(),
+                source: current.source.clone(),
+                format: 1,
+                requires_knowledge: "b".repeat(64),
+                assets: [(platform().unwrap(), asset.clone())].into(),
+            },
+            knowledge: Knowledge {
+                revision: "b".repeat(64),
+                format: 1,
+                requires_application: "v1".into(),
+                asset,
+            },
+        };
+        let notice = opportunistic_notice(&current, &state, &manifest).unwrap();
+        assert_eq!(notice["status"], "update_available");
+        assert_eq!(notice["command"], "sifttext update");
+        assert_eq!(
+            notice["guide"],
+            state
+                .home
+                .join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md")
+                .to_string_lossy()
+                .as_ref()
+        );
+
+        manifest.knowledge.revision = state.knowledge.clone();
+        assert_eq!(
+            opportunistic_notice(&current, &state, &manifest).unwrap()["status"],
+            "current"
+        );
+        manifest.application.version = "v2".into();
+        assert_eq!(
+            opportunistic_notice(&current, &state, &manifest).unwrap()["status"],
+            "update_available"
+        );
+    }
+
     #[test]
     fn check_interval_retry_and_clock_reset() {
         let mut s = state();
