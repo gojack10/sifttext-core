@@ -437,9 +437,9 @@ fn native_sqlite_and_token_lock_timeouts_fail_and_then_recover() {
 }
 
 #[test]
-fn real_policy_process_timeout_cannot_return_a_successful_view() {
+fn failed_policy_process_cannot_return_a_successful_view() {
     // Fault-inject the owned helper process, not the executable, stamp or policy.
-    // Stop it after spawn so invoke's unchanged real deadline/kill path executes.
+    // Kill it after spawn to exercise the CLI's genuine helper-failure path.
     let store = fixture(256);
     // A wide graph now finishes before process discovery. A chain keeps the
     // same 10s request budget while making the real helper observable.
@@ -488,8 +488,8 @@ fn real_policy_process_timeout_cannot_return_a_successful_view() {
             .next()
             .and_then(|s| s.trim().parse::<i32>().ok())
         {
-            // The observer spawns only its policy helper. Stop the owned direct
-            // child before a separate ps/name probe gives it time to finish.
+            // Stop the owned direct child before a separate ps/name probe gives
+            // it time to finish; then kill it as a genuine helper failure.
             assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
             break pid;
         }
@@ -521,18 +521,19 @@ fn real_policy_process_timeout_cannot_return_a_successful_view() {
         );
         thread::sleep(Duration::from_millis(1));
     }
+    assert_eq!(unsafe { libc::kill(helper, libc::SIGKILL) }, 0);
     let started = Instant::now();
     let output = child.wait_with_output().unwrap();
     // index records deliberately preserve a structured unavailable view for a
     // failed validator. The cause is discarded there, not guessed by the CLI.
     failed(
-        "policy-timeout",
+        "policy-helper-failure",
         &output,
         store.path(),
         "error",
         "unavailable",
     );
-    assert!(started.elapsed() >= Duration::from_secs(8));
+    assert!(started.elapsed() < Duration::from_secs(8));
     drop(group);
 }
 
