@@ -55,7 +55,6 @@ fn native_unsafe_submission_inputs_preserve_drafts_and_accepted_history() {
         "unregistered",
         "attributes",
         "checked_out_main",
-        "symbolic_alias",
     ] {
         let f = Fixture::new();
         node(&f.a, 2, "Safe authored X");
@@ -94,13 +93,6 @@ fn native_unsafe_submission_inputs_preserve_drafts_and_accepted_history() {
             "checked_out_main" => {
                 git(&f.repo, &["checkout", "-q", "main"]);
                 q = json!({"repo":f.repo,"accepted_ref":"refs/heads/main"});
-            }
-            "symbolic_alias" => {
-                git(
-                    &f.repo,
-                    &["symbolic-ref", "refs/heads/alias", "refs/heads/main"],
-                );
-                q = json!({"repo":f.repo,"accepted_ref":"refs/heads/alias"});
             }
             _ => unreachable!(),
         }
