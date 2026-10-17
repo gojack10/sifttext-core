@@ -4,7 +4,7 @@ set -eu
 umask 077
 PREFIX=${1:-"$HOME/.local/share/sifttext"}
 KNOWLEDGE=${2:-"$HOME/sifttext"}
-for tool in curl tar git; do
+for tool in curl tar git gh; do
   command -v "$tool" >/dev/null || { echo "Missing $tool. Ask the user to install it within their permissions." >&2; exit 1; }
 done
 git --version >/dev/null 2>&1 || { echo 'Git is unavailable. Ask the user to install Git before continuing.' >&2; exit 1; }
@@ -54,6 +54,9 @@ if [ "$RELEASE" = latest ]; then CHECKSUMS=$BASE/latest/download/SHA256SUMS; els
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 60 \
   "$CHECKSUMS" -o "$STAGE/SHA256SUMS"
 VERSION=$(awk 'NR==1 && $1=="#" && $2=="SiftText" && $3=="release" {print $4}' "$STAGE/SHA256SUMS")
+SOURCE=$(awk 'NR==1 && $1=="#" && $2=="SiftText" && $3=="release" && $5=="source" {print $6}' "$STAGE/SHA256SUMS")
+case "$SOURCE" in ''|*[!a-f0-9]*) echo 'Invalid release source revision.' >&2; exit 1 ;; esac
+[ "${#SOURCE}" -eq 40 ] || { echo 'Invalid release source revision.' >&2; exit 1; }
 case "$VERSION" in ''|*[!a-zA-Z0-9._-]*|.|..) echo 'Invalid release version.' >&2; exit 1 ;; esac
 [ "$RELEASE" = latest ] || [ "$VERSION" = "$RELEASE" ] || { echo 'Checksum release differs from the requested version.' >&2; exit 1; }
 ASSET=sifttext-$OS-$CPU.tar.gz
@@ -63,6 +66,13 @@ case "$DIGEST" in *[!a-f0-9]*) echo 'Invalid release checksum.' >&2; exit 1 ;; e
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 60 --max-filesize 268435456 \
   "$BASE/download/$VERSION/$ASSET" -o "$STAGE/package.tar.gz"
 [ "$(sha256 "$STAGE/package.tar.gz")" = "$DIGEST" ] || { echo 'Release checksum mismatch. Nothing was installed.' >&2; exit 1; }
+gh attestation verify "$STAGE/package.tar.gz" \
+  --repo gojack10/sifttext-core \
+  --signer-workflow gojack10/sifttext-core/.github/workflows/release.yml \
+  --source-digest "$SOURCE" \
+  --source-ref refs/heads/main \
+  --cert-oidc-issuer https://token.actions.githubusercontent.com
+
 tar -tzf "$STAGE/package.tar.gz" > "$STAGE/members"
 while IFS= read -r member; do
   case "$member" in package/*) ;; *) echo 'Unsafe archive entry.' >&2; exit 1 ;; esac

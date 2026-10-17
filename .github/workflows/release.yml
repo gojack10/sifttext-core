@@ -8,6 +8,8 @@ on:
         default: v0.1.0
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 jobs:
   build:
     strategy:
@@ -42,6 +44,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/release/sifttext-${{ matrix.platform }}.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/portable"
           SIFTTEXT_PORTABLE_PACKAGE="$RUNNER_TEMP/portable" sh scripts/with-tools.sh cargo test --locked --test portable_runtime -- --ignored --nocapture
           sh scripts/with-tools.sh cargo test --locked updates::tests --lib -- --nocapture
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/release/sifttext-${{ matrix.platform }}.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: package-${{ matrix.platform }}
