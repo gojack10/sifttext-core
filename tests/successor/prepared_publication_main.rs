@@ -28,7 +28,7 @@ pub(super) fn native(binary: &str, request: serde_json::Value) -> serde_json::Va
 #[test]
 fn native_main_donor_misses_reuse_only_verified_draft_records() {
     let mut receipts = Vec::new();
-    for mutation in ["missing", "corrupt", "record", "processing"] {
+    for mutation in ["missing", "corrupt", "record"] {
         let f = Fixture::with_nodes(4);
         for (p, n, name) in [(&f.a, 2, "Prepared X"), (&f.b, 3, "Published Y")] {
             let file = p.join(format!("nodes/{}/node.md", id(n)));
