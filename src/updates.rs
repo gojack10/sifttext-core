@@ -876,9 +876,8 @@ fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
 pub fn update(root: &Path, mode: &str) -> Result<Value> {
     let _lock = lock(root, false)?;
     let mut state: State = load(&root.join("state.json"))?;
-    let config = update_config(&state.home)?;
     if mode == "--config" {
-        return Ok(config);
+        return update_config(&state.home);
     }
     if let Some(value) = mode.strip_prefix("--grant=") {
         return set_update_config(&state.home, "permission", value);
@@ -978,11 +977,25 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
         return Ok(result);
     }
     if mode == "--opportunistic" {
-        if config["mode"] == "disabled" {
-            return Ok(json!({"status":"update_disabled"}));
-        }
         if !due(&state, &now()) {
             return Ok(json!({"status":"not_due"}));
+        }
+        let config = match update_config(&state.home) {
+            Ok(config) => config,
+            // A background release check reports a broken settings file at most once per retry
+            // window, the way a failed download does, rather than on every command. The explicit
+            // update and --config paths report the same refusal immediately.
+            Err(error) => {
+                state.attempt = Some(now());
+                persist(&root.join("state.json"), &state)?;
+                return Ok(json!({
+                    "status":"update_config_invalid",
+                    "error":error.to_string(),
+                }));
+            }
+        };
+        if config["mode"] == "disabled" {
+            return Ok(json!({"status":"update_disabled"}));
         }
     }
     state.attempt = Some(now());
@@ -1266,6 +1279,54 @@ mod tests {
         );
         assert!(set_update_config(home, "permission", "always").is_err());
         assert_eq!(update_config(home).unwrap()["permission"], "standing");
+    }
+
+    #[test]
+    fn a_broken_settings_file_is_reported_once_not_on_every_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("install");
+        let home = dir.path().join("home");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir_all(home.join(".sifttext")).unwrap();
+        fs::write(
+            home.join(".sifttext/config.json"),
+            r#"{"updates":{"mode":"silent"}}"#,
+        )
+        .unwrap();
+        persist(
+            &root.join("state.json"),
+            &State {
+                home: home.clone(),
+                application: "releases/v1".into(),
+                application_sha256: "c".repeat(64),
+                knowledge: "a".repeat(64),
+                baseline: None,
+                success: clock(0),
+                attempt: None,
+                pending: None,
+                previous: None,
+            },
+        )
+        .unwrap();
+        let first = update(&root, "--opportunistic").unwrap();
+        assert_eq!(first["status"], "update_config_invalid");
+        assert!(
+            first["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("updates.mode")),
+            "{first}"
+        );
+        assert_eq!(
+            update(&root, "--opportunistic").unwrap()["status"],
+            "not_due",
+            "a broken settings file reported again before the retry window"
+        );
+        assert!(
+            update(&root, "--config")
+                .unwrap_err()
+                .to_string()
+                .contains("updates.mode")
+        );
     }
 
     #[test]
