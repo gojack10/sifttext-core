@@ -7,6 +7,16 @@ fn policy() -> Policy {
     Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap()
 }
 
+/// The authored seed the compiled bundle must carry. The knowledge base grows, so
+/// the starter count is derived here instead of pinned as a literal in each test.
+fn authored_node_count() -> usize {
+    fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("nodes"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().join("node.md").is_file())
+        .count()
+}
+
 fn git(home: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .arg("-C")
@@ -111,13 +121,13 @@ fn embedded_inventory_is_complete_and_copied_by_native_init() {
     fs::create_dir(&seed).unwrap();
     materialize(&seed).unwrap();
     let store = Store::read(&seed).unwrap();
-    assert_eq!(store.nodes.len(), 80);
+    assert_eq!(store.nodes.len(), authored_node_count());
     assert_eq!(store.roots, ["38a9fc79-8a84-494d-a962-2ec5134bc856"]);
     assert!(store.nodes.values().any(|n| n.name == "Skill Library"));
     let p = policy();
     local::check(&p, &seed, None, BTreeSet::new()).unwrap();
     let home = parent.path().join("home");
-    assert_eq!(init(&p, &home).unwrap()["starter_nodes"], 80);
+    assert_eq!(init(&p, &home).unwrap()["starter_nodes"], authored_node_count() as u64);
     let copied = Store::read(&home).unwrap();
     for (path, entry) in &store.inventory {
         assert_eq!(
@@ -208,7 +218,7 @@ fn default_init_generates_the_file_first_pointer_the_repaired_body_describes() {
     let p = policy();
     let home = dir.path().join("home");
     let created = init(&p, &home).unwrap();
-    assert_eq!(created["starter_nodes"], 80);
+    assert_eq!(created["starter_nodes"], authored_node_count() as u64);
     assert_eq!(created["pointer"], "AGENTS.md");
     let pointer = home.join("AGENTS.md");
     let pointer_bytes = fs::read(&pointer).unwrap();
@@ -303,7 +313,7 @@ fn independent_defaults_never_reseed_dirty_or_empty_homes() {
         fs::read_to_string(first.join("untracked")).unwrap(),
         "keep me"
     );
-    assert_eq!(Store::read(&second).unwrap().nodes.len(), 80);
+    assert_eq!(Store::read(&second).unwrap().nodes.len(), authored_node_count());
     let empty = dir.path().join("empty");
     local::init(&p, &empty, None).unwrap();
     assert_eq!(init(&p, &empty).unwrap()["created"], false);
