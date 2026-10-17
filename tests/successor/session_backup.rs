@@ -134,10 +134,12 @@ fn restore_clones_configured_archive_and_rebuilds_local_link() {
     let link = home
         .path()
         .join(format!("nodes/{NODE}/artifacts/chats/pi-synthetic.jsonl"));
-    assert!(fs::symlink_metadata(&link)
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert_eq!(fs::read(&link).unwrap(), b"synthetic session bytes\n");
     assert_eq!(
         git(&restored, &["rev-parse", "HEAD"]),
@@ -174,6 +176,57 @@ fn restore_clones_configured_archive_and_rebuilds_local_link() {
     );
 }
 
+/// A knowledge home that reached another machine by clone or pull carries no
+/// `.git/info/exclude`, so a restored private chat link must not surface there.
+#[test]
+fn restore_excludes_private_chat_links_in_a_cloned_home() {
+    let remote = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    archive_with_session(archive.path());
+    git(remote.path(), &["init", "--bare", "-q", "-b", "main"]);
+    git(
+        archive.path(),
+        &[
+            "push",
+            "-q",
+            remote.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+
+    let source = tempfile::tempdir().unwrap();
+    git(source.path(), &["init", "-q", "-b", "main"]);
+    git(source.path(), &["config", "--local", "user.name", "Test"]);
+    git(
+        source.path(),
+        &["config", "--local", "user.email", "test@example.invalid"],
+    );
+    home_with_attachment(source.path());
+    fs::write(
+        source.path().join(".gitignore"),
+        "/.sifttext/\n/nodes/*/node.meta.json\n/nodes/*/outline*.lean\n/nodes/*/outline*.lean.meta.json\n",
+    )
+    .unwrap();
+    git(source.path(), &["add", ".gitignore", "nodes", "trees"]);
+    git(
+        source.path(),
+        &["commit", "-qm", "knowledge with session source"],
+    );
+
+    let machine = tempfile::tempdir().unwrap();
+    let home = machine.path().join("home");
+    git(
+        machine.path(),
+        &["clone", "-q", source.path().to_str().unwrap(), "home"],
+    );
+    let restored = machine.path().join("archive");
+    config(&home, &restored, remote.path());
+
+    let receipt = local::restore_session_links(&home, &restored).unwrap();
+    assert_eq!(receipt["links"], 1);
+    assert_eq!(git(&home, &["status", "--porcelain"]), "");
+}
+
 #[test]
 fn backup_configuration_is_not_returned_as_a_secret() {
     let home = tempfile::tempdir().unwrap();
@@ -183,8 +236,10 @@ fn backup_configuration_is_not_returned_as_a_secret() {
     let value = local::session_retention_config(home.path()).unwrap();
     assert_eq!(value["backup_enabled"], true);
     assert_eq!(value["backup_configured"], true);
-    assert!(value
-        .to_string()
-        .find(remote.path().to_str().unwrap())
-        .is_none());
+    assert!(
+        value
+            .to_string()
+            .find(remote.path().to_str().unwrap())
+            .is_none()
+    );
 }

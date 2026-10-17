@@ -1766,6 +1766,12 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
     }
     let store = Store::read(home)?;
     let home = store.path;
+    // A home that arrived by clone or pull carries no `.git/info/exclude` rules, so
+    // re-apply them before writing private links; otherwise they surface as untracked
+    // knowledge and can be committed by an ordinary `git add -A`.
+    if home.join(".git").exists() {
+        exclude_local_artifacts(&home, home.join(POINTER).is_file())?;
+    }
     let mut restored = 0;
     for node_id in store.nodes.keys() {
         let node = home.join("nodes").join(node_id);
