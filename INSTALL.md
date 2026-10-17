@@ -76,6 +76,16 @@ SIFTTEXT_RELEASE=v0.1.0 sh "$review/install.sh"
 
 For custom locations, pass the application directory and knowledge-home path as the two arguments. Ensure their parent directories exist before invoking the installer so path validation can complete.
 
+## Optional private session evidence
+
+Session retention is off by default and is a separate user choice from knowledge publication. When the user opts in, add a `session_retention` object to the existing `.sifttext/config.json` inside the knowledge home without replacing unrelated settings:
+
+```json
+{"session_retention": {"enabled": true, "archive_root": "/absolute/path/to/private/session-archive"}}
+```
+
+`archive_root` must be absolute and must already be a Git worktree; capture refuses otherwise so retained source is never left unversioned. Keep it outside the knowledge home, because the archive holds private transcripts. `sifttext session-retention-config <knowledge-home>` reports the effective settings without returning the configured remote. `sifttext session-capture`, `session-attach`, `session-backup` and `session-restore` then retain one copied source per harness session, expose it through local links under each informed node's `artifacts/chats/`, push only to a destination the user configured with `backup_enabled`, and rebuild those links on another machine. Ask before enabling retention or backup; never enable either as a side effect of installation, and never place archived source in a knowledge submission.
+
 ## Read local instructions and return to work
 
 Use the command and knowledge-home path printed by the installer to verify the runtime and locate the local instruction files. With the defaults:

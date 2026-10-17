@@ -32,6 +32,10 @@ After installation, run the command printed by the installer with `instructions`
 
 Then return to the user's project, or ask what they would like to work on if no task is established. When that work produces knowledge to retain, follow the local checked-publication procedure and retrieve the saved result to verify it.
 
+## Optional session evidence
+
+Retention of the harness conversation behind a decision is private and off by default. Enable it only when the user asks: add a `session_retention` object with `enabled` and an absolute `archive_root` that is already a private Git worktree to the existing `.sifttext/config.json`, leaving unrelated settings intact, then confirm it with `sifttext session-retention-config` and use `session-capture`, `session-attach`, `session-backup` or `session-restore` for the retained copy and its per-node entrances. `session-attach` records the source identity in the node's `session-sources.json` and links the private copy under `artifacts/chats/`; those links stay out of the knowledge repository's Git history, and archived transcripts never enter a knowledge submission. Pi users can opt into the shipped extension in `integrations/pi/README.md`, which captures at `agent_end` only when retention is enabled and never selects a node on the agent's behalf.
+
 ## Repair and contribution
 
 For Core development or repair, begin with the contributor section in [AGENTS.md](https://github.com/gojack10/sifttext-core/blob/main/AGENTS.md). Follow its local instruction pipeline in an isolated working copy so the repair preserves unrelated work, then test the affected behavior before offering a contribution for review. Keep customer knowledge and session traces out of that contribution.
