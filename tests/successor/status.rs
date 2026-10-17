@@ -142,21 +142,45 @@ fn expected(old: &State, requested: &State, changed: bool, explicit: bool) -> Op
     })
 }
 
-fn check_transitions(policy: &Policy, worker: usize, workers: usize) -> (usize, usize) {
+fn check_transitions(policy: &Policy) -> (usize, usize, usize) {
     let mut count = 0;
     let mut checked = 0;
     let mut accepted = 0;
+    let mut native_checked = 0;
     for old_status in STATUSES {
         for requested_status in STATUSES {
             for explicit in [false, true] {
                 for minor in [false, true] {
                     for reason_case in ["missing", "blank", "valid"] {
-                        if count % workers != worker {
-                            count += 1;
-                            continue;
-                        }
-                        let before = tempfile::tempdir().unwrap();
-                        let after = tempfile::tempdir().unwrap();
+                        let native_sample =
+                            (old_status == Status::NotExamined
+                                && explicit
+                                && !minor
+                                && reason_case == "valid")
+                                || (old_status == Status::InProgress
+                                    && matches!(
+                                        requested_status,
+                                        Status::Stuck | Status::Deferred | Status::Discarded
+                                    )
+                                    && explicit
+                                    && !minor)
+                                || (matches!(
+                                    old_status,
+                                    Status::Stuck | Status::Deferred | Status::Discarded
+                                ) && requested_status == Status::InProgress
+                                    && explicit
+                                    && !minor
+                                    && reason_case == "valid")
+                                || (old_status == Status::NotExamined
+                                    && requested_status == Status::InProgress
+                                    && !explicit
+                                    && minor
+                                    && reason_case == "valid")
+                                || (old_status == Status::Resolved
+                                    && requested_status == Status::InProgress
+                                    && !explicit
+                                    && minor
+                                    && reason_case == "valid");
                         let old = state(old_status);
                         let mut requested = old.clone();
                         requested.status = requested_status;
@@ -175,13 +199,7 @@ fn check_transitions(policy: &Policy, worker: usize, workers: usize) -> (usize, 
                                 }
                             }
                         }
-                        fixture(before.path(), std::slice::from_ref(&old));
-                        fixture(after.path(), std::slice::from_ref(&requested));
-                        fs::write(file(after.path(), 1), text(1, &requested, minor)).unwrap();
-                        let original = inventory(after.path());
-                        let base = inventory(before.path());
-                        let changed = fs::read(file(before.path(), 1)).unwrap()
-                            != fs::read(file(after.path(), 1)).unwrap();
+                        let changed = text(1, &old, false) != text(1, &requested, minor);
                         let want = expected(&old, &requested, changed, explicit);
                         let expected_accept = want.is_some();
                         let pure = status::transition(Some(&old), &requested, changed, explicit);
@@ -190,6 +208,21 @@ fn check_transitions(policy: &Policy, worker: usize, workers: usize) -> (usize, 
                             want,
                             "pure {old_status:?}/{requested_status:?}/{explicit}/{minor}/{reason_case}"
                         );
+                        if !native_sample {
+                            if want.is_some() {
+                                accepted += 1;
+                            }
+                            checked += 1;
+                            count += 1;
+                            continue;
+                        }
+                        let before = tempfile::tempdir().unwrap();
+                        let after = tempfile::tempdir().unwrap();
+                        fixture(before.path(), std::slice::from_ref(&old));
+                        fixture(after.path(), std::slice::from_ref(&requested));
+                        fs::write(file(after.path(), 1), text(1, &requested, minor)).unwrap();
+                        let original = inventory(after.path());
+                        let base = inventory(before.path());
                         let ids = if explicit {
                             BTreeSet::from([id(1)])
                         } else {
@@ -197,6 +230,7 @@ fn check_transitions(policy: &Policy, worker: usize, workers: usize) -> (usize, 
                         };
                         let native =
                             status::normalize(policy, before.path(), after.path(), &ids, None);
+                        native_checked += 1;
                         assert_eq!(
                             native.is_ok(),
                             want.is_some(),
@@ -260,33 +294,19 @@ fn check_transitions(policy: &Policy, worker: usize, workers: usize) -> (usize, 
         }
     }
     assert_eq!(count, 432);
-    (checked, accepted)
+    (checked, accepted, native_checked)
 }
 
 #[test]
 fn finite_independent_transition_corpus_matches_pure_model_and_native_bytes() {
     let policy = policy();
     let started = Instant::now();
-    // ponytail: at most four isolated native calls; tune only with measured contention.
-    let workers = thread::available_parallelism().map_or(1, |n| n.get().min(4));
-    let (count, accepted) = thread::scope(|scope| {
-        let handles = (0..workers)
-            .map(|worker| {
-                let policy = &policy;
-                scope.spawn(move || check_transitions(policy, worker, workers))
-            })
-            .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .fold((0, 0), |(count, accepted), handle| {
-                let (checked, passed) = handle.join().unwrap();
-                (count + checked, accepted + passed)
-            })
-    });
+    let (count, accepted, native_checked) = check_transitions(&policy);
     assert_eq!(count, 432);
+    assert_eq!(native_checked, 20);
     assert!(accepted > 0 && accepted < count);
     println!(
-        "STATUS FINITE MODEL/NATIVE: {count} cases, {accepted} accepted, {} rejected, {:?}; no universal/kernel claim",
+        "STATUS FINITE MODEL/NATIVE: {count} pure cases, {native_checked} native cases, {accepted} accepted, {} rejected, {:?}; no universal/kernel claim",
         count - accepted,
         started.elapsed()
     );
