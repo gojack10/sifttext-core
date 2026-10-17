@@ -4,7 +4,7 @@ set -eu
 umask 077
 PREFIX=${1:-"$HOME/.local/share/sifttext"}
 KNOWLEDGE=${2:-"$HOME/sifttext"}
-for tool in curl tar git gh; do
+for tool in curl tar git; do
   command -v "$tool" >/dev/null || { echo "Missing $tool. Ask the user to install it within their permissions." >&2; exit 1; }
 done
 git --version >/dev/null 2>&1 || { echo 'Git is unavailable. Ask the user to install Git before continuing.' >&2; exit 1; }
@@ -66,12 +66,10 @@ case "$DIGEST" in *[!a-f0-9]*) echo 'Invalid release checksum.' >&2; exit 1 ;; e
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 60 --max-filesize 268435456 \
   "$BASE/download/$VERSION/$ASSET" -o "$STAGE/package.tar.gz"
 [ "$(sha256 "$STAGE/package.tar.gz")" = "$DIGEST" ] || { echo 'Release checksum mismatch. Nothing was installed.' >&2; exit 1; }
-gh attestation verify "$STAGE/package.tar.gz" \
-  --repo gojack10/sifttext-core \
-  --signer-workflow gojack10/sifttext-core/.github/workflows/release.yml \
-  --source-digest "$SOURCE" \
-  --source-ref refs/heads/main \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com
+# What this proves: the archive is the exact bytes the publisher's official GitHub release
+# serves over HTTPS, bound to the digest published beside it. What it does not prove: which
+# build produced them. That would need a signed-provenance verifier with its own established
+# trust root, which this product neither requires of a customer nor ships.
 
 tar -tzf "$STAGE/package.tar.gz" > "$STAGE/members"
 while IFS= read -r member; do
