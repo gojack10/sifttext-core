@@ -110,13 +110,8 @@ fn run() -> Result<()> {
         };
         let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT")
             .ok_or("use the managed installation launcher for updates")?;
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&sifttext_file_graph::updates::update(
-                Path::new(&root),
-                &mode
-            )?)?
-        );
+        let output = sifttext_file_graph::updates::update(Path::new(&root), &mode)?;
+        println!("{}", render_update_output(&mode, &output)?);
         return Ok(());
     }
     let runtime = local::runtime()?;
@@ -315,6 +310,18 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String> {
+    if mode == "--config"
+        || ["--grant=", "--mode=", "--pin="]
+            .iter()
+            .any(|prefix| mode.starts_with(prefix))
+    {
+        Ok(sifttext_file_graph::lean_render::render(output).map_err(std::io::Error::other)?)
+    } else {
+        Ok(serde_json::to_string_pretty(output)?)
+    }
+}
+
 fn absolute(path: &str) -> Result<PathBuf> {
     let path = PathBuf::from(path);
     Ok(if path.is_absolute() {
@@ -322,6 +329,39 @@ fn absolute(path: &str) -> Result<PathBuf> {
     } else {
         std::env::current_dir()?.join(path)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_settings_use_lean_and_transaction_receipts_stay_json() {
+        let settings = json!({
+            "mode": "notify",
+            "permission": "ask",
+            "pinned": null,
+            "source": "file",
+            "path": "/home/example/.sifttext/config.json"
+        });
+        for mode in [
+            "--config",
+            "--grant=standing",
+            "--mode=disabled",
+            "--pin=release-id",
+        ] {
+            let rendered = render_update_output(mode, &settings).unwrap();
+            assert!(!rendered.starts_with('{'), "{mode}: {rendered}");
+            assert!(rendered.contains("mode:notify"), "{mode}: {rendered}");
+            assert!(rendered.contains("permission:ask"), "{mode}: {rendered}");
+        }
+
+        let receipt = json!({"status":"current", "application":"v1", "knowledge":"rev"});
+        assert_eq!(
+            render_update_output("--status", &receipt).unwrap(),
+            serde_json::to_string_pretty(&receipt).unwrap()
+        );
+    }
 }
 
 fn main() {
