@@ -958,18 +958,24 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
         return rollback(root, &mut state);
     }
     if let Some(pending) = &state.pending {
-        let policy = checked_runtime(&root.join(&state.application))?;
-        let mut repair = repair_paths(&policy, &state.home)?;
-        if let Some(id) = &pending.repair_node {
-            repair["repair_node"] = json!(id);
-            repair["repair_node_path"] = json!(local::maintenance_node_path(&state.home, id)?);
-        }
-        return Ok(json!({
+        let mut result = json!({
             "status":"needs_agent",
             "worktree":pending.draft,
             "resume":"sifttext update --resume",
-            "repair":repair,
-        }));
+        });
+        // Ordinary commands only report a pending update. Resolving the repair undertaking reads
+        // the whole knowledge store and can publish the maintenance tree, so it belongs to the
+        // explicit update the agent runs after reading the guide, not to every release check.
+        if mode != "--opportunistic" {
+            let policy = checked_runtime(&root.join(&state.application))?;
+            let mut repair = repair_paths(&policy, &state.home)?;
+            if let Some(id) = &pending.repair_node {
+                repair["repair_node"] = json!(id);
+                repair["repair_node_path"] = json!(local::maintenance_node_path(&state.home, id)?);
+            }
+            result["repair"] = repair;
+        }
+        return Ok(result);
     }
     if mode == "--opportunistic" {
         if config["mode"] == "disabled" {
@@ -1601,7 +1607,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(attached["status"], "repair_attached");
-        assert_eq!(attached["path"], undertaking["path"]);
+        // The repair undertaking is registered by its stable accepted location in the customer
+        // home. The draft worktree path returned at creation is removed once publication finishes,
+        // so it cannot be the handoff address an agent returns to later.
+        let repair_id = undertaking["id"].as_str().unwrap();
+        let repair_path = state.home.join("nodes").join(repair_id).join("node.md");
+        assert_eq!(attached["path"], repair_path.to_string_lossy().as_ref());
+        assert!(
+            repair_path.is_file(),
+            "repair node is not readable at {repair_path:?}"
+        );
         let mut state: State = load(&root.join("state.json")).unwrap();
         assert_eq!(
             state.pending.as_ref().unwrap().repair_node.as_deref(),
