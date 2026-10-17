@@ -1129,7 +1129,10 @@ pub fn opportunistic() {
                     && value["status"] != "current"
                     && value["status"] != "update_disabled" =>
             {
-                eprintln!("SiftText update {value}")
+                match crate::lean_render::render(&value) {
+                    Ok(notice) => eprintln!("SiftText update\n{notice}"),
+                    Err(error) => eprintln!("SiftText update deferred: invalid notice: {error}"),
+                }
             }
             Err(error) => eprintln!("SiftText update deferred: {error}"),
             _ => (),
@@ -1193,6 +1196,13 @@ mod tests {
         assert_eq!(notice["status"], "update_available");
         assert_eq!(notice["command"], "sifttext update");
         assert_eq!(notice["permission"], "ask");
+        assert_eq!(
+            crate::lean_render::render(&notice).unwrap(),
+            format!(
+                "application:v1\ncommand:sifttext update\nconfig:/home/fixture/.sifttext/config.json\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nknowledge:{}\npermission:ask\nstatus:update_available",
+                "b".repeat(64)
+            )
+        );
         assert_eq!(
             notice["guide"],
             state
