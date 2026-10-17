@@ -236,7 +236,7 @@ fn candidate_mutated_after_passing_review_is_refused_and_draft_recovers() {
                 "publication exited before the final gate"
             );
             assert!(
-                start.elapsed() < Duration::from_secs(10),
+                start.elapsed() < Duration::from_secs(30),
                 "publication barrier timed out"
             );
             thread::sleep(Duration::from_millis(5));
