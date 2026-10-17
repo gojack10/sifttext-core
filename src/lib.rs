@@ -919,7 +919,11 @@ impl Policy {
         let project = &self.project;
         for manifest in ["build/candidate.sha256", "build/graph-policy.sha256"] {
             let contents = fs::read_to_string(project.join(manifest)).map_err(|error| {
-                format!("cannot read build stamp {manifest}: {error}; run sh scripts/build.sh")
+                // Keep the OS error kind so an absent stamp is not reported as unknown.
+                std::io::Error::new(
+                    error.kind(),
+                    format!("cannot read build stamp {manifest}; run sh scripts/build.sh"),
+                )
             })?;
             require(!contents.trim().is_empty(), "empty build stamp")?;
             if manifest == "build/graph-policy.sha256" {
