@@ -1,5 +1,5 @@
 use crate::local;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{fs, path::Path, process::Command};
 
 fn git(root: &Path, args: &[&str]) -> String {
@@ -227,4 +227,60 @@ fn stale_or_malformed_snapshot_preserves_previous_archive_and_head() {
     assert_eq!(fs::read(&target).unwrap(), bytes);
     assert_eq!(git(archive.path(), &["rev-parse", "HEAD"]), head);
     assert_eq!(fs::read_dir(target.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_first_checkpoint_removes_new_archive_file_and_index_entry() {
+    let archive = archive();
+    git(archive.path(), &["config", "--local", "user.name", ""]);
+    git(archive.path(), &["config", "--local", "user.email", ""]);
+    let head = git(archive.path(), &["rev-parse", "HEAD"]);
+    let source_dir = tempfile::tempdir().unwrap();
+    let source = source_dir.path().join("source.jsonl");
+    fs::write(&source, snapshot()).unwrap();
+
+    assert!(local::capture_session(&source, &descriptor(), archive.path()).is_err());
+    assert!(!archive.path().join("sessions/session-1.jsonl").exists());
+    assert_eq!(git(archive.path(), &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(archive.path(), &["status", "--porcelain"]), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_checkpoint_keeps_previous_archive_bytes_and_git_state() {
+    let archive = archive();
+    let source_dir = tempfile::tempdir().unwrap();
+    let source = source_dir.path().join("source.jsonl");
+    let old_bytes = snapshot();
+    fs::write(&source, &old_bytes).unwrap();
+    local::capture_session(&source, &descriptor(), archive.path()).unwrap();
+    let target = archive.path().join("sessions/session-1.jsonl");
+    let head = git(archive.path(), &["rev-parse", "HEAD"]);
+
+    let new_bytes = [
+        old_bytes.as_slice(),
+        b"{\"id\":\"entry-3\",\"parentId\":\"entry-2\"}\n",
+    ]
+    .concat();
+    fs::write(&source, &new_bytes).unwrap();
+    let mut updated = descriptor();
+    updated["entry_ids"] = json!(["entry-1", "entry-2", "entry-3"]);
+    updated["branch_entry_ids"] = json!(["entry-1", "entry-2", "entry-3"]);
+    updated["leaf_id"] = json!("entry-3");
+    updated["cutoff_entry_id"] = json!("entry-3");
+
+    git(
+        archive.path(),
+        &["config", "--local", "--unset", "user.name"],
+    );
+    git(
+        archive.path(),
+        &["config", "--local", "--unset", "user.email"],
+    );
+
+    assert!(local::capture_session(&source, &updated, archive.path()).is_err());
+    assert_eq!(fs::read(&target).unwrap(), old_bytes);
+    assert_eq!(git(archive.path(), &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(archive.path(), &["status", "--porcelain"]), "");
 }

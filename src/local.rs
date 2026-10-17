@@ -1402,44 +1402,77 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
             require(metadata.nlink() == 1, "hard-linked archived source")?;
         }
     }
+    let staged = git_command(&root)
+        .args(["diff", "--cached", "--quiet", "--", key])
+        .status()?;
+    require(staged.success(), "Pi archive path has staged changes")?;
     let mut temp = tempfile::NamedTempFile::new_in(&parent)?;
     std::io::copy(&mut input, &mut temp)?;
     temp.as_file().sync_all()?;
     validate_session_snapshot(temp.path(), descriptor)?;
-    temp.persist(&target)?;
-
-    git(&root, &["add", "--", key])?;
-    let has_head = git_command(&root)
-        .args(["rev-parse", "--verify", "--quiet", "HEAD"])
-        .status()?
-        .success();
-    let changed = if has_head {
-        Some(
-            git_command(&root)
-                .args(["diff", "--cached", "--quiet", "HEAD", "--", key])
-                .status()?,
-        )
+    let previous = if target.exists() {
+        let backup = tempfile::NamedTempFile::new_in(&parent)?.into_temp_path();
+        fs::remove_file(&backup)?;
+        fs::hard_link(&target, &backup)?;
+        Some(backup)
     } else {
         None
     };
-    let commit = match changed.as_ref().and_then(|status| status.code()) {
-        Some(0) => git(&root, &["rev-parse", "HEAD"])?,
+    temp.persist(&target)?;
 
-        Some(1) | None => {
-            git(
-                &root,
-                &[
-                    "commit",
-                    "--only",
-                    "-m",
-                    &format!("session: capture {session_id}"),
-                    "--",
-                    key,
-                ],
-            )?;
-            git(&root, &["rev-parse", "HEAD"])?
+    let checkpoint = (|| -> Result<String> {
+        git(&root, &["add", "--", key])?;
+        let has_head = git_command(&root)
+            .args(["rev-parse", "--verify", "--quiet", "HEAD"])
+            .status()?
+            .success();
+        let changed = if has_head {
+            Some(
+                git_command(&root)
+                    .args(["diff", "--cached", "--quiet", "HEAD", "--", key])
+                    .status()?,
+            )
+        } else {
+            None
+        };
+        match changed.as_ref().and_then(|status| status.code()) {
+            Some(0) => git(&root, &["rev-parse", "HEAD"]),
+            Some(1) | None => {
+                git(
+                    &root,
+                    &[
+                        "commit",
+                        "--only",
+                        "-m",
+                        &format!("session: capture {session_id}"),
+                        "--",
+                        key,
+                    ],
+                )?;
+                git(&root, &["rev-parse", "HEAD"])
+            }
+            _ => Err("cannot compare Pi archive checkpoint".into()),
         }
-        _ => return Err("cannot compare Pi archive checkpoint".into()),
+    })();
+    let commit = match checkpoint {
+        Ok(commit) => commit,
+        Err(error) => {
+            if git_command(&root)
+                .args(["rev-parse", "--verify", "--quiet", "HEAD"])
+                .status()?
+                .success()
+            {
+                git(&root, &["reset", "--quiet", "HEAD", "--", key])?;
+            } else {
+                git(&root, &["rm", "--cached", "--ignore-unmatch", "--", key])?;
+            }
+            if let Some(previous) = previous {
+                previous.persist(&target)?;
+            } else if target.exists() {
+                fs::remove_file(&target)?;
+            }
+            return Err(error);
+        }
     };
     Ok(json!({"status":"captured","archive_key":key,"commit":commit}))
 }
