@@ -69,6 +69,10 @@ The bundled tree is copied, never linked back into the source checkout. Updating
 
 That pointer is local discovery, not authored knowledge. It is untracked and excluded through the home's own `.git/info/exclude`, so the home still reports a clean Git state, and rerunning `init` never rewrites, reseeds or removes it; homes initialized before it existed are not retroactively given one. Because it is untracked it does not travel into a private worktree, a publication view or a fresh clone: there `sifttext instructions "$home"` remains the supported lookup, validating the store and printing the entry node plus its ordered child paths, which you read in the returned order. Startup therefore needs no SQL, no hosted tool and no guess about the entrypoint. After init, use Worktree Publication to allocate a private draft and capture its fixed baseline before edits.
 
+## Optional Pi session association
+
+When the Pi retention extension is installed and `session_retention.enabled` is true in the selected home, associate a session only when it materially informed the current knowledge. Read the affected node and choose its exact UUID; do not infer or attach all sessions/nodes automatically. Ask the `sifttext_attach_session` tool to attach the current Pi session using that UUID, a short kebab-case topic, and the authorized private knowledge worktree (not the accepted home). Call once per relevant node. The tool captures and Git-checkpoints the current session, writes its tracked association and local chat link, and returns only the node and friendly attachment name—not transcript content or the source session ID. Inspect the changed worktree and continue through Worktree Publication's checks and checked submission. If retention is disabled, the source is unavailable, or the tool fails, do not fabricate a descriptor or block ordinary knowledge work; report the limitation.
+
 ## Scratch creation
 
 For an already-approved scratch creation, set `wt` to the allocated private worktree:
