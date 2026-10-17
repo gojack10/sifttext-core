@@ -32,7 +32,12 @@ fn cli(bin: &Path, tools: &Path, args: &[&str]) -> Output {
 }
 
 fn json(bin: &Path, tools: &Path, args: &[&str]) -> serde_json::Value {
-    serde_json::from_slice(&cli(bin, tools, args).stdout).unwrap()
+    let output = cli(bin, tools, args).stdout;
+    if matches!(args.first(), Some(&"instructions" | &"index")) {
+        sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&output).unwrap()).unwrap()
+    } else {
+        serde_json::from_slice(&output).unwrap()
+    }
 }
 
 fn git(tools: &Path, path: &Path, args: &[&str]) -> String {
@@ -61,7 +66,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     let original = fs::read(&node).unwrap();
     let pointer = fs::read(Path::new(home).join("AGENTS.md")).unwrap();
     let pipeline = json(bin, tools, &["instructions", home]);
-    assert_eq!(pipeline["files"].as_array().unwrap().len(), 7);
+    assert_eq!(pipeline["rows"].as_array().unwrap().len(), 7);
     assert_eq!(cli(bin, tools, &["read", home, entry]).stdout, original);
     let index = json(bin, tools, &["index", home]);
     let count = index["nodes"].as_u64().unwrap();

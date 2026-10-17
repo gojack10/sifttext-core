@@ -182,7 +182,8 @@ fn cells(text: &str) -> Result<Vec<&str>> {
     parts.push(&text[start..]);
     Ok(parts)
 }
-fn decode(text: &str) -> Result<Value> {
+/// Decode canonical CLI LEAN or per-field generated-outline LEAN.
+pub fn decode_lean(text: &str) -> Result<Value> {
     let mut root = serde_json::Map::new();
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
@@ -232,16 +233,16 @@ fn decode(text: &str) -> Result<Value> {
             )?;
         }
     }
-    // The generated codec boundary has lexicographic root keys and a final LF.
-    let mut canonical = Vec::new();
-    for (key, value) in &root {
-        canonical.push(crate::lean_render::render(&json!({key:value}))?);
-    }
+    let document = Value::Object(root);
+    // CLI values use the whole-document renderer; generated outlines encode each sorted field
+    // independently so metadata may follow the rows block. Accept either exact canonical form.
+    let rendered = crate::lean_render::render(&document)? + "\n";
+    let outline = outline_artifacts::bytes(&document)?;
     require(
-        canonical.join("\n") + "\n" == text,
+        rendered == text || outline == text,
         "noncanonical generated LEAN",
     )?;
-    Ok(Value::Object(root))
+    Ok(document)
 }
 impl Publication {
     pub(crate) fn outline_text(&self, store: &Store, id: &str, full: bool) -> Result<String> {
@@ -374,7 +375,7 @@ impl Publication {
                 let verified = old.as_deref().is_some_and(|b| {
                     std::str::from_utf8(b)
                         .ok()
-                        .and_then(|t| decode(t).ok())
+                        .and_then(|t| decode_lean(t).ok())
                         .as_ref()
                         == Some(&expected)
                 });

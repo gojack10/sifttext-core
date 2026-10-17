@@ -120,7 +120,12 @@ impl Native {
         stdout
     }
     fn cli(&mut self, args: &[&str]) -> Value {
-        serde_json::from_str(&self.run(env!("CARGO_BIN_EXE_sifttext"), args, true)).unwrap()
+        let output = self.run(env!("CARGO_BIN_EXE_sifttext"), args, true);
+        if matches!(args.first(), Some(&"instructions" | &"index")) {
+            sifttext_file_graph::outlines::decode_lean(&output).unwrap()
+        } else {
+            serde_json::from_str(&output).unwrap()
+        }
     }
     fn refuse(&mut self, args: &[&str]) {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, false);
@@ -209,7 +214,7 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     assert_eq!(authored(&home), original);
     let pipeline = native.cli(&["instructions", text(&home)]);
     let ids: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
-    let files = pipeline["files"].as_array().unwrap();
+    let files = pipeline["rows"].as_array().unwrap();
     assert_eq!(
         files
             .iter()
@@ -296,7 +301,7 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     assert!(!draft.join("AGENTS.md").exists());
     let draft_pipeline = native.cli(&["instructions", text(&draft)]);
     assert_eq!(
-        draft_pipeline["files"],
+        draft_pipeline["rows"],
         json!(
             ids.iter()
                 .map(|id| json!({
@@ -390,7 +395,7 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     assert_eq!(authored(&home), authored(&view));
     assert_eq!(native.cli(&["advance", text(&home)])["advanced"], false);
     assert_eq!(
-        native.cli(&["instructions", text(&home)])["files"]
+        native.cli(&["instructions", text(&home)])["rows"]
             .as_array()
             .unwrap()
             .len(),

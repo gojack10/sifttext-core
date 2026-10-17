@@ -76,7 +76,15 @@ fn run() -> Result<()> {
         [cmd, home, flag, source] if cmd == "init" && flag == "--bundle" => {
             local::init(&policy, &absolute(home)?, Some(Path::new(source)))?
         }
-        [cmd, path] if cmd == "instructions" => local::instructions(&policy, Path::new(path))?,
+        [cmd, path] if cmd == "instructions" => {
+            let instructions = local::instructions(&policy, Path::new(path))?;
+            let output = json!({"version":instructions["version"],"rows":instructions["files"]});
+            println!(
+                "{}",
+                sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
+            );
+            return Ok(());
+        }
         [cmd, path, id] if cmd == "read" => {
             print!("{}", local::read(&policy, Path::new(path), id)?);
             return Ok(());
@@ -167,7 +175,9 @@ fn run() -> Result<()> {
         }
         [cmd, path] if cmd == "index" => {
             let v = local::refresh(&policy, Path::new(path))?;
-            json!({"status":v.status,"version":v.version,"nodes":v.nodes.len(),"links":v.links.len()})
+            let output = json!({"status":v.status,"version":v.version,"nodes":v.nodes.len(),"links":v.links.len()});
+            println!("{}", sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?);
+            return Ok(());
         }
         [cmd, path, id, rest @ ..] if cmd == "outline" && (rest.is_empty() || rest == ["full"]) => {
             print!(

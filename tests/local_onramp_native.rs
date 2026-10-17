@@ -124,7 +124,12 @@ impl Native {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, true)
     }
     fn json(&mut self, args: &[&str]) -> Value {
-        serde_json::from_str(&self.cli(args)).unwrap()
+        let output = self.cli(args);
+        if matches!(args.first(), Some(&"instructions" | &"index")) {
+            sifttext_file_graph::outlines::decode_lean(&output).unwrap()
+        } else {
+            serde_json::from_str(&output).unwrap()
+        }
     }
     fn refuse(&mut self, args: &[&str]) {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, false);
@@ -182,7 +187,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     let pipeline = n.json(&["instructions", text(&home)]);
     let ordered: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
     assert_eq!(
-        pipeline["files"]
+        pipeline["rows"]
             .as_array()
             .unwrap()
             .iter()
@@ -190,7 +195,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
             .collect::<Vec<_>>(),
         ordered
     );
-    for f in pipeline["files"].as_array().unwrap() {
+    for f in pipeline["rows"].as_array().unwrap() {
         let path = home
             .join("nodes")
             .join(f["id"].as_str().unwrap())

@@ -53,7 +53,12 @@ impl Native {
         String::from_utf8(out.stdout).unwrap()
     }
     fn cli(&mut self, args: &[&str]) -> Value {
-        serde_json::from_str(&self.run(env!("CARGO_BIN_EXE_sifttext"), args, true)).unwrap()
+        let output = self.run(env!("CARGO_BIN_EXE_sifttext"), args, true);
+        if matches!(args.first(), Some(&"instructions" | &"index")) {
+            sifttext_file_graph::outlines::decode_lean(&output).unwrap()
+        } else {
+            serde_json::from_str(&output).unwrap()
+        }
     }
     fn refuse(&mut self, args: &[&str]) {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, false);

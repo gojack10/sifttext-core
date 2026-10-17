@@ -164,6 +164,10 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     commands.cwd = source.clone();
 
     let authored = inventory(&source);
+    let source_nodes = authored
+        .keys()
+        .filter(|path| path.starts_with("nodes") && path.file_name().is_some_and(|name| name == "node.md"))
+        .count();
     let pointer = source.join("AGENTS.md");
     let meta = fs::symlink_metadata(&pointer).unwrap();
     assert!(meta.is_file() && !meta.is_symlink());
@@ -265,14 +269,17 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     let result: Value =
         serde_json::from_str(&commands.run(text(&bin), &["init", text(&independent)], true))
             .unwrap();
-    assert_eq!(result["starter_nodes"], 80);
+    assert_eq!(result["starter_nodes"], source_nodes);
     assert_eq!(inventory(&independent), authored);
     fs::rename(&hidden, source.join("nodes")).unwrap();
-    let instructions: Value =
-        serde_json::from_str(&commands.run(text(&bin), &["instructions", text(&home)], true))
-            .unwrap();
+    let instructions = sifttext_file_graph::outlines::decode_lean(&commands.run(
+        text(&bin),
+        &["instructions", text(&home)],
+        true,
+    ))
+    .unwrap();
     assert_eq!(
-        instructions["files"]
+        instructions["rows"]
             .as_array()
             .unwrap()
             .iter()

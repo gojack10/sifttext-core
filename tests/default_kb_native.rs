@@ -96,7 +96,12 @@ impl Native {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, ok, &[])
     }
     fn json(&mut self, args: &[&str]) -> Value {
-        serde_json::from_str(&self.cli(args, true)).unwrap()
+        let output = self.cli(args, true);
+        if matches!(args.first(), Some(&"instructions" | &"index")) {
+            sifttext_file_graph::outlines::decode_lean(&output).unwrap()
+        } else {
+            serde_json::from_str(&output).unwrap()
+        }
     }
     fn git(&mut self, path: &Path, args: &[&str]) -> String {
         let mut all = vec![
@@ -137,18 +142,19 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let home = evidence.join("home");
     let h = text(&home);
     let initial = n.json(&["init", h]);
-    assert_eq!(initial["starter_nodes"], 80);
     assert_eq!(initial["pointer"], "AGENTS.md");
     let original = inventory(&home);
-    assert_eq!(
-        original,
-        inventory(checkout),
-        "exact readable source bytes and links"
-    );
+    let source = inventory(checkout);
+    let source_nodes = source
+        .keys()
+        .filter(|path| path.starts_with("nodes") && path.file_name().is_some_and(|name| name == "node.md"))
+        .count();
+    assert_eq!(initial["starter_nodes"], source_nodes);
+    assert_eq!(original, source, "exact readable source bytes and links");
     let pipeline = n.json(&["instructions", h]);
     let ordered: Vec<&str> = std::iter::once(ENTRY).chain(ORDER).collect();
     assert_eq!(
-        pipeline["files"]
+        pipeline["rows"]
             .as_array()
             .unwrap()
             .iter()
@@ -156,7 +162,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
             .collect::<Vec<_>>(),
         ordered
     );
-    for f in pipeline["files"].as_array().unwrap() {
+    for f in pipeline["rows"].as_array().unwrap() {
         assert_eq!(
             n.cli(&["read", h, f["id"].as_str().unwrap()], true),
             fs::read_to_string(f["path"].as_str().unwrap()).unwrap()
@@ -185,7 +191,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         .collect();
     assert_eq!(
         from_pointer,
-        pipeline["files"]
+        pipeline["rows"]
             .as_array()
             .unwrap()
             .iter()
@@ -217,7 +223,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         n.cli(&["read", h, ROOT], true)
             .contains("SiftText Knowledge Base")
     );
-    assert_eq!(n.json(&["index", h])["nodes"], 80);
+    assert_eq!(n.json(&["index", h])["nodes"], source_nodes);
     assert!(
         n.json(&["search", h, "SiftText"])["total_matches"]
             .as_u64()
@@ -226,7 +232,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     );
     assert_eq!(
         n.json(&["sql", h, "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        80
+        source_nodes
     );
     assert_eq!(
         n.json(&[
@@ -283,7 +289,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let alternate = evidence.join("alternate");
     assert_eq!(
         n.json(&["init", text(&alternate), "--bundle", h])["starter_nodes"],
-        80
+        source_nodes
     );
     assert_eq!(inventory(&alternate), original);
     let empty = evidence.join("empty");
@@ -388,7 +394,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let d = text(&draft);
     assert!(!draft.join("AGENTS.md").exists());
     assert_eq!(
-        n.json(&["instructions", d])["files"]
+        n.json(&["instructions", d])["rows"]
             .as_array()
             .unwrap()
             .iter()
@@ -454,7 +460,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
             receipt["view"].as_str().unwrap(),
             "SELECT count(*) FROM nodes"
         ])["result"]["rows"][0][0],
-        81
+        source_nodes + 1
     );
     let advanced = n.json(&["advance", o]);
     assert_eq!(advanced["accepted"], receipt["candidate"]);
@@ -479,7 +485,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     n.json(&["advance", o]);
     assert_eq!(
         n.json(&["sql", o, "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        80
+        source_nodes
     );
     assert_eq!(
         n.json(&["search", o, "Defaultbundlescratchtrial"])["total_matches"],
