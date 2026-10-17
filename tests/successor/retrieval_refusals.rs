@@ -195,8 +195,14 @@ fn capture_permission_resource_and_cache_contention_remain_failures_and_recover(
     assert!(run(&req).status.success());
 }
 #[test]
-fn real_checked_helper_failure_and_timeout_are_preserved_not_guessed() {
-    for (signal, kind) in [(libc::SIGSTOP, "timeout"), (libc::SIGKILL, "helper_failed")] {
+fn real_checked_helper_failure_is_preserved_not_guessed() {
+    // The `timeout` identity this case used to force with a stopped grandchild
+    // is asserted directly in `index::refusal_kind_tests`, and the only real
+    // deadline wait is retained in `process_framing_tests`. Forcing one here
+    // cost a full 10s policy deadline and the pgrep discovery race that goes
+    // with it, while proving only that the same CLI plumbing carries a
+    // different fixed kind.
+    for (signal, kind) in [(libc::SIGKILL, "helper_failed")] {
         let d = fixture(256);
         let mut c = command();
         c.process_group(0);

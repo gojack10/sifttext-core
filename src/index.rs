@@ -36,6 +36,37 @@ impl std::fmt::Display for Refusal {
 }
 impl std::error::Error for Refusal {}
 
+#[cfg(test)]
+mod refusal_kind_tests {
+    use super::Refusal;
+
+    /// A refusal kind must come from the fixed identity the checked native
+    /// helper path produces, never from a guess. These are those exact
+    /// identities, so the mapping needs no subprocess and no real deadline.
+    #[test]
+    fn native_timeout_and_failure_identities_map_to_their_refusal_kinds() {
+        for (message, kind) in [
+            ("policy process timed out", "timeout"),
+            ("barrier expired", "timeout"),
+            ("inspection barrier expired", "timeout"),
+            ("refresh lock expired", "timeout"),
+            ("policy process exited nonzero", "helper_failed"),
+        ] {
+            let error: Box<dyn std::error::Error> = message.into();
+            assert_eq!(
+                Refusal::from_error("source_validation", error.as_ref()).kind,
+                kind,
+                "{message}"
+            );
+        }
+        let timed_out = std::io::Error::from(std::io::ErrorKind::TimedOut);
+        assert_eq!(
+            Refusal::from_error("source_validation", &timed_out).kind,
+            "timeout"
+        );
+    }
+}
+
 // Retrieval classification is restricted to typed errors and fixed identities.
 fn error_kind(error: &(dyn std::error::Error + 'static)) -> &'static str {
     if let Some(refusal) = error.downcast_ref::<Refusal>() {
