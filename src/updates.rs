@@ -56,6 +56,14 @@ pub struct Package {
     pub knowledge: String,
     pub format: u32,
 }
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CachedApplication {
+    version: String,
+    source: String,
+    format: u32,
+    asset_sha256: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum UpdatePlan {
@@ -394,6 +402,20 @@ fn unpack(asset: &Asset, destination: &Path) -> Result<()> {
 fn package(path: &Path) -> Result<Package> {
     load(&path.join("release.json"))
 }
+fn verify_cached_application(path: &Path, manifest: &Manifest, asset: &Asset) -> Result<()> {
+    let info = package(path)?;
+    let receipt: CachedApplication = load(&path.join(".sifttext-cache.json"))?;
+    require(
+        info.version == manifest.application.version
+            && info.source == manifest.application.source
+            && info.format == manifest.application.format
+            && receipt.version == info.version
+            && receipt.source == info.source
+            && receipt.format == info.format
+            && receipt.asset_sha256 == asset.sha256,
+        "cached application identity differs from release; retain it and stage a fresh candidate",
+    )
+}
 fn checked_runtime(path: &Path) -> Result<Policy> {
     let output = Command::new(path.join("sifttext"))
         .arg("runtime-check")
@@ -644,24 +666,37 @@ fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
         );
     }
     let app = if app_changed {
-        let path = PathBuf::from("releases").join(&manifest.application.version);
-        require(
-            !root.join(&path).exists(),
-            "unactivated package already exists; inspect the retained candidate before retrying",
-        )?;
         let asset = manifest
             .application
             .assets
             .get(&platform()?)
             .ok_or("no official package for this platform")?;
-        unpack(asset, &root.join(&path))?;
-        let info = package(&root.join(&path))?;
-        require(
-            info.version == manifest.application.version
-                && info.source == manifest.application.source
-                && info.format == manifest.application.format,
-            "staged package identity differs from manifest",
-        )?;
+        let path = PathBuf::from("releases").join(format!(
+            "{}-{}",
+            manifest.application.version, &asset.sha256
+        ));
+        let destination = root.join(&path);
+        if destination.exists() {
+            verify_cached_application(&destination, manifest, asset)?;
+        } else {
+            unpack(asset, &destination)?;
+            let info = package(&destination)?;
+            require(
+                info.version == manifest.application.version
+                    && info.source == manifest.application.source
+                    && info.format == manifest.application.format,
+                "staged package identity differs from manifest",
+            )?;
+            persist(
+                &destination.join(".sifttext-cache.json"),
+                &CachedApplication {
+                    version: info.version,
+                    source: info.source,
+                    format: info.format,
+                    asset_sha256: asset.sha256.clone(),
+                },
+            )?;
+        }
         path
     } else {
         state.application.clone()
@@ -1346,6 +1381,56 @@ mod tests {
         reboot.boot = "next boot".into();
         assert!(due(&s, &reboot));
     }
+    #[test]
+    fn cached_application_requires_exact_release_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let asset = Asset {
+            url: format!("{RELEASES}v2/package.tar.gz"),
+            sha256: "a".repeat(64),
+        };
+        let manifest = Manifest {
+            schema: 1,
+            application: Application {
+                version: "v2".into(),
+                source: "b".repeat(40),
+                format: 1,
+                requires_knowledge: "c".repeat(64),
+                assets: [(platform().unwrap(), asset.clone())].into(),
+            },
+            knowledge: Knowledge {
+                revision: "c".repeat(64),
+                format: 1,
+                requires_application: "v2".into(),
+                asset: asset.clone(),
+            },
+        };
+        persist(
+            &path.join("release.json"),
+            &Package {
+                version: "v2".into(),
+                source: "b".repeat(40),
+                knowledge: "c".repeat(64),
+                format: 1,
+            },
+        )
+        .unwrap();
+        persist(
+            &path.join(".sifttext-cache.json"),
+            &CachedApplication {
+                version: "v2".into(),
+                source: "b".repeat(40),
+                format: 1,
+                asset_sha256: "a".repeat(64),
+            },
+        )
+        .unwrap();
+        assert!(verify_cached_application(path, &manifest, &asset).is_ok());
+        let mut changed = asset;
+        changed.sha256 = "d".repeat(64);
+        assert!(verify_cached_application(path, &manifest, &changed).is_err());
+    }
+
     #[test]
     fn trust_boundary_and_component_coupling() {
         let good = Asset {
