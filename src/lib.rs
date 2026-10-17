@@ -92,6 +92,9 @@ mod session_attachment_tests;
 #[path = "../tests/successor/session_retention_config.rs"]
 mod session_retention_config_tests;
 #[cfg(test)]
+#[path = "../tests/successor/session_backup.rs"]
+mod session_backup_tests;
+#[cfg(test)]
 #[path = "../tests/successor/session_capture.rs"]
 mod session_capture_tests;
 #[cfg(test)]

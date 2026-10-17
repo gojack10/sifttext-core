@@ -33,8 +33,9 @@ sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
                                           Copy and Git-checkpoint a validated Pi session
 sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT
                                           Attach a retained session and create a local chat link
-sifttext session-restore HOME ARCHIVE_ROOT Rebuild local links after archive relocation
-sifttext session-retention-config HOME  Read local Pi session-retention opt-in (default off)
+sifttext session-backup HOME                 Push the opted-in archive to its configured Git remote
+sifttext session-restore HOME ARCHIVE_ROOT Rebuild links; clone configured backup if archive is absent
+sifttext session-retention-config HOME  Read local session-retention/backup settings (default off)
 sifttext check STORE [BEFORE [EXPLICIT_UUID ...]]
                                           Complete candidate check; does not modify files
 sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
@@ -70,6 +71,16 @@ fn run() -> Result<()> {
         println!(
             "{}",
             serde_json::to_string(&local::session_retention_config(Path::new(home))?)?
+        );
+        return Ok(());
+    }
+    if args.first().is_some_and(|arg| arg == "session-backup") {
+        let [_, home] = args.as_slice() else {
+            return Err("usage: sifttext session-backup HOME".into());
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&local::backup_session_archive(Path::new(home))?)?
         );
         return Ok(());
     }

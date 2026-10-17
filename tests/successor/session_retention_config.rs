@@ -6,7 +6,7 @@ fn session_retention_defaults_off_without_config() {
     let home = tempfile::tempdir().unwrap();
     assert_eq!(
         local::session_retention_config(home.path()).unwrap(),
-        serde_json::json!({"enabled": false, "archive_root": null})
+        serde_json::json!({"enabled": false, "archive_root": null, "backup_enabled": false, "backup_configured": false})
     );
 }
 
@@ -21,7 +21,7 @@ fn session_retention_requires_opt_in_and_absolute_archive() {
     .unwrap();
     assert_eq!(
         local::session_retention_config(home.path()).unwrap(),
-        serde_json::json!({"enabled": true, "archive_root": "/private/sessions"})
+        serde_json::json!({"enabled": true, "archive_root": "/private/sessions", "backup_enabled": false, "backup_configured": false})
     );
 }
 

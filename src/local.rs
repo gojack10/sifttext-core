@@ -1629,16 +1629,17 @@ pub fn attach_session(
 }
 
 /// Rebuild local navigation links from tracked sidecars and a relocated archive.
-pub fn session_retention_config(home: &Path) -> Result<Value> {
+fn session_retention_settings(home: &Path) -> Result<Value> {
     require(home.is_absolute(), "SiftText home must be absolute")?;
     let path = home.join(".sifttext/config.json");
-    let value: Value = match fs::symlink_metadata(&path) {
-        Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(json!({"enabled": false, "archive_root": null}));
-        }
-        Err(error) => return Err(error.into()),
-    };
+    match fs::symlink_metadata(&path) {
+        Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?).map_err(Into::into),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Value::Null),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn retention_fields(value: &Value) -> Result<(bool, Option<PathBuf>, bool, Option<String>)> {
     let retention = value.get("session_retention").unwrap_or(&Value::Null);
     require(
         retention.is_null() || retention.is_object(),
@@ -1658,16 +1659,111 @@ pub fn session_retention_config(home: &Path) -> Result<Value> {
             .get("archive_root")
             .and_then(Value::as_str)
             .ok_or("enabled session retention requires archive_root")?;
-        let root = Path::new(root);
+        let root = PathBuf::from(root);
         require(root.is_absolute(), "archive_root must be absolute")?;
-        Some(root.to_string_lossy().into_owned())
+        Some(root)
     } else {
         None
     };
-    Ok(json!({"enabled": enabled, "archive_root": archive_root}))
+    let backup_enabled = retention
+        .get("backup_enabled")
+        .map(|enabled| {
+            enabled
+                .as_bool()
+                .ok_or("session_retention.backup_enabled must be boolean")
+        })
+        .transpose()?
+        .unwrap_or(false);
+    let backup_remote = retention
+        .get("backup_remote")
+        .map(|remote| {
+            remote
+                .as_str()
+                .filter(|remote| {
+                    !remote.trim().is_empty()
+                        && !remote.starts_with('-')
+                        && !remote.chars().any(char::is_control)
+                })
+                .map(str::to_owned)
+                .ok_or("session_retention.backup_remote must be a nonblank Git remote")
+        })
+        .transpose()?;
+    require(
+        !backup_enabled || (enabled && backup_remote.is_some()),
+        "enabled backup requires session retention and backup_remote",
+    )?;
+    Ok((enabled, archive_root, backup_enabled, backup_remote))
+}
+
+pub fn session_retention_config(home: &Path) -> Result<Value> {
+    let settings = session_retention_settings(home)?;
+    let (enabled, archive_root, backup_enabled, backup_remote) = retention_fields(&settings)?;
+    Ok(json!({
+        "enabled": enabled,
+        "archive_root": archive_root.map(|root| root.to_string_lossy().into_owned()),
+        "backup_enabled": backup_enabled,
+        "backup_configured": backup_remote.is_some()
+    }))
+}
+
+/// Push the explicitly configured private archive only after the user enables backup.
+pub fn backup_session_archive(home: &Path) -> Result<Value> {
+    let settings = session_retention_settings(home)?;
+    let (enabled, archive_root, backup_enabled, remote) = retention_fields(&settings)?;
+    require(
+        enabled && backup_enabled,
+        "session archive backup is not enabled",
+    )?;
+    let root = archive_root.ok_or("session retention archive_root is missing")?;
+    let root = fs::canonicalize(root)?;
+    require(
+        Path::new(&git(&root, &["rev-parse", "--show-toplevel"])?) == root,
+        "archive root must be a Git worktree",
+    )?;
+    let remote = remote.ok_or("session backup remote is missing")?;
+    git(
+        &root,
+        &["push", "--porcelain", &remote, "HEAD:refs/heads/main"],
+    )?;
+    Ok(json!({
+        "status": "backed_up",
+        "commit": git(&root, &["rev-parse", "HEAD"])?,
+        "destination_configured": true
+    }))
 }
 
 pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> {
+    require(archive_root.is_absolute(), "archive_root must be absolute")?;
+    let settings = session_retention_settings(home)?;
+    let (enabled, _, backup_enabled, remote) = retention_fields(&settings)?;
+    let cloned = if !archive_root.exists() {
+        require(
+            enabled && backup_enabled,
+            "session archive backup is not enabled",
+        )?;
+        let remote = remote
+            .as_deref()
+            .ok_or("session backup remote is missing")?;
+        if let Some(parent) = archive_root.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let output = Command::new("git")
+            .args(["clone", "--no-hardlinks", "--branch", "main", "--", remote])
+            .arg(archive_root)
+            .output()?;
+        git_output(output)?;
+        true
+    } else {
+        false
+    };
+    if backup_enabled && !cloned {
+        let root = fs::canonicalize(archive_root)?;
+        git(
+            &root,
+            &["fetch", remote.as_deref().unwrap(), "refs/heads/main"],
+        )?;
+        git(&root, &["merge", "--ff-only", "FETCH_HEAD"])?;
+    }
     let store = Store::read(home)?;
     let home = store.path;
     let mut restored = 0;
