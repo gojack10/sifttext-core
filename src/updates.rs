@@ -1331,6 +1331,57 @@ mod tests {
     }
 
     #[test]
+    fn opportunistic_notice_preserves_standing_permission_when_update_is_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = state();
+        state.home = dir.path().to_owned();
+        set_update_config(&state.home, "permission", "standing").unwrap();
+        let current = Package {
+            version: "v1".into(),
+            source: "a".repeat(40),
+            knowledge: "a".repeat(64),
+            format: 1,
+        };
+        let asset = Asset {
+            url: format!("{RELEASES}v2/fixture.tar.gz"),
+            sha256: state.application_sha256.clone(),
+        };
+        let manifest = Manifest {
+            schema: 1,
+            application: Application {
+                version: "v2".into(),
+                source: "b".repeat(40),
+                format: 1,
+                requires_knowledge: "b".repeat(64),
+                assets: [(platform().unwrap(), asset.clone())].into(),
+            },
+            knowledge: Knowledge {
+                revision: "b".repeat(64),
+                format: 1,
+                requires_application: "v2".into(),
+                asset,
+            },
+        };
+
+        let notice = opportunistic_notice(&current, &state, &manifest).unwrap();
+        assert_eq!(notice["status"], "update_available");
+        assert_eq!(notice["permission"], "standing");
+        assert_eq!(notice["command"], "sifttext update");
+        assert_eq!(
+            notice["config"],
+            state
+                .home
+                .join(".sifttext/config.json")
+                .to_string_lossy()
+                .as_ref()
+        );
+        assert_eq!(
+            update_config(&state.home).unwrap()["permission"],
+            "standing"
+        );
+    }
+
+    #[test]
     fn update_config_reads_the_users_grant_and_refuses_invented_values() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
