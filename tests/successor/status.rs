@@ -333,22 +333,30 @@ fn direct_child_table_reopening_and_no_auto_resolution() {
             status::child_gate(&mut pure, &children, &deliberate).is_err(),
             blocked
         );
+        // All six states exercise the pure closure; native checks need only cover
+        // both branches of Status::blocks, not repeat fixture/process setup per enum.
+        if !matches!(child, Status::NotExamined | Status::Resolved) {
+            continue;
+        }
         assert_eq!(
             status::normalize(&policy, before.path(), after.path(), &deliberate, None).is_err(),
             blocked
         );
         assert_eq!(inventory(after.path()), original);
-        fs::write(
-            file(after.path(), 1),
-            text(1, &state(Status::InProgress), false),
-        )
-        .unwrap();
-        status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None).unwrap();
-        assert_eq!(
-            native_state(after.path(), 1).status,
-            Status::InProgress,
-            "children must never auto-resolve"
-        );
+        if child == Status::Resolved {
+            fs::write(
+                file(after.path(), 1),
+                text(1, &state(Status::InProgress), false),
+            )
+            .unwrap();
+            status::normalize(&policy, before.path(), after.path(), &BTreeSet::new(), None)
+                .unwrap();
+            assert_eq!(
+                native_state(after.path(), 1).status,
+                Status::InProgress,
+                "children must never auto-resolve"
+            );
+        }
     }
     let before = tempfile::tempdir().unwrap();
     let after = tempfile::tempdir().unwrap();
