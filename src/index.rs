@@ -68,7 +68,11 @@ fn error_kind(error: &(dyn std::error::Error + 'static)) -> &'static str {
             _ => "sqlite",
         };
     }
-    match error.to_string().as_str() {
+    let text = error.to_string();
+    if text.starts_with(crate::CANDIDATE_CHANGED_PREFIX) {
+        return "runtime_changed";
+    }
+    match text.as_str() {
         "policy process timed out"
         | "barrier expired"
         | "inspection barrier expired"
@@ -86,8 +90,7 @@ fn error_kind(error: &(dyn std::error::Error + 'static)) -> &'static str {
         | "changed base identity"
         | "changed base bytes"
         | "changed authored bytes" => "source_changed",
-        "checked candidate changed; rebuild and recheck"
-        | "candidate file set changed; rebuild and recheck" => "runtime_changed",
+        "candidate file set changed; rebuild and recheck" => "runtime_changed",
         _ => "rejected",
     }
 }

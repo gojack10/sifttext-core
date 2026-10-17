@@ -897,6 +897,10 @@ fn candidate_files(project: &Path) -> Result<BTreeSet<String>> {
     Ok(files)
 }
 
+/// Fixed prefix of the native build-stamp guard. Its message names the changed
+/// path, so refusal classification matches this prefix instead of a full sentence.
+pub const CANDIDATE_CHANGED_PREFIX: &str = "checked candidate changed: ";
+
 pub struct Policy {
     executable: PathBuf,
     project: PathBuf,
@@ -940,11 +944,15 @@ impl Policy {
                     "duplicate build stamp entry",
                 )?;
                 let bytes = fs::read(project.join(file)).map_err(|error| {
-                    format!("cannot read stamped path {file}: {error}; run sh scripts/build.sh")
+                    // Keep the OS error kind so refusal classification stays truthful.
+                    std::io::Error::new(
+                        error.kind(),
+                        format!("cannot read stamped path {file}; run sh scripts/build.sh"),
+                    )
                 })?;
                 if sha256(&bytes) != expected {
                     return Err(format!(
-                        "checked candidate changed: {file}; rebuild and recheck with sh scripts/build.sh"
+                        "{CANDIDATE_CHANGED_PREFIX}{file}; rebuild and recheck with sh scripts/build.sh"
                     ).into());
                 }
             }

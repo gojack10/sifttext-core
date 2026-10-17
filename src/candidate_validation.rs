@@ -155,9 +155,12 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
         };
     }
     if stage == "policy_identity" {
-        return match error.to_string().as_str() {
-            "checked candidate changed; rebuild and recheck"
-            | "candidate file set changed; rebuild and recheck"
+        let text = error.to_string();
+        if text.starts_with(crate::CANDIDATE_CHANGED_PREFIX) {
+            return "identity_changed";
+        }
+        return match text.as_str() {
+            "candidate file set changed; rebuild and recheck"
             | "validated capture policy changed" => "identity_changed",
             _ => "unknown",
         };
@@ -206,7 +209,11 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
         }
         // These exact identities originate in the checked native helper path,
         // not its stderr/output. A malformed helper cannot supply a category.
-        return match error.to_string().as_str() {
+        let text = error.to_string();
+        if text.starts_with(crate::CANDIDATE_CHANGED_PREFIX) {
+            return "identity_changed";
+        }
+        return match text.as_str() {
             "checked graph rejected or malformed verdict" => "invalid_candidate",
             "policy process timed out" => "timeout",
             "policy process exited nonzero" => "helper_nonzero",
@@ -217,8 +224,7 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
             | "wire exceeds slice limit"
             | "transition wire exceeds slice limit"
             | "wire exceeds frozen backend input limit" => "resource_exhausted",
-            "checked candidate changed; rebuild and recheck"
-            | "candidate file set changed; rebuild and recheck"
+            "candidate file set changed; rebuild and recheck"
             | "transition policy identity changed"
             | "transition executable changed" => "identity_changed",
             _ => "unknown",
