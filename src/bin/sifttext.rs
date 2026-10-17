@@ -298,7 +298,20 @@ fn run() -> Result<()> {
         [cmd, path, sql] if cmd == "sql" => local::sql(&policy, Path::new(path), sql)?,
         _ => return Err("unknown command or arguments; run sifttext -h".into()),
     };
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    if args.first().is_some_and(|cmd| {
+        matches!(
+            cmd.as_str(),
+            "sql" | "search" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
+        )
+    }) {
+        // SQL/search have nested result schemas beyond LEAN's scalar-row dialect.
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!(
+            "{}",
+            sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
+        );
+    }
     Ok(())
 }
 

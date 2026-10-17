@@ -97,7 +97,12 @@ impl Native {
     }
     fn json(&mut self, args: &[&str]) -> Value {
         let output = self.cli(args, true);
-        if matches!(args.first(), Some(&"instructions" | &"index")) {
+        if args.first().is_some_and(|cmd| {
+            !matches!(
+                *cmd,
+                "sql" | "search" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
+            )
+        }) {
             sifttext_file_graph::outlines::decode_lean(&output).unwrap()
         } else {
             serde_json::from_str(&output).unwrap()
@@ -222,6 +227,11 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     assert!(
         n.cli(&["read", h, ROOT], true)
             .contains("SiftText Knowledge Base")
+    );
+    let runtime = n.cli(&["runtime-check"], true);
+    assert_eq!(
+        sifttext_file_graph::outlines::decode_lean(&runtime).unwrap()["status"],
+        "checked"
     );
     assert_eq!(n.json(&["index", h])["nodes"], source_nodes);
     assert!(
