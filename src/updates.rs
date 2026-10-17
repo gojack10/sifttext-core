@@ -626,12 +626,15 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
             json!({"status":"current","application":current.version,"knowledge":state.knowledge}),
         );
     }
+    let config = update_config(&state.home)?;
     Ok(json!({
         "status":"update_available",
         "application":manifest.application.version,
         "knowledge":manifest.knowledge.revision,
         "guide":state.home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
-        "command":"sifttext update"
+        "command":"sifttext update",
+        "permission":config["permission"],
+        "config":config["path"]
     }))
 }
 fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
@@ -807,9 +810,57 @@ fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
     }
     Ok(())
 }
+const CONFIG_FILE: &str = ".sifttext/config.json";
+
+/// User-owned update intent, kept in the knowledge home's own configuration file and never in
+/// `state.json`, which holds only machine observations. The knowledge home's Git index ignores
+/// `.sifttext/` directory, so an official knowledge package cannot add or rewrite this file.
+/// Defaults preserve shipped behavior: release checks still notify, and no standing grant is
+/// recorded until the user records one.
+fn update_config(home: &Path) -> Result<Value> {
+    let path = home.join(CONFIG_FILE);
+    let file: Value = match fs::symlink_metadata(&path) {
+        Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({"mode":"notify","permission":"ask","source":"default","path":path}));
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let empty = json!({});
+    let updates = file.get("updates").unwrap_or(&empty);
+    let updates = updates.as_object().ok_or("updates must be an object")?;
+    for key in updates.keys() {
+        require(
+            key == "mode" || key == "permission",
+            "updates accepts only mode and permission",
+        )?;
+    }
+    let choice = |name: &str, allowed: &[&str], fallback: &str| -> Result<String> {
+        let Some(value) = updates.get(name) else {
+            return Ok(fallback.to_owned());
+        };
+        let Some(text) = value.as_str() else {
+            return Err(format!("updates.{name} must be a string").into());
+        };
+        let message = format!("updates.{name} must be one of {}", allowed.join(" or "));
+        require(allowed.contains(&text), &message)?;
+        Ok(text.to_owned())
+    };
+    Ok(json!({
+        "mode": choice("mode", &["notify", "disabled"], "notify")?,
+        "permission": choice("permission", &["standing", "ask"], "ask")?,
+        "source": "file",
+        "path": path,
+    }))
+}
+
 pub fn update(root: &Path, mode: &str) -> Result<Value> {
     let _lock = lock(root, false)?;
     let mut state: State = load(&root.join("state.json"))?;
+    let config = update_config(&state.home)?;
+    if mode == "--config" {
+        return Ok(config);
+    }
     let recovering = root.join("activation.json").exists();
     if recovering {
         let activation: Value = load(&root.join("activation.json"))?;
@@ -879,8 +930,13 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
             json!({"status":"needs_agent","worktree":pending.draft,"resume":"sifttext update --resume"}),
         );
     }
-    if mode == "--opportunistic" && !due(&state, &now()) {
-        return Ok(json!({"status":"not_due"}));
+    if mode == "--opportunistic" {
+        if config["mode"] == "disabled" {
+            return Ok(json!({"status":"update_disabled"}));
+        }
+        if !due(&state, &now()) {
+            return Ok(json!({"status":"not_due"}));
+        }
     }
     state.attempt = Some(now());
     persist(&root.join("state.json"), &state)?;
@@ -1020,7 +1076,11 @@ pub fn opportunistic() {
     }
     if let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") {
         match update(Path::new(&root), "--opportunistic") {
-            Ok(value) if value["status"] != "not_due" && value["status"] != "current" => {
+            Ok(value)
+                if value["status"] != "not_due"
+                    && value["status"] != "current"
+                    && value["status"] != "update_disabled" =>
+            {
                 eprintln!("SiftText update {value}")
             }
             Err(error) => eprintln!("SiftText update deferred: {error}"),
@@ -1084,6 +1144,7 @@ mod tests {
         let notice = opportunistic_notice(&current, &state, &manifest).unwrap();
         assert_eq!(notice["status"], "update_available");
         assert_eq!(notice["command"], "sifttext update");
+        assert_eq!(notice["permission"], "ask");
         assert_eq!(
             notice["guide"],
             state
@@ -1103,6 +1164,34 @@ mod tests {
             opportunistic_notice(&current, &state, &manifest).unwrap()["status"],
             "update_available"
         );
+    }
+
+    #[test]
+    fn update_config_reads_the_users_grant_and_refuses_invented_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let config = home.join(".sifttext").join("config.json");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        let defaults = update_config(home).unwrap();
+        assert_eq!(defaults["mode"], "notify");
+        assert_eq!(defaults["permission"], "ask");
+        assert_eq!(defaults["source"], "default");
+        fs::write(&config, r#"{"updates":{"permission":"standing"}}"#).unwrap();
+        let granted = update_config(home).unwrap();
+        assert_eq!(granted["permission"], "standing");
+        assert_eq!(granted["mode"], "notify");
+        assert_eq!(granted["source"], "file");
+        fs::write(&config, r#"{"updates":{"mode":"disabled"}}"#).unwrap();
+        assert_eq!(update_config(home).unwrap()["mode"], "disabled");
+        for body in [
+            r#"{"updates":{"mode":"silent"}}"#,
+            r#"{"updates":{"permission":"always"}}"#,
+            r#"{"updates":{"track":"beta"}}"#,
+            r#"{"updates":true}"#,
+        ] {
+            fs::write(&config, body).unwrap();
+            assert!(update_config(home).is_err(), "accepted {body}");
+        }
     }
 
     #[test]

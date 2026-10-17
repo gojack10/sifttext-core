@@ -12,6 +12,7 @@ sifttext update                            Check and apply compatible official p
 sifttext update --status                    Show installed identities and pending update state
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
+sifttext update --config                    Read the user's update mode and standing grant
 sifttext init HOME                         Copy the embedded first-party KB (from native files) to a NEW Git home
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
@@ -72,7 +73,11 @@ fn run() -> Result<()> {
     if args.first().is_some_and(|arg| arg == "update") {
         let mode = match args.as_slice() {
             [_] => "",
-            [_, mode] if ["--status", "--resume", "--rollback"].contains(&mode.as_str()) => mode,
+            [_, mode]
+                if ["--status", "--resume", "--rollback", "--config"].contains(&mode.as_str()) =>
+            {
+                mode
+            }
             _ => return Err("unknown update arguments".into()),
         };
         let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT")

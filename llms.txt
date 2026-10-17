@@ -20,7 +20,7 @@ The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Ch
 
 ## Updates and local work
 
-Managed v0.1.0 installations check official releases after four hours and report a newer compatible release instead of applying it; your agent reads the local update guide and runs `sifttext update` when the user has granted routine updates. To skip the background release check, set `SIFTTEXT_NO_UPDATE=1` during installation and on every later invocation.
+Managed v0.1.0 installations check official releases after four hours and report a newer compatible release instead of applying it; your agent reads the local update guide and runs `sifttext update` when the user has recorded a standing grant in `.sifttext/config.json`; `sifttext update --config` reports the current mode, grant and file path. To skip the background release check, set `"mode": "disabled"` in that file or set `SIFTTEXT_NO_UPDATE=1` during installation and on every later invocation.
 
 When a knowledge merge blocks an update, follow the installed update guide to reconcile the retained draft within the user's authority.
 

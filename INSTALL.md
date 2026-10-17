@@ -66,7 +66,7 @@ For a new knowledge home, initialization copies the bundled knowledge into an in
 
 If installation fails, preserve any created knowledge and use the failing command's output to determine the next authorized repair.
 
-Managed v0.1.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it. The agent then runs `sifttext update` only under the standing permission the user grants. Explain that behavior before installation so the user can choose whether to disable it. To skip the background release check, set `SIFTTEXT_NO_UPDATE=1` on the installer invocation and every subsequent SiftText invocation.
+Managed v0.1.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it. The agent then runs `sifttext update` only under the standing permission the user grants. That grant is `"permission": "standing"` in the `updates` object of `.sifttext/config.json` inside the knowledge home, and `sifttext update --config` reports the current mode, grant and file path. Explain that behavior before installation so the user can choose whether to disable it. To skip the background release check, set `"mode": "disabled"` in that object, or set `SIFTTEXT_NO_UPDATE=1` on the installer invocation and every subsequent SiftText invocation.
 
 After inspection and verification succeed, execute the same downloaded file within the user's installation permission:
 
