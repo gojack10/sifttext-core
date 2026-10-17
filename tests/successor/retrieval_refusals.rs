@@ -4,10 +4,7 @@ use std::{
     collections::BTreeSet,
     fs,
     io::Write,
-    os::unix::{
-        fs::PermissionsExt,
-        process::{CommandExt, ExitStatusExt},
-    },
+    os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     thread,
@@ -53,9 +50,34 @@ fn source(p: &Path) -> PathBuf {
 fn request(p: &Path, query: &str) -> Value {
     json!({"op":"search","store":p,"query":query,"limit":10,"offset":0,"readable_ids":[id(1)],"diagnostics":true})
 }
+fn failing_policy() -> (tempfile::TempDir, Policy) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("build")).unwrap();
+    let executable = dir.path().join("build/graph-policy");
+    fs::write(&executable, "#!/bin/sh\nexit 7\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut stamp = String::new();
+    for file in ["Cargo.toml", "Cargo.lock", "README.md", ".gitignore"] {
+        fs::write(dir.path().join(file), "synthetic helper fixture\n").unwrap();
+        stamp.push_str(&format!(
+            "{}  {file}\n",
+            crate::sha256(b"synthetic helper fixture\n")
+        ));
+    }
+    fs::write(dir.path().join("build/candidate.sha256"), stamp).unwrap();
+    fs::write(
+        dir.path().join("build/graph-policy.sha256"),
+        format!(
+            "{}  build/graph-policy\n",
+            crate::sha256(&fs::read(&executable).unwrap())
+        ),
+    )
+    .unwrap();
+    let policy = Policy::checked(dir.path()).unwrap();
+    (dir, policy)
+}
 fn binary(name: &str) -> PathBuf {
-    crate::native_bin_dir()
-        .join(name)
+    crate::native_bin_dir().join(name)
 }
 fn command() -> Command {
     let mut c = Command::new(binary("core-observe"));
@@ -195,68 +217,35 @@ fn capture_permission_resource_and_cache_contention_remain_failures_and_recover(
     assert!(run(&req).status.success());
 }
 #[test]
-fn real_checked_helper_failure_is_preserved_not_guessed() {
-    // The `timeout` identity this case used to force with a stopped grandchild
-    // is asserted directly in `index::refusal_kind_tests`, and the only real
-    // deadline wait is retained in `process_framing_tests`. Forcing one here
-    // cost a full 10s policy deadline and the pgrep discovery race that goes
-    // with it, while proving only that the same CLI plumbing carries a
-    // different fixed kind.
-    for (signal, kind) in [(libc::SIGKILL, "helper_failed")] {
-        let d = fixture(256);
-        let mut c = command();
-        c.process_group(0);
-        let mut child = c.spawn().unwrap();
-        struct Group(i32);
-        impl Drop for Group {
-            fn drop(&mut self) {
-                unsafe {
-                    libc::kill(-self.0, libc::SIGKILL);
-                }
-            }
+fn checked_helper_failure_is_preserved_not_guessed() {
+    let d = fixture(1);
+    let (_policy_home, policy) = failing_policy();
+    let readable = BTreeSet::from([id(1)]);
+    let ranking = search::Ranking::default();
+    let req = search::Request {
+        store: d.path(),
+        base_store: None,
+        query: "",
+        under_node_id: None,
+        readable_ids: &readable,
+        limit: 10,
+        offset: 0,
+        ranking: &ranking,
+        pause_before_accept: None,
+    };
+    let out = search::search(&policy, &req).unwrap();
+    assert_eq!(out.status, "error");
+    assert_eq!(
+        out.refusal.unwrap(),
+        Refusal {
+            stage: "source_validation",
+            kind: "helper_failed"
         }
-        let group = Group(child.id() as i32);
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(
-                serde_json::to_string(&request(d.path(), ""))
-                    .unwrap()
-                    .as_bytes(),
-            )
-            .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            assert!(
-                child.try_wait().unwrap().is_none(),
-                "helper escaped injection"
-            );
-            assert!(Instant::now() < deadline);
-            let p = Command::new("pgrep")
-                .args(["-P", &child.id().to_string()])
-                .output()
-                .unwrap();
-            if let Some(pid) = String::from_utf8_lossy(&p.stdout)
-                .lines()
-                .next()
-                .and_then(|x| x.parse::<i32>().ok())
-            {
-                assert_eq!(unsafe { libc::kill(pid, signal) }, 0);
-                break;
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
-        refusal(
-            kind,
-            &child.wait_with_output().unwrap(),
-            d.path(),
-            "source_validation",
-            kind,
-        );
-        drop(group);
-        assert!(run(&request(d.path(), "")).status.success());
-    }
+    );
+    assert_eq!(
+        search::observation(&out),
+        json!({"status":"error","version":null,"total_matches":0,"results":[],"other_groups":[]})
+    );
 }
 
 // Mirrors every native/API/privacy/recovery assertion in the retired MJS runner.
