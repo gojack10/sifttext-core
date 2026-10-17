@@ -72,6 +72,8 @@ struct Pending {
     upstream: String,
     commit: Option<String>,
     changed: Vec<String>,
+    #[serde(default)]
+    repair_node: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -413,6 +415,15 @@ fn text(path: &Path) -> Result<&str> {
     path.to_str().ok_or_else(|| "non-UTF-8 path".into())
 }
 
+fn repair_paths(policy: &Policy, home: &Path) -> Result<Value> {
+    let tree = local::ensure_maintenance_tree(policy, home)?;
+    Ok(json!({
+        "guide": home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
+        "maintenance_tree": tree["path"],
+        "maintenance_tree_id": tree["id"],
+    }))
+}
+
 /// Called only by the verified bootstrap, before the final install-directory rename.
 pub fn initialize(policy: &Policy, root: &Path, home: &Path) -> Result<Value> {
     let actual_root = fs::canonicalize(root)?;
@@ -748,11 +759,13 @@ fn merge_knowledge(
         upstream: upstream.clone(),
         commit: None,
         changed,
+        repair_node: None,
     });
     persist(&root.join("state.json"), state)?;
     if let Err(error) = git(&draft, &["merge", "--no-ff", "--no-commit", &upstream]) {
+        let paths = repair_paths(policy, &state.home)?;
         return Ok(
-            json!({"status":"needs_agent","worktree":draft,"conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,"error":error.to_string(),"resume":"sifttext update --resume"}),
+            json!({"status":"needs_agent","worktree":draft,"conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,"error":error.to_string(),"resume":"sifttext update --resume","repair":paths}),
         );
     }
     crate::status::normalize(&policy, &state.home, &draft, &BTreeSet::new(), None)?;
@@ -873,6 +886,13 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
     if let Some(value) = mode.strip_prefix("--mode=") {
         return set_update_config(&state.home, "mode", value);
     }
+    if let Some(id) = mode.strip_prefix("--attach-node=") {
+        let pending = state.pending.as_mut().ok_or("no update is pending")?;
+        let path = local::maintenance_node_path(&state.home, id)?;
+        pending.repair_node = Some(id.to_owned());
+        persist(&root.join("state.json"), &state)?;
+        return Ok(json!({"status":"repair_attached","repair_node":id,"path":path}));
+    }
     let recovering = root.join("activation.json").exists();
     if recovering {
         let activation: Value = load(&root.join("activation.json"))?;
@@ -938,9 +958,18 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
         return rollback(root, &mut state);
     }
     if let Some(pending) = &state.pending {
-        return Ok(
-            json!({"status":"needs_agent","worktree":pending.draft,"resume":"sifttext update --resume"}),
-        );
+        let policy = checked_runtime(&root.join(&state.application))?;
+        let mut repair = repair_paths(&policy, &state.home)?;
+        if let Some(id) = &pending.repair_node {
+            repair["repair_node"] = json!(id);
+            repair["repair_node_path"] = json!(local::maintenance_node_path(&state.home, id)?);
+        }
+        return Ok(json!({
+            "status":"needs_agent",
+            "worktree":pending.draft,
+            "resume":"sifttext update --resume",
+            "repair":repair,
+        }));
     }
     if mode == "--opportunistic" {
         if config["mode"] == "disabled" {
@@ -1008,6 +1037,7 @@ fn rollback(root: &Path, state: &mut State) -> Result<Value> {
             upstream: previous.baseline.clone().unwrap_or_default(),
             commit: None,
             changed: Vec::new(),
+            repair_node: None,
         });
         persist(&root.join("state.json"), state)?;
         if let Err(error) = git(&path, &["revert", "--no-commit", commit, "-m", "1"]) {
@@ -1523,13 +1553,60 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result["status"], "needs_agent", "{result}");
-        assert_eq!(git(&state.home, &["rev-parse", "HEAD"]).unwrap(), before);
+        assert_ne!(git(&state.home, &["rev-parse", "HEAD"]).unwrap(), before);
+        assert!(result["repair"]["maintenance_tree"].as_str().is_some());
+        assert!(result["repair"]["guide"].as_str().is_some());
         assert!(
             fs::read_to_string(&a)
                 .unwrap()
                 .contains("Customer paragraph.")
         );
         local::check(&policy, &state.home, None, BTreeSet::new()).unwrap();
+        let tree_id = result["repair"]["maintenance_tree_id"].as_str().unwrap();
+        let allocation = local::worktree(&policy, &state.home).unwrap();
+        let repair_draft = PathBuf::from(allocation["worktree"].as_str().unwrap());
+        let undertaking = local::create(
+            &policy,
+            &repair_draft,
+            "Resolve Update Conflict",
+            "Reconcile the customer's KB conflict.",
+            Some(tree_id),
+        )
+        .unwrap();
+        git(&repair_draft, &["add", "--", "nodes", "trees"]).unwrap();
+        git(
+            &repair_draft,
+            &["commit", "-qm", "maintenance: record update repair"],
+        )
+        .unwrap();
+        let commit = git(&repair_draft, &["rev-parse", "HEAD"]).unwrap();
+        let repair_receipt = local::submit(
+            &policy,
+            &crate::checked_publication::Request {
+                repo: state.home.clone(),
+                accepted_ref: "refs/heads/main".into(),
+                draft: Some(repair_draft),
+                commit: Some(commit),
+                base: Some(allocation["base"].as_str().unwrap().to_owned()),
+                explicit: BTreeSet::new(),
+                pause_before_publish: None,
+                pause_after_publish: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(repair_receipt["status"], "current", "{repair_receipt}");
+        let attached = update(
+            &root,
+            &format!("--attach-node={}", undertaking["id"].as_str().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(attached["status"], "repair_attached");
+        assert_eq!(attached["path"], undertaking["path"]);
+        let mut state: State = load(&root.join("state.json")).unwrap();
+        assert_eq!(
+            state.pending.as_ref().unwrap().repair_node.as_deref(),
+            undertaking["id"].as_str()
+        );
         let pending = state.pending.as_ref().unwrap();
         let path = pending.draft.join(a.strip_prefix(&state.home).unwrap());
         fs::write(

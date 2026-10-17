@@ -15,6 +15,7 @@ sifttext update --rollback                  Restore the previous release through
 sifttext update --config                    Read the user's update mode and standing grant
 sifttext update --grant standing|ask        Record or revoke the user's routine-update grant
 sifttext update --mode notify|disabled      Choose whether ordinary commands check releases
+sifttext update --attach-node=UUID          Register the repair undertaking for a pending update
 sifttext init HOME                         Copy the embedded first-party KB (from native files) to a NEW Git home
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
@@ -76,7 +77,8 @@ fn run() -> Result<()> {
         let mode = match args.as_slice() {
             [_] => String::new(),
             [_, mode]
-                if ["--status", "--resume", "--rollback", "--config"].contains(&mode.as_str()) =>
+                if ["--status", "--resume", "--rollback", "--config"].contains(&mode.as_str())
+                    || mode.starts_with("--attach-node=") =>
             {
                 mode.clone()
             }

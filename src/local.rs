@@ -1719,6 +1719,125 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
     Ok(json!({"status":"restored","links":restored}))
 }
 
+pub fn maintenance_node_path(home: &Path, node_id: &str) -> Result<PathBuf> {
+    require(crate::uuid(node_id), "invalid maintenance node UUID")?;
+    let store = Store::read(home)?;
+    let roots: Vec<_> = store
+        .roots
+        .iter()
+        .filter(|id| store.nodes[*id].name == "SiftText Maintenance")
+        .collect();
+    require(
+        roots.len() == 1,
+        "SiftText Maintenance tree is missing or ambiguous",
+    )?;
+    let mut pending = vec![roots[0].as_str()];
+    while let Some(id) = pending.pop() {
+        if id == node_id {
+            return Ok(store.path.join("nodes").join(id).join("node.md"));
+        }
+        pending.extend(store.children[id].iter().map(String::as_str));
+    }
+    Err("repair node must belong to SiftText Maintenance".into())
+}
+
+pub fn ensure_maintenance_tree(policy: &Policy, home: &Path) -> Result<Value> {
+    let store = Store::read(home)?;
+    let roots: Vec<_> = store
+        .roots
+        .iter()
+        .filter(|id| store.nodes[*id].name == "SiftText Maintenance")
+        .collect();
+    require(roots.len() <= 1, "multiple SiftText Maintenance trees")?;
+    if let Some(id) = roots.first() {
+        return Ok(
+            json!({"id":id,"path":store.path.join("nodes").join(id).join("node.md"),"created":false}),
+        );
+    }
+
+    let allocation = worktree(policy, home)?;
+    let draft = PathBuf::from(
+        allocation["worktree"]
+            .as_str()
+            .ok_or("missing maintenance worktree")?,
+    );
+    let created = create(
+        policy,
+        &draft,
+        "SiftText Maintenance",
+        "Customer-owned repair and update investigations.",
+        None,
+    )?;
+    let id = created["id"]
+        .as_str()
+        .ok_or("missing maintenance tree ID")?;
+    git(&draft, &["add", "--", "nodes", "trees"])?;
+    git(
+        &draft,
+        &["commit", "-m", "maintenance: initialize repair tree"],
+    )?;
+    let commit = git(&draft, &["rev-parse", "HEAD"])?;
+    let base = allocation["base"]
+        .as_str()
+        .ok_or("missing maintenance base")?;
+    let receipt = submit(
+        policy,
+        &crate::checked_publication::Request {
+            repo: home.to_owned(),
+            accepted_ref: "refs/heads/main".into(),
+            draft: Some(draft),
+            commit: Some(commit),
+            base: Some(base.to_owned()),
+            explicit: BTreeSet::new(),
+            pause_before_publish: None,
+            pause_after_publish: None,
+        },
+    )?;
+    require(
+        receipt["status"] == "current",
+        "maintenance tree publication unavailable; preserve the draft",
+    )?;
+    let published = Store::read(home)?;
+    require(
+        published.roots.contains(&id.to_owned())
+            && published.nodes[id].name == "SiftText Maintenance",
+        "published maintenance tree did not validate",
+    )?;
+    Ok(json!({"id":id,"path":published.path.join("nodes").join(id).join("node.md"),"created":true}))
+}
+
+#[cfg(test)]
+#[test]
+fn maintenance_tree_registration_is_checked_and_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    crate::native_kb::init(&policy, &home).unwrap();
+
+    let first = ensure_maintenance_tree(&policy, &home).unwrap();
+    assert_eq!(first["created"], true);
+    let maintenance_id = first["id"].as_str().unwrap();
+    assert_eq!(
+        Store::read(&home).unwrap().nodes[maintenance_id].name,
+        "SiftText Maintenance"
+    );
+    assert!(
+        maintenance_node_path(&home, maintenance_id)
+            .unwrap()
+            .is_file()
+    );
+    let other_root = Store::read(&home)
+        .unwrap()
+        .roots
+        .into_iter()
+        .find(|id| id != maintenance_id)
+        .unwrap();
+    assert!(maintenance_node_path(&home, &other_root).is_err());
+    let second = ensure_maintenance_tree(&policy, &home).unwrap();
+    assert_eq!(second["created"], false);
+    assert_eq!(second["id"], first["id"]);
+}
+
 pub fn create(
     policy: &Policy,
     path: &Path,
