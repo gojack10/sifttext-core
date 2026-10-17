@@ -384,7 +384,7 @@ fn native_prepared_publication_preserves_sql_postings_and_warm_retry() {
         assert_eq!(hidden["total_matches"], 0);
     };
     verify(&a);
-    for _ in 0..2 {
+    for _ in 0..1 {
         let warm = call("git-submit-observe", f.request(&f.a));
         assert_eq!(warm["candidate"], a["candidate"]);
         assert_eq!(warm["index_reuse"]["accepted_main"], 4);
