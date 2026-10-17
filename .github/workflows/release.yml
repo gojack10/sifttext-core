@@ -26,6 +26,8 @@ jobs:
             platform: linux-arm64
     runs-on: ${{ matrix.runner }}
     steps:
+      - name: Require the trusted release branch
+        run: test "$GITHUB_REF" = refs/heads/main
       - uses: actions/checkout@v4
       - name: Prepare build tools
         run: |
@@ -52,6 +54,10 @@ jobs:
           name: package-${{ matrix.platform }}
           path: ${{ runner.temp }}/release/sifttext-${{ matrix.platform }}.tar.gz
           if-no-files-found: error
+      - uses: actions/attest-build-provenance@v2
+        if: matrix.platform == 'linux-x64'
+        with:
+          subject-path: ${{ runner.temp }}/release/sifttext-knowledge.tar.gz
       - uses: actions/upload-artifact@v4
         if: matrix.platform == 'linux-x64'
         with:

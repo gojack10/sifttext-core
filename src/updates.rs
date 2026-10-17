@@ -349,7 +349,39 @@ fn download(url: &str, path: &Path, limit: u64) -> Result<()> {
         "oversized release download",
     )
 }
-fn unpack(asset: &Asset, destination: &Path) -> Result<()> {
+fn verify_attestation(archive: &Path, source: &str) -> Result<()> {
+    verify_attestation_with(std::ffi::OsStr::new("gh"), archive, source)
+}
+fn verify_attestation_with(gh: &std::ffi::OsStr, archive: &Path, source: &str) -> Result<()> {
+    require(
+        source.len() == 40
+            && source
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "invalid release source revision",
+    )?;
+    let status = Command::new(gh)
+        .args(["attestation", "verify"])
+        .arg(archive)
+        .args([
+            "--repo",
+            "gojack10/sifttext-core",
+            "--signer-workflow",
+            "gojack10/sifttext-core/.github/workflows/release.yml",
+            "--source-digest",
+            source,
+            "--source-ref",
+            "refs/heads/main",
+            "--cert-oidc-issuer",
+            "https://token.actions.githubusercontent.com",
+        ])
+        .status()?;
+    require(
+        status.success(),
+        "release provenance verification failed; keep the active release",
+    )
+}
+fn unpack(asset: &Asset, destination: &Path, source: &str) -> Result<()> {
     official(asset)?;
     let stage = tempfile::tempdir_in(destination.parent().ok_or("missing stage parent")?)?;
     let archive = stage.path().join("download.tar.gz");
@@ -358,6 +390,7 @@ fn unpack(asset: &Asset, destination: &Path) -> Result<()> {
         crate::sha256(&fs::read(&archive)?) == asset.sha256,
         "release checksum mismatch",
     )?;
+    verify_attestation(&archive, source)?;
     let listing = Command::new("tar").arg("-tzf").arg(&archive).output()?;
     require(listing.status.success(), "invalid release archive")?;
     let listing = String::from_utf8(listing.stdout)?;
@@ -633,7 +666,7 @@ fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
             .assets
             .get(&platform()?)
             .ok_or("no official package for this platform")?;
-        unpack(asset, &root.join(&path))?;
+        unpack(asset, &root.join(&path), &manifest.application.source)?;
         let info = package(&root.join(&path))?;
         require(
             info.version == manifest.application.version
@@ -658,7 +691,7 @@ fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
         !kb.exists(),
         "unactivated knowledge package already exists; inspect it before retrying",
     )?;
-    unpack(&manifest.knowledge.asset, &kb)?;
+    unpack(&manifest.knowledge.asset, &kb, &manifest.application.source)?;
     merge_knowledge(root, state, manifest, app, &policy, &kb)
 }
 fn merge_knowledge(
@@ -1072,6 +1105,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn attestation_verification_binds_expected_workflow_and_source() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let args = dir.path().join("args");
+        let gh = dir.path().join("gh");
+        fs::write(
+            &gh,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\nexit \"${{GH_STATUS:-0}}\"\n",
+                args.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&gh, fs::Permissions::from_mode(0o700)).unwrap();
+        let archive = dir.path().join("package.tar.gz");
+        verify_attestation_with(gh.as_os_str(), &archive, &"a".repeat(40)).unwrap();
+        let command = fs::read_to_string(args).unwrap();
+        for expected in [
+            "attestation verify",
+            "--repo gojack10/sifttext-core",
+            "--signer-workflow gojack10/sifttext-core/.github/workflows/release.yml",
+            &format!("--source-digest {}", "a".repeat(40)),
+            "--source-ref refs/heads/main",
+            "--cert-oidc-issuer https://token.actions.githubusercontent.com",
+        ] {
+            assert!(command.contains(expected), "missing {expected}: {command}");
+        }
+        assert!(verify_attestation_with(gh.as_os_str(), &archive, "bad").is_err());
+        fs::write(&gh, "#!/bin/sh\nexit 1\n").unwrap();
+        assert!(verify_attestation_with(gh.as_os_str(), &archive, &"a".repeat(40)).is_err());
+    }
     #[test]
     fn check_interval_retry_and_clock_reset() {
         let mut s = state();

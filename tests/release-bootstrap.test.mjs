@@ -64,8 +64,14 @@ printf '%s\\n' "$*" >> "$FIXTURE/attestation-args"
     const alias=join(root,'alias');symlinkSync(home,alias);result=run(alias);assert.notEqual(result.status,0);
     const overlap=join(home,'application');result=run(overlap);assert.notEqual(result.status,0);assert.ok(!existsSync(overlap));
     writeFileSync(join(commands,'git'),'#!/bin/sh\nexit 1\n',{mode:0o755});
-    const missing=join(root,'missing-git');result=run(missing);assert.notEqual(result.status,0);assert.ok(!existsSync(missing));
-    const missingGh=join(root,'missing-gh');rmSync(join(commands,'gh'));result=run(missingGh);assert.notEqual(result.status,0);assert.ok(!existsSync(missingGh));
+    const missingGit=join(root,'missing-git');result=run(missingGit);
+    assert.notEqual(result.status,0);assert.match(result.stderr,/Git is unavailable/);assert.ok(!existsSync(missingGit));
+    writeFileSync(join(commands,'git'),'#!/bin/sh\n[ "$1" = --version ]\n',{mode:0o755});
+    const missingGh=join(root,'missing-gh');rmSync(join(commands,'gh'));
+    const controlledPath=commands+':/usr/bin:/bin';
+    assert.notEqual(spawnSync('sh',['-c','command -v gh'],{env:{...env,PATH:controlledPath}}).status,0);
+    result=run(missingGh,{PATH:controlledPath});
+    assert.notEqual(result.status,0);assert.match(result.stderr,/Missing gh\./);assert.ok(!existsSync(missingGh));
     assert.equal(readFileSync(join(home,'customer.txt'),'utf8'),'preserve');
   } finally {rmSync(root,{recursive:true,force:true});}
 });
