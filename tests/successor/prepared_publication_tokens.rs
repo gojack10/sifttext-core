@@ -8,9 +8,7 @@ use std::{
 };
 
 fn call(binary: &str, request: Value) -> Output {
-    let bins = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bins = crate::native_bin_dir();
     let mut child = Command::new(bins.join(binary))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

@@ -65,9 +65,7 @@ fn refusal_rule_check_inspects_every_row() {
 }
 
 fn call(binary: &str, q: Value, pass: bool) -> Value {
-    let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin = crate::native_bin_dir();
     let mut child = Command::new(bin.join(binary))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

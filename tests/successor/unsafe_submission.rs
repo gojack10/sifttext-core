@@ -40,9 +40,7 @@ pub(super) fn fingerprint(p: &Path) -> Value {
 
 #[test]
 fn native_unsafe_submission_inputs_preserve_drafts_and_accepted_history() {
-    let bin_dir = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin_dir = crate::native_bin_dir();
     let evidence = std::env::var_os("UNSAFE_SUBMISSION_EVIDENCE").map(PathBuf::from);
     if let Some(p) = &evidence {
         fs::create_dir_all(p).unwrap();

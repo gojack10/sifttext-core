@@ -62,10 +62,7 @@ fn native_pre_cas_candidate_cache_ref_and_contender_races() {
         .map(PathBuf::from)
         .unwrap_or_else(|| temp.path().join("receipts"));
     fs::create_dir(&evidence).unwrap();
-    let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"))
-        .join("git-submit-observe");
+    let bin = crate::native_bin("git-submit-observe");
     for action in ["candidate", "cache", "ref", "contention"] {
         let f = Fixture::new();
         node(&f.a, 2, "Race original X");

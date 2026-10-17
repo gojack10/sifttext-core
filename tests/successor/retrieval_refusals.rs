@@ -54,9 +54,7 @@ fn request(p: &Path, query: &str) -> Value {
     json!({"op":"search","store":p,"query":query,"limit":10,"offset":0,"readable_ids":[id(1)],"diagnostics":true})
 }
 fn binary(name: &str) -> PathBuf {
-    std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"))
+    crate::native_bin_dir()
         .join(name)
 }
 fn command() -> Command {

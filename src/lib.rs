@@ -14,6 +14,38 @@ use std::{
 // Standalone observers and reusable modules share this public crate identity.
 extern crate self as sifttext_file_graph;
 
+/// Directory holding the native helper binaries built beside this test binary.
+/// `CARGO_MANIFEST_DIR/target/debug` is the wrong answer whenever the build
+/// used an external `CARGO_TARGET_DIR`, which is the project's preferred
+/// location for generated targets.
+#[cfg(test)]
+pub(crate) fn native_bin_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR") {
+        return PathBuf::from(dir);
+    }
+    if let Some(profile) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|deps| deps.to_path_buf()))
+        .and_then(|deps| deps.parent().map(|profile| profile.to_path_buf()))
+    {
+        return profile;
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug")
+}
+
+/// `cargo test --lib` does not build the helper binaries, so name the missing
+/// prerequisite instead of letting a later spawn surface a bare NotFound.
+#[cfg(test)]
+pub(crate) fn native_bin(name: &str) -> PathBuf {
+    let bin = native_bin_dir().join(name);
+    assert!(
+        bin.is_file(),
+        "native test helper {name} is missing at {}; run `sh scripts/build.sh` in this checkout before `cargo test --lib`, or set SIFTTEXT_TEST_NATIVE_BIN_DIR to the directory that holds it",
+        bin.display()
+    );
+    bin
+}
+
 pub mod graph_transition;
 
 #[cfg(test)]

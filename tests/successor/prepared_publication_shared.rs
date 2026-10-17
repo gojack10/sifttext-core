@@ -3,9 +3,7 @@ use std::{io::Write, process::Stdio};
 
 #[test]
 fn native_shared_parent_submission_recomputes_merged_dependency() {
-    let bin_dir = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin_dir = crate::native_bin_dir();
     let mut receipts = Vec::new();
     let mut call = |binary: &str, q: serde_json::Value| -> serde_json::Value {
         let mut child = Command::new(bin_dir.join(binary))

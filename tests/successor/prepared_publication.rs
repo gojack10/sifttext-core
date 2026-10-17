@@ -218,9 +218,7 @@ fn actual_submission_reuses_x_and_y_without_pulling_or_mutating_donors() {
 #[test]
 fn native_prepared_publication_preserves_sql_postings_and_warm_retry() {
     use std::{io::Write, process::Stdio};
-    let bin_dir = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin_dir = crate::native_bin_dir();
     let call = |binary: &str, q: serde_json::Value| -> serde_json::Value {
         let mut child = Command::new(bin_dir.join(binary))
             .stdin(Stdio::piped())
@@ -446,10 +444,7 @@ fn prepared_submission_cache_race_write_once_and_interruption() {
             }
         }
     }
-    let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"))
-        .join("git-submit-observe");
+    let bin = crate::native_bin("git-submit-observe");
     let temp = tempfile::tempdir().unwrap();
     let evidence = std::env::var_os("PREPARED_PUBLICATION_EVIDENCE")
         .map(PathBuf::from)

@@ -62,10 +62,7 @@ fn source(store: &Path) -> PathBuf {
     store.join("nodes").join(id(1)).join("node.md")
 }
 fn binary() -> PathBuf {
-    std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"))
-        .join("core-observe")
+    crate::native_bin("core-observe")
 }
 fn command() -> Command {
     assert!(

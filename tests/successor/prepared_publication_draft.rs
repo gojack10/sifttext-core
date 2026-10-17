@@ -10,9 +10,7 @@ use std::{
 // Exact draft-donor mutation family from prepared_publication.mjs.
 #[test]
 fn native_draft_donor_misses_keep_complete_checked_publication() {
-    let bin_dir = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin_dir = crate::native_bin_dir();
     let evidence = std::env::var_os("PREPARED_DRAFT_FALLBACK_EVIDENCE").map(PathBuf::from);
     if let Some(p) = &evidence {
         fs::create_dir(p).unwrap();

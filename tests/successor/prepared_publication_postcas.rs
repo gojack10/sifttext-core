@@ -19,10 +19,7 @@ impl Drop for Running {
 
 #[test]
 fn native_post_cas_kill_recovers_and_later_publisher_invalidates_old_receipt() {
-    let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"))
-        .join("git-submit-observe");
+    let bin = crate::native_bin("git-submit-observe");
     for kill in [true, false] {
         let f = Fixture::new();
         node(&f.a, 2, "Published X");
@@ -162,9 +159,7 @@ fn native_post_cas_kill_recovers_and_later_publisher_invalidates_old_receipt() {
 fn native_combined_post_cas_derived_damage_recovers_from_accepted_git_alone() {
     use super::precas::fingerprint;
     use std::collections::BTreeMap;
-    let bin_dir = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin_dir = crate::native_bin_dir();
     let temp = tempfile::tempdir().unwrap();
     let evidence = std::env::var_os("DERIVED_RECOVERY_EVIDENCE")
         .map(PathBuf::from)

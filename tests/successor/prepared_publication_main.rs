@@ -2,9 +2,7 @@ use super::*;
 use std::{io::Write, process::Stdio};
 
 pub(super) fn native(binary: &str, request: serde_json::Value) -> serde_json::Value {
-    let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin = crate::native_bin_dir();
     let mut child = Command::new(bin.join(binary))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

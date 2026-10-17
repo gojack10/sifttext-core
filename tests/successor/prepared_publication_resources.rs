@@ -41,9 +41,7 @@ fn native_prepared_publication_helper_inclusive_resources() {
         .map(PathBuf::from)
         .unwrap_or_else(|| temp.path().join("resources"));
     fs::create_dir(&evidence).unwrap();
-    let bin_dir = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug"));
+    let bin_dir = crate::native_bin_dir();
     let mut command = Command::new("/usr/bin/time");
     #[cfg(target_os = "macos")]
     command.arg("-l");
