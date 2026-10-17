@@ -1778,6 +1778,13 @@ mod tests {
             state.pending.as_ref().unwrap().repair_node.as_deref(),
             undertaking["id"].as_str()
         );
+        let later_notice = update(&root, "").unwrap();
+        assert_eq!(later_notice["status"], "needs_agent");
+        assert_eq!(later_notice["repair"]["repair_node"], undertaking["id"]);
+        assert_eq!(
+            later_notice["repair"]["repair_node_path"],
+            repair_path.to_string_lossy().as_ref()
+        );
         let pending = state.pending.as_ref().unwrap();
         let path = pending.draft.join(a.strip_prefix(&state.home).unwrap());
         fs::write(
