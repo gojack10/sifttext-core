@@ -1,6 +1,7 @@
 //! File-first home pointer: ordinary discovery for a NEW supplied native KB home.
 use super::{
-    IGNORE, PIPELINE, POINTER, advance, carries_pipeline, exclude_pointer, pointer_text,
+    CHAT_ARTIFACTS_RULE, IGNORE, PIPELINE, POINTER, POINTER_RULE, advance, carries_pipeline,
+    exclude_local_artifacts, pointer_text,
     write_pointer,
 };
 use crate::{Policy, Store, checked_publication, local};
@@ -485,18 +486,24 @@ fn conflicting_or_unsafe_targets_are_preserved_and_init_fails() {
     let repo = dir.path().join("repo");
     fs::create_dir_all(repo.join(".git/info")).unwrap();
     fs::write(repo.join(".git/info/exclude"), b"keep-me").unwrap();
-    exclude_pointer(&repo).unwrap();
-    exclude_pointer(&repo).unwrap();
+    exclude_local_artifacts(&repo, true).unwrap();
+    exclude_local_artifacts(&repo, true).unwrap();
+    let rules = fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    assert_eq!(rules.lines().next(), Some("keep-me"));
+    assert_eq!(rules.lines().filter(|line| *line == POINTER_RULE).count(), 1);
     assert_eq!(
-        fs::read_to_string(repo.join(".git/info/exclude")).unwrap(),
-        format!("keep-me\n/{POINTER}\n")
+        rules
+            .lines()
+            .filter(|line| *line == CHAT_ARTIFACTS_RULE)
+            .count(),
+        1
     );
     fs::write(repo.join(".git/config"), b"not an exclude file").unwrap();
     let linked = repo.join(".git/info/exclude");
     fs::remove_file(&linked).unwrap();
     std::os::unix::fs::symlink(repo.join(".git/config"), &linked).unwrap();
     assert!(
-        exclude_pointer(&repo).is_err(),
+        exclude_local_artifacts(&repo, true).is_err(),
         "a symlinked exclude was accepted"
     );
     assert_eq!(

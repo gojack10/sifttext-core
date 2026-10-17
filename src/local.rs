@@ -16,6 +16,7 @@ pub const ENTRY: &str = "5e565245-14fe-406c-977c-cf94a9be246b";
 /// Ordinary file-first discovery generated into a NEW supplied home root.
 const POINTER: &str = "AGENTS.md";
 const POINTER_RULE: &str = "/AGENTS.md";
+const CHAT_ARTIFACTS_RULE: &str = "/nodes/*/artifacts/chats/";
 /// The entrypoint's six direct children in authored order. Same identities
 /// `instructions` resolves; they are not a second hierarchy.
 const PIPELINE: [&str; 6] = [
@@ -66,29 +67,44 @@ fn write_pointer(home: &Path) -> Result<()> {
     new_file(&home.join(POINTER), pointer_text().as_bytes())
 }
 
-/// The pointer must not read as home dirt, and the checked publisher accepts only
-/// `.gitignore`, `nodes/` and `trees/` entries, so it is excluded in the repository's
-/// own local ignore file. The recognized `.gitignore` marker is never rewritten, so
-/// homes initialized before this feature stay recognizable.
-fn exclude_pointer(home: &Path) -> Result<()> {
-    let file = home.join(".git").join("info").join("exclude");
+/// Local discovery files and chat-session links are not authored tree assets. Keep
+/// them out of Git without changing the recognized `.gitignore` marker; add rules
+/// idempotently so an existing home gains the chat-link exclusion on its next init.
+fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
+    let dotgit = home.join(".git");
+    let file = if fs::symlink_metadata(&dotgit)?.is_dir() {
+        dotgit.join("info/exclude")
+    } else {
+        PathBuf::from(git(
+            home,
+            &["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+        )?)
+    };
     match fs::symlink_metadata(&file) {
         Ok(meta) => require(meta.is_file(), "unsafe repository exclude file")?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
         Err(error) => return Err(error.into()),
     }
     let bytes = fs::read(&file).unwrap_or_default();
-    if String::from_utf8_lossy(&bytes)
-        .lines()
-        .any(|line| line.trim() == POINTER_RULE)
-    {
+    let existing = String::from_utf8_lossy(&bytes);
+    let mut rules = vec![CHAT_ARTIFACTS_RULE];
+    if pointer {
+        rules.push(POINTER_RULE);
+    }
+    let missing: Vec<_> = rules
+        .into_iter()
+        .filter(|rule| !existing.lines().any(|line| line.trim() == *rule))
+        .collect();
+    if missing.is_empty() {
         return Ok(());
     }
     let mut added = Vec::new();
     if !bytes.is_empty() && !bytes.ends_with(b"\n") {
         added.push(b'\n');
     }
-    added.extend_from_slice(format!("{POINTER_RULE}\n").as_bytes());
+    for rule in missing {
+        added.extend_from_slice(format!("{rule}\n").as_bytes());
+    }
     fs::create_dir_all(file.parent().ok_or("missing exclude directory")?)?;
     fs::OpenOptions::new()
         .create(true)
@@ -478,9 +494,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     // Persist only the selected identity; future drafts share this local config.
     git(path, &["config", "--local", "user.name", &author_name])?;
     git(path, &["config", "--local", "user.email", &author_email])?;
-    if pointer {
-        exclude_pointer(path)?;
-    }
+    exclude_local_artifacts(path, pointer)?;
     if !stage_initialized_home(path, seed.as_ref(), true)? {
         let mut commit = git_command(path);
         commit
@@ -1183,6 +1197,213 @@ fn advance_checked(
 #[cfg(test)]
 #[path = "../tests/successor/home_reader_advance.rs"]
 mod home_reader_advance_tests;
+
+fn valid_attachment_name(value: &str) -> bool {
+    let path = Path::new(value);
+    path.components().count() == 1
+        && matches!(path.components().next(), Some(std::path::Component::Normal(_)))
+}
+
+fn chat_name(value: &str) -> String {
+    let mut name = String::new();
+    let mut separator = false;
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            if separator && !name.is_empty() {
+                name.push('-');
+            }
+            name.push((byte as char).to_ascii_lowercase());
+            separator = false;
+        } else {
+            separator = true;
+        }
+    }
+    if name.is_empty() { "session".into() } else { name }
+}
+
+fn checked_archive_target(root: &Path, record: &Value) -> Result<PathBuf> {
+    let key = record["archive_key"].as_str().ok_or("missing archive key")?;
+    let relative = Path::new(key);
+    require(
+        !relative.as_os_str().is_empty()
+            && !relative.is_absolute()
+            && relative.components().all(|part| matches!(part, std::path::Component::Normal(_))),
+        "archive key must be a relative path without traversal",
+    )?;
+    let root = fs::canonicalize(root)?;
+    crate::real_dir(&root)?;
+    let path = root.join(relative);
+    let metadata = fs::symlink_metadata(&path)?;
+    require(
+        metadata.is_file() && !metadata.file_type().is_symlink(),
+        "archived source must be a regular file",
+    )?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        require(metadata.nlink() == 1, "hard-linked archived source")?;
+    }
+    require(
+        fs::canonicalize(&path)?.starts_with(&root),
+        "archive key escaped its root",
+    )?;
+    Ok(path)
+}
+
+/// Attach an already-retained source to one node. The tracked record carries the
+/// harness descriptor and friendly name; the ignored link is rebuilt from archive_key.
+pub fn attach_session(
+    home: &Path,
+    node_id: &str,
+    descriptor: &Value,
+    topic: &str,
+    archive_root: &Path,
+) -> Result<Value> {
+    require(crate::uuid(node_id), "invalid node UUID")?;
+    require(
+        descriptor["schema_version"] == 1
+            && matches!(descriptor["availability"].as_str(), Some("available" | "unavailable"))
+            && descriptor["harness"].as_str().is_some()
+            && (descriptor["availability"] == "unavailable"
+                || (descriptor["session_id"].as_str().is_some()
+                    && descriptor["archive_key"].as_str().is_some())),
+        "valid session descriptor required",
+    )?;
+    let store = Store::read(home)?;
+    require(store.nodes.contains_key(node_id), "session node is absent")?;
+    let home = store.path;
+    let available = descriptor["availability"] == "available";
+    let target = if available {
+        Some(checked_archive_target(archive_root, descriptor)?)
+    } else {
+        None
+    };
+    let node = home.join("nodes").join(node_id);
+    crate::real_dir(&node)?;
+    let sidecar = node.join("session-sources.json");
+    let mut records: Vec<Value> = if sidecar.exists() {
+        serde_json::from_slice(&crate::read_regular(&sidecar)?)?
+    } else {
+        Vec::new()
+    };
+    let harness = descriptor["harness"].as_str().unwrap();
+    let session = descriptor["session_id"].as_str();
+    let existing = session.and_then(|session| records.iter().position(|item| {
+        item["harness"] == harness && item["session_id"] == session
+    }));
+    let ext = Path::new(descriptor["archive_key"].as_str().unwrap_or(""))
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty() && ext.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+        .unwrap_or("jsonl");
+    let base = format!("{}-{}.{}", chat_name(harness), chat_name(topic), ext.to_ascii_lowercase());
+    let chats = node.join("artifacts").join("chats");
+    if available {
+        if !node.join("artifacts").exists() {
+            fs::create_dir(node.join("artifacts"))?;
+        }
+        crate::real_dir(&node.join("artifacts"))?;
+        if !chats.exists() {
+            fs::create_dir(&chats)?;
+        }
+        crate::real_dir(&chats)?;
+    }
+    let mut name = existing
+        .and_then(|index| records[index]["attachment_name"].as_str().map(str::to_owned))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| base.clone());
+    require(valid_attachment_name(&name), "invalid session attachment name")?;
+    let fingerprint = crate::sha256(format!("{harness}\0{}", session.unwrap_or(topic)).as_bytes());
+    let mut suffix = 0;
+    loop {
+        let used_by_other = records.iter().enumerate().any(|(index, item)| {
+            Some(index) != existing && item["attachment_name"] == name
+        });
+        let path = chats.join(&name);
+        let occupied = match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                !(existing.is_some_and(|index| records[index]["attachment_name"] == name)
+                    && metadata.file_type().is_symlink())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        };
+        if !used_by_other && !occupied {
+            break;
+        }
+        suffix += 1;
+        name = if suffix == 1 {
+            format!("{}-{}.{}", chat_name(harness), &fingerprint[..8], ext.to_ascii_lowercase())
+        } else {
+            format!("{}-{}-{suffix}.{}", chat_name(harness), &fingerprint[..8], ext.to_ascii_lowercase())
+        };
+    }
+    let mut record = descriptor.clone();
+    record.as_object_mut().ok_or("session descriptor must be an object")?
+        .insert("attachment_name".into(), Value::String(name.clone()));
+    if let Some(index) = existing {
+        records[index] = record;
+    } else {
+        records.push(record);
+    }
+    records.sort_by(|left, right| {
+        left["harness"].as_str().cmp(&right["harness"].as_str())
+            .then(left["session_id"].as_str().cmp(&right["session_id"].as_str()))
+    });
+    let mut file = tempfile::NamedTempFile::new_in(&node)?;
+    serde_json::to_writer_pretty(&mut file, &records)?;
+    file.write_all(b"\n")?;
+    file.persist(&sidecar)?;
+    if let Some(target) = target {
+        let link = chats.join(&name);
+        let temp_link = chats.join(format!(".{name}.tmp-{}", id()?));
+        symlink(&target, &temp_link)?;
+        fs::rename(&temp_link, &link)?;
+    }
+    Ok(json!({"status":if available {"attached"} else {"source_unavailable"},"node_id":node_id,"attachment_name":name,"archive_key":descriptor["archive_key"]}))
+}
+
+/// Rebuild local navigation links from tracked sidecars and a relocated archive.
+pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> {
+    let store = Store::read(home)?;
+    let home = store.path;
+    let mut restored = 0;
+    for node_id in store.nodes.keys() {
+        let node = home.join("nodes").join(node_id);
+        let sidecar = node.join("session-sources.json");
+        if !sidecar.exists() {
+            continue;
+        }
+        let records: Vec<Value> = serde_json::from_slice(&crate::read_regular(&sidecar)?)?;
+        for record in records {
+            require(record["schema_version"] == 1, "invalid session source record")?;
+            if record["availability"] == "unavailable" {
+                continue;
+            }
+            require(record["availability"] == "available", "invalid session source status")?;
+            let target = checked_archive_target(archive_root, &record)?;
+            let name = record["attachment_name"].as_str().ok_or("missing attachment name")?;
+            require(valid_attachment_name(name), "invalid session attachment name")?;
+            let chats = node.join("artifacts").join("chats");
+            if !chats.exists() {
+                fs::create_dir_all(&chats)?;
+            }
+            crate::real_dir(&chats)?;
+            let link = chats.join(name);
+            match fs::symlink_metadata(&link) {
+                Ok(metadata) if metadata.file_type().is_symlink() => (),
+                Ok(_) => return Err("refusing to replace non-symlink chat artifact".into()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
+            let temp_link = chats.join(format!(".{name}.tmp-{}", id()?));
+            symlink(&target, &temp_link)?;
+            fs::rename(&temp_link, &link)?;
+            restored += 1;
+        }
+    }
+    Ok(json!({"status":"restored","links":restored}))
+}
 
 pub fn create(
     policy: &Policy,

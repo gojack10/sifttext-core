@@ -64,6 +64,8 @@ fn supplied_init_preserves_edits_and_uses_current_components() {
         true
     );
     assert_eq!(Store::read(&home).unwrap().nodes.len(), 1);
+    let exclude = fs::read_to_string(home.join(".git/info/exclude")).unwrap();
+    assert!(exclude.lines().any(|line| line == "/nodes/*/artifacts/chats/"));
     assert_eq!(
         crate::candidate_validation::version(&Store::read(&home).unwrap()),
         crate::candidate_validation::version(&Store::read(&bundle).unwrap()),

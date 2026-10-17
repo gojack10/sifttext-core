@@ -338,6 +338,9 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
     )?;
     for file in ignored.stdout.split(|b| *b == 0).filter(|b| !b.is_empty()) {
         let path = Path::new(std::str::from_utf8(file)?);
+        if local_chat_link(draft, path)? {
+            continue;
+        }
         use std::os::unix::fs::MetadataExt;
         let metadata = fs::symlink_metadata(draft.join(path))?;
         require(
@@ -375,6 +378,25 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
     }
     Ok(())
 }
+
+fn local_chat_link(root: &Path, path: &Path) -> Result<bool> {
+    let parts: Vec<_> = path.components().collect();
+    if parts.len() != 5
+        || parts[0].as_os_str() != "nodes"
+        || !crate::uuid(parts[1].as_os_str().to_str().unwrap_or_default())
+        || parts[2].as_os_str() != "artifacts"
+        || parts[3].as_os_str() != "chats"
+    {
+        return Ok(false);
+    }
+    crate::real_dir(&root.join(path.parent().ok_or("missing chat link parent")?))?;
+    require(
+        fs::symlink_metadata(root.join(path))?.file_type().is_symlink(),
+        "local chat artifact must be a symlink",
+    )?;
+    Ok(true)
+}
+
 #[cfg(test)]
 #[test]
 fn clean_checks_operation_markers_in_each_worktree_git_directory() {
@@ -735,7 +757,9 @@ fn authored_tree(repo: &Path, revision: &str) -> Result<()> {
             [".gitignore"] => regular,
             ["trees", ".keep"] => regular,
             ["trees", id] => link && crate::uuid(id),
-            ["nodes", id, "node.md" | "children.order"] => regular && crate::uuid(id),
+            ["nodes", id, "node.md" | "children.order" | "session-sources.json"] => {
+                regular && crate::uuid(id)
+            }
             ["nodes", id, "children", ".keep"] => regular && crate::uuid(id),
             ["nodes", id, "children", child] => link && crate::uuid(id) && crate::uuid(child),
             _ => false,

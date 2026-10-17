@@ -86,6 +86,9 @@ pub mod native_kb;
 pub mod neighborhoods;
 pub mod outline_artifacts;
 #[cfg(test)]
+#[path = "../tests/successor/session_attachments.rs"]
+mod session_attachment_tests;
+#[cfg(test)]
 #[path = "../tests/successor/outline_residue.rs"]
 mod outline_residue_tests;
 pub mod outline_rows;
@@ -479,6 +482,17 @@ fn inventory_entries(
             continue;
         }
         let parts: Vec<_> = rel.components().collect();
+        if parts.len() == 4
+            && parts[0].as_os_str() == "nodes"
+            && uuid(parts[1].as_os_str().to_str().unwrap_or_default())
+            && parts[2].as_os_str() == "artifacts"
+            && parts[3].as_os_str() == "chats"
+        {
+            // Harness session links are local navigation, not authored tree assets.
+            // Never follow or serialize their targets; all other unrelated links remain refused.
+            real_dir(&p)?;
+            continue;
+        }
         if rel.parent() == Some(Path::new("nodes")) {
             real_dir(&p)?;
             require(
