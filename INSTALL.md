@@ -14,7 +14,7 @@ For delegation, use only the harness's supported capabilities within the user's 
 
 ## Check prerequisites and identity
 
-The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Before downloading it, check for Git, curl, tar and either shasum or sha256sum. Handle missing prerequisites within existing permissions, obtaining approval before any additional system or privileged changes.
+The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Before downloading it, check for Git, curl, tar and either shasum or sha256sum. The provenance-verifying installer in this source also requires GitHub CLI (`gh`) to be installed beforehand. Obtain it through a system or package channel you already trust, such as your OS package manager or [GitHub's official installation instructions](https://github.com/cli/cli#installation); the installer does not download or bootstrap its own verifier and stops if `gh` is missing. Published v0.1.0 remains unsigned and unnotarized; this prerequisite does not add provenance to that release. Handle missing prerequisites within existing permissions, obtaining approval before any additional system or privileged changes.
 
 Reuse the Git name and email already selected for this knowledge home. If none is available, ask which identity to use, offering `SiftText Agent <agent@sifttext.com>` if the user needs a default. After they choose, use `git config --file` to put the identity in a private temporary config and set `GIT_CONFIG_GLOBAL` to that file for the installer invocation. Initialization copies the selection into the new repository's local config while leaving global Git configuration unchanged.
 
