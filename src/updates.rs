@@ -828,12 +828,50 @@ fn update_config(home: &Path) -> Result<Value> {
     }))
 }
 
+/// Record one user-owned update choice without touching any other setting in the shared local
+/// configuration. An agent storing a consent answer must not be able to drop session retention
+/// or another sibling key by rewriting the file, and an unsupported value is refused before any
+/// write.
+fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
+    let allowed: &[&str] = if name == "mode" {
+        &["notify", "disabled"]
+    } else {
+        &["standing", "ask"]
+    };
+    let message = format!("updates.{name} must be one of {}", allowed.join(" or "));
+    require(allowed.contains(&value), &message)?;
+    let path = home.join(CONFIG_FILE);
+    let mut file: Value = match fs::symlink_metadata(&path) {
+        Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({}),
+        Err(error) => return Err(error.into()),
+    };
+    let root = file
+        .as_object_mut()
+        .ok_or("local configuration must be an object")?;
+    let updates = root
+        .entry("updates".to_owned())
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("updates must be an object")?;
+    updates.insert(name.to_owned(), value.into());
+    fs::create_dir_all(path.parent().ok_or("missing configuration parent")?)?;
+    persist(&path, &file)?;
+    update_config(home)
+}
+
 pub fn update(root: &Path, mode: &str) -> Result<Value> {
     let _lock = lock(root, false)?;
     let mut state: State = load(&root.join("state.json"))?;
     let config = update_config(&state.home)?;
     if mode == "--config" {
         return Ok(config);
+    }
+    if let Some(value) = mode.strip_prefix("--grant=") {
+        return set_update_config(&state.home, "permission", value);
+    }
+    if let Some(value) = mode.strip_prefix("--mode=") {
+        return set_update_config(&state.home, "mode", value);
     }
     let recovering = root.join("activation.json").exists();
     if recovering {
@@ -1166,6 +1204,22 @@ mod tests {
             fs::write(&config, body).unwrap();
             assert!(update_config(home).is_err(), "accepted {body}");
         }
+        fs::write(
+            &config,
+            r#"{"session_retention":{"enabled":true,"archive_root":"/archive"}}"#,
+        )
+        .unwrap();
+        let granted = set_update_config(home, "permission", "standing").unwrap();
+        assert_eq!(granted["permission"], "standing");
+        assert_eq!(granted["mode"], "notify");
+        assert!(
+            fs::read_to_string(&config)
+                .unwrap()
+                .contains("archive_root"),
+            "recording a grant dropped a sibling setting"
+        );
+        assert!(set_update_config(home, "permission", "always").is_err());
+        assert_eq!(update_config(home).unwrap()["permission"], "standing");
     }
 
     #[test]

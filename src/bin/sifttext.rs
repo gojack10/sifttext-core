@@ -13,6 +13,8 @@ sifttext update --status                    Show installed identities and pendin
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext update --config                    Read the user's update mode and standing grant
+sifttext update --grant standing|ask        Record or revoke the user's routine-update grant
+sifttext update --mode notify|disabled      Choose whether ordinary commands check releases
 sifttext init HOME                         Copy the embedded first-party KB (from native files) to a NEW Git home
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
@@ -72,11 +74,17 @@ fn run() -> Result<()> {
     }
     if args.first().is_some_and(|arg| arg == "update") {
         let mode = match args.as_slice() {
-            [_] => "",
+            [_] => String::new(),
             [_, mode]
                 if ["--status", "--resume", "--rollback", "--config"].contains(&mode.as_str()) =>
             {
-                mode
+                mode.clone()
+            }
+            [_, flag, value]
+                if (flag == "--grant" && ["standing", "ask"].contains(&value.as_str()))
+                    || (flag == "--mode" && ["notify", "disabled"].contains(&value.as_str())) =>
+            {
+                format!("{flag}={value}")
             }
             _ => return Err("unknown update arguments".into()),
         };
@@ -86,7 +94,7 @@ fn run() -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&sifttext_file_graph::updates::update(
                 Path::new(&root),
-                mode
+                &mode
             )?)?
         );
         return Ok(());

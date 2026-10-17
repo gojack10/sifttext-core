@@ -18,7 +18,7 @@ For direct terminal installation, follow [INSTALL.md](INSTALL.md) to inspect and
 
 The precompiled [v0.1.0 release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. With Git and the download tools available, installation puts the application at `~/.local/share/sifttext` and initializes knowledge at `~/sifttext`. Keeping those locations separate from project code lets your knowledge survive software replacement.
 
-Managed v0.1.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it; your agent runs `sifttext update` under the standing permission you record in `.sifttext/config.json` inside your knowledge home; `sifttext update --config` shows the current mode, grant and file path, and nothing is granted until you record it. To skip the background release check, set `"mode": "disabled"` in that file or have your agent use `SIFTTEXT_NO_UPDATE=1` for installation and every later invocation.
+Managed v0.1.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it; your agent runs `sifttext update` under the standing permission you record with `sifttext update --grant standing`; `sifttext update --config` shows the current mode, grant and file path, and nothing is granted until you record it. To skip the background release check, run `sifttext update --mode disabled` or have your agent use `SIFTTEXT_NO_UPDATE=1` for installation and every later invocation.
 
 Continue local work during a blocked update while your agent reconciles the knowledge merge in its retained private worktree within your permission.
 
