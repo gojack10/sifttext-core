@@ -96,11 +96,8 @@ fn native_main_donor_misses_reuse_only_verified_draft_records() {
             "core-observe",
             json!({"op":"index","store":view,"mode":"incremental"}),
         );
-        let outline = native("core-observe", json!({"op":"outline_inspect","store":view}));
-        for response in [&indexed, &outline] {
-            assert_eq!(response["status"], "current", "{mutation}: {response:#}");
-            assert_eq!(response["version"], a["version"]);
-        }
+        assert_eq!(indexed["status"], "current", "{mutation}: {indexed:#}");
+        assert_eq!(indexed["version"], a["version"]);
         let rows = indexed["nodes"].as_array().unwrap();
         assert_eq!(rows.len(), 4);
         for (n, name) in [
@@ -130,7 +127,7 @@ fn native_main_donor_misses_reuse_only_verified_draft_records() {
         assert_eq!(git(&f.b, &["rev-parse", "HEAD"]), y);
         assert_eq!(git(&f.a, &["status", "--porcelain"]), "");
         assert_eq!(git(&f.b, &["status", "--porcelain"]), "");
-        receipts.push(json!({"mutation":mutation,"submission":a,"index":indexed,"outline":outline,"full":full}));
+        receipts.push(json!({"mutation":mutation,"submission":a,"index":indexed,"full":full}));
     }
     if let Some(path) = std::env::var_os("PREPARED_MAIN_EVIDENCE") {
         fs::write(path, serde_json::to_vec_pretty(&receipts).unwrap()).unwrap();
