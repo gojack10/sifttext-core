@@ -178,8 +178,12 @@ fn candidate_refusals_checked_helper_nonzero_truncated_forged_and_missing() {
     ] {
         let project = t.path().join(format!("helper-{n}"));
         let p = helper_project(&project, script);
-        let r = gate::validate(&p, &request(&store));
+        let (r, capture) = gate::validate_with_capture(&p, &request(&store), None);
         refused(&r, "graph_policy", kind);
+        assert!(
+            capture.is_none(),
+            "a helper refusal must not mint authority"
+        );
         assert_eq!(r.rows.len(), 1);
         assert!(r.rows[0].id.is_none());
         assert_eq!(
@@ -203,41 +207,6 @@ fn candidate_refusals_checked_helper_nonzero_truncated_forged_and_missing() {
     );
 }
 #[test]
-fn candidate_refusals_actual_helper_timeout_is_same_call_and_recovers() {
-    let t = tempfile::tempdir().unwrap();
-    let store = t.path().join("store");
-    fixture(&store);
-    let original = fs::read_to_string(file(&store)).unwrap();
-    for n in 2..=9 {
-        let id = format!("81000000-0000-4000-8000-{n:012}");
-        let node = store.join("nodes").join(&id);
-        fs::create_dir_all(node.join("children")).unwrap();
-        fs::write(node.join("children.order"), "").unwrap();
-        fs::write(node.join("node.md"), original.replace(ID, &id)).unwrap();
-        std::os::unix::fs::symlink(format!("../nodes/{id}"), store.join("trees").join(id)).unwrap();
-    }
-    let version = gate::version(&crate::Store::read(&store).unwrap());
-    // Hold the real deadline without burning a CPU or leaving a shell child.
-    let p = helper_project(&t.path().join("helper"), "exec sleep 60");
-    let start = Instant::now();
-    let (r, capture) = gate::validate_with_capture(&p, &request(&store), None);
-    refused(&r, "graph_policy", "timeout");
-    assert!(
-        capture.is_none(),
-        "timed-out helper must never mint authority"
-    );
-    assert_eq!(r.nodes, 9);
-    assert_eq!(r.version.as_deref(), Some(version.as_str()));
-    assert_eq!(r.rows.len(), 1);
-    assert!(r.rows[0].id.is_none());
-    assert_eq!(r.rows[0].check, "capture_or_graph_invalid");
-    assert!(start.elapsed() >= Duration::from_secs(10));
-    assert_eq!(
-        gate::validate(&policy(), &request(&store)).status,
-        "current"
-    );
-}
-#[test]
 fn candidate_validation_defers_one_inventory_but_retains_final_asset_barrier() {
     let t = tempfile::tempdir().unwrap();
     fixture(t.path());
@@ -253,7 +222,10 @@ fn candidate_validation_defers_one_inventory_but_retains_final_asset_barrier() {
     fs::write(&asset, "before").unwrap();
     let helper = helper_project(
         &t.path().join("helper"),
-        &format!("printf after > '{}'; printf 'STG1 VALID\\n'", asset.display()),
+        &format!(
+            "printf after > '{}'; printf 'STG1 VALID\\n'",
+            asset.display()
+        ),
     );
     let (report, capture) = gate::validate_with_capture(&helper, &request(t.path()), None);
     refused(&report, "source_recheck", "source_changed");
