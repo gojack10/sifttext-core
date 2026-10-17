@@ -16,6 +16,8 @@ sifttext update --config                    Read the user's update mode and stan
 sifttext update --grant standing|ask        Record or revoke the user's routine-update grant
 sifttext update --mode notify|disabled      Choose whether ordinary commands check releases
 sifttext update --attach-node=UUID          Register the repair undertaking for a pending update
+sifttext update --pin IDENTITY              Keep a chosen build through later official updates
+sifttext update --unpin                     Let official updates activate again
 sifttext init HOME                         Copy the embedded first-party KB (from native files) to a NEW Git home
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
@@ -88,11 +90,16 @@ fn run() -> Result<()> {
         let mode = match args.as_slice() {
             [_] => String::new(),
             [_, mode]
-                if ["--status", "--resume", "--rollback", "--config"].contains(&mode.as_str())
-                    || mode.starts_with("--attach-node=") =>
+                if ["--status", "--resume", "--rollback", "--config", "--unpin"]
+                    .contains(&mode.as_str()) =>
             {
-                mode.clone()
+                if mode == "--unpin" {
+                    "--pin=current".to_owned()
+                } else {
+                    mode.clone()
+                }
             }
+            [_, flag, value] if flag == "--pin" => format!("--pin={value}"),
             [_, flag, value]
                 if (flag == "--grant" && ["standing", "ask"].contains(&value.as_str()))
                     || (flag == "--mode" && ["notify", "disabled"].contains(&value.as_str())) =>

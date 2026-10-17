@@ -616,15 +616,20 @@ fn resume(root: &Path, state: &mut State) -> Result<Value> {
     )
 }
 fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
+    let config = update_config(&state.home)?;
     let app_changed = current.version != manifest.application.version;
     if !app_changed {
+        // A pinned build is expected to differ from the official release of the same version; that
+        // is what the pin records. Its application stays and its knowledge still updates, and the
+        // runtime of the active build is verified before anything is activated.
+        let official_match = current.source == manifest.application.source
+            && manifest
+                .application
+                .assets
+                .get(&platform()?)
+                .is_some_and(|asset| asset.sha256 == state.application_sha256);
         require(
-            current.source == manifest.application.source
-                && manifest
-                    .application
-                    .assets
-                    .get(&platform()?)
-                    .is_some_and(|asset| asset.sha256 == state.application_sha256),
+            official_match || config["pinned"].is_string(),
             "official application identity changed without a new version; retain active bytes",
         )?;
     }
@@ -633,8 +638,7 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
             json!({"status":"current","application":current.version,"knowledge":state.knowledge}),
         );
     }
-    let config = update_config(&state.home)?;
-    Ok(json!({
+    let mut notice = json!({
         "status":"update_available",
         "application":manifest.application.version,
         "knowledge":manifest.knowledge.revision,
@@ -642,20 +646,29 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
         "command":"sifttext update",
         "permission":config["permission"],
         "config":config["path"]
-    }))
+    });
+    if let Some(pinned) = config["pinned"].as_str() {
+        notice["pinned"] = json!(pinned);
+        if app_changed {
+            notice["command"] = json!("sifttext update --unpin");
+        }
+    }
+    Ok(notice)
 }
 fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
     validate_manifest(manifest)?;
     let current = package(&root.join(&state.application))?;
+    let config = update_config(&state.home)?;
     let app_changed = current.version != manifest.application.version;
     if !app_changed {
+        let official_match = current.source == manifest.application.source
+            && manifest
+                .application
+                .assets
+                .get(&platform()?)
+                .is_some_and(|asset| asset.sha256 == state.application_sha256);
         require(
-            current.source == manifest.application.source
-                && manifest
-                    .application
-                    .assets
-                    .get(&platform()?)
-                    .is_some_and(|asset| asset.sha256 == state.application_sha256),
+            official_match || config["pinned"].is_string(),
             "official application identity changed without a new version; retain active bytes",
         )?;
     }
@@ -666,6 +679,18 @@ fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
         );
     }
     let app = if app_changed {
+        // A customer who pinned their own build keeps it: the candidate is reported, never staged
+        // or activated, so a local fix survives an update without anyone noticing and rolling back.
+        // A knowledge-only release still applies, because it reuses the pinned executable.
+        if let Some(pinned) = config["pinned"].as_str() {
+            return Ok(json!({
+                "status":"update_pinned",
+                "pinned":pinned,
+                "application":manifest.application.version,
+                "knowledge":manifest.knowledge.revision,
+                "unpin":"sifttext update --unpin",
+            }));
+        }
         let asset = manifest
             .application
             .assets
@@ -853,10 +878,21 @@ fn update_config(home: &Path) -> Result<Value> {
     let updates = updates.as_object().ok_or("updates must be an object")?;
     for key in updates.keys() {
         require(
-            key == "mode" || key == "permission",
-            "updates accepts only mode and permission",
+            key == "mode" || key == "permission" || key == "pinned",
+            "updates accepts only mode, permission and pinned",
         )?;
     }
+    let pinned = match updates.get("pinned") {
+        None | Some(Value::Null) => Value::Null,
+        Some(Value::String(pinned)) => {
+            require(
+                identifier(pinned),
+                "updates.pinned must be a release identity",
+            )?;
+            json!(pinned)
+        }
+        Some(_) => return Err("updates.pinned must be a release identity or null".into()),
+    };
     let choice = |name: &str, allowed: &[&str], fallback: &str| -> Result<String> {
         let Some(value) = updates.get(name) else {
             return Ok(fallback.to_owned());
@@ -871,6 +907,7 @@ fn update_config(home: &Path) -> Result<Value> {
     Ok(json!({
         "mode": choice("mode", &["notify", "disabled"], "notify")?,
         "permission": choice("permission", &["standing", "ask"], "ask")?,
+        "pinned": pinned,
         "source": "file",
         "path": path,
     }))
@@ -883,11 +920,25 @@ fn update_config(home: &Path) -> Result<Value> {
 fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
     let allowed: &[&str] = if name == "mode" {
         &["notify", "disabled"]
+    } else if name == "pinned" {
+        &["", "current"]
     } else {
         &["standing", "ask"]
     };
     let message = format!("updates.{name} must be one of {}", allowed.join(" or "));
-    require(allowed.contains(&value), &message)?;
+    if name != "pinned" {
+        require(allowed.contains(&value), &message)?;
+    }
+    let pinned_identity = name == "pinned" && value != "" && value != "current";
+    if name == "pinned" && !pinned_identity {
+        require(value == "current", &message)?;
+    }
+    if pinned_identity {
+        require(
+            identifier(value),
+            "updates.pinned must be a release identity",
+        )?;
+    }
     let path = home.join(CONFIG_FILE);
     let mut file: Value = match fs::symlink_metadata(&path) {
         Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
@@ -902,7 +953,11 @@ fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or("updates must be an object")?;
-    updates.insert(name.to_owned(), value.into());
+    if name == "pinned" && value == "current" {
+        updates.remove(name);
+    } else {
+        updates.insert(name.to_owned(), value.into());
+    }
     fs::create_dir_all(path.parent().ok_or("missing configuration parent")?)?;
     persist(&path, &file)?;
     update_config(home)
@@ -919,6 +974,9 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
     }
     if let Some(value) = mode.strip_prefix("--mode=") {
         return set_update_config(&state.home, "mode", value);
+    }
+    if let Some(value) = mode.strip_prefix("--pin=") {
+        return set_update_config(&state.home, "pinned", value);
     }
     if let Some(id) = mode.strip_prefix("--attach-node=") {
         let pending = state.pending.as_mut().ok_or("no update is pending")?;
@@ -1289,11 +1347,21 @@ mod tests {
         assert_eq!(granted["source"], "file");
         fs::write(&config, r#"{"updates":{"mode":"disabled"}}"#).unwrap();
         assert_eq!(update_config(home).unwrap()["mode"], "disabled");
+        fs::write(&config, r#"{"updates":{"pinned":"v1"}}"#).unwrap();
+        assert_eq!(update_config(home).unwrap()["pinned"], "v1");
+        let cleared = set_update_config(home, "pinned", "current").unwrap();
+        assert_eq!(cleared["pinned"], Value::Null);
+        assert_eq!(
+            set_update_config(home, "pinned", "v9").unwrap()["pinned"],
+            "v9"
+        );
         for body in [
             r#"{"updates":{"mode":"silent"}}"#,
             r#"{"updates":{"permission":"always"}}"#,
             r#"{"updates":{"track":"beta"}}"#,
             r#"{"updates":true}"#,
+            r#"{"updates":{"pinned":"../elsewhere"}}"#,
+            r#"{"updates":{"pinned":7}}"#,
         ] {
             fs::write(&config, body).unwrap();
             assert!(update_config(home).is_err(), "accepted {body}");
@@ -1429,6 +1497,66 @@ mod tests {
         let mut changed = asset;
         changed.sha256 = "d".repeat(64);
         assert!(verify_cached_application(path, &manifest, &changed).is_err());
+    }
+
+    #[test]
+    fn a_pinned_build_keeps_its_application_but_still_offers_knowledge_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (_policy, mut state, _a, _b, manifest) = fixture(&root);
+        fs::create_dir_all(state.home.join(".sifttext")).unwrap();
+        persist(
+            &state.home.join(".sifttext/config.json"),
+            &json!({"updates":{"pinned":"v1"}}),
+        )
+        .unwrap();
+        let current = package(&root.join(&state.application)).unwrap();
+
+        // A release that changes only first-party knowledge reuses the pinned executable, so the
+        // notice must still tell the agent to apply it.
+        let kb_only = opportunistic_notice(&current, &state, &manifest).unwrap();
+        assert_eq!(kb_only["status"], "update_available");
+        assert_eq!(kb_only["pinned"], "v1");
+        assert_eq!(kb_only["command"], "sifttext update");
+
+        let mut newer = manifest.clone();
+        newer.application.version = "v2".into();
+        newer.knowledge.requires_application = "v2".into();
+        let pinned = apply(&root, &mut state, &newer).unwrap();
+        assert_eq!(pinned["status"], "update_pinned", "{pinned}");
+        assert_eq!(pinned["pinned"], "v1");
+        assert_eq!(pinned["application"], "v2");
+        assert!(
+            !root.join("releases").join("v2").exists(),
+            "a pinned installation staged an official candidate"
+        );
+        assert_eq!(state.application, PathBuf::from("releases/v1"));
+        let notice = opportunistic_notice(&current, &state, &newer).unwrap();
+        assert_eq!(notice["pinned"], "v1");
+        assert_eq!(notice["command"], "sifttext update --unpin");
+
+        // A patched build usually keeps the official version string, so a knowledge-only release
+        // reaches it under the same version with a different source identity. Without a pin that
+        // still fails closed; with one, the local application stays and its knowledge can update.
+        let mut patched = manifest.clone();
+        patched.application.source = "d".repeat(40);
+        fs::remove_file(state.home.join(".sifttext/config.json")).unwrap();
+        assert!(
+            opportunistic_notice(&current, &state, &patched)
+                .unwrap_err()
+                .to_string()
+                .contains("identity changed"),
+            "an unverified same-version application identity was accepted"
+        );
+        persist(
+            &state.home.join(".sifttext/config.json"),
+            &json!({"updates":{"pinned":"v1"}}),
+        )
+        .unwrap();
+        let patched_notice = opportunistic_notice(&current, &state, &patched).unwrap();
+        assert_eq!(patched_notice["status"], "update_available");
+        assert_eq!(patched_notice["command"], "sifttext update");
+        assert_eq!(patched_notice["pinned"], "v1");
     }
 
     #[test]
