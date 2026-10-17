@@ -89,6 +89,12 @@ pub mod outline_artifacts;
 #[path = "../tests/successor/session_attachments.rs"]
 mod session_attachment_tests;
 #[cfg(test)]
+#[path = "../tests/successor/session_retention_config.rs"]
+mod session_retention_config_tests;
+#[cfg(test)]
+#[path = "../tests/successor/session_capture.rs"]
+mod session_capture_tests;
+#[cfg(test)]
 #[path = "../tests/successor/outline_residue.rs"]
 mod outline_residue_tests;
 pub mod outline_rows;

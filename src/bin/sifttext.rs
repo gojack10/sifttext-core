@@ -25,9 +25,12 @@ sifttext advance HOME                      Explicit ff-only clean home reader + 
 sifttext worktree HOME                     Allocate a private branch/worktree; prints its path
 sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
                                           Create a tree root or child; never commits
+sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
+                                          Copy and Git-checkpoint a validated Pi session
 sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT
                                           Attach a retained session and create a local chat link
 sifttext session-restore HOME ARCHIVE_ROOT Rebuild local links after archive relocation
+sifttext session-retention-config HOME  Read local Pi session-retention opt-in (default off)
 sifttext check STORE [BEFORE [EXPLICIT_UUID ...]]
                                           Complete candidate check; does not modify files
 sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
@@ -52,10 +55,35 @@ fn run() -> Result<()> {
         println!("{HELP}");
         return Ok(());
     }
+    if args
+        .as_slice()
+        .first()
+        .is_some_and(|arg| arg == "session-retention-config")
+    {
+        let [_, home] = args.as_slice() else {
+            return Err("usage: sifttext session-retention-config HOME".into());
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&local::session_retention_config(Path::new(home))?)?
+        );
+        return Ok(());
+    }
     if args.first().is_some_and(|arg| arg == "update") {
-        let mode = match args.as_slice() { [_] => "", [_, mode] if ["--status", "--resume", "--rollback"].contains(&mode.as_str()) => mode, _ => return Err("unknown update arguments".into()) };
-        let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT").ok_or("use the managed installation launcher for updates")?;
-        println!("{}", serde_json::to_string_pretty(&sifttext_file_graph::updates::update(Path::new(&root), mode)?)?);
+        let mode = match args.as_slice() {
+            [_] => "",
+            [_, mode] if ["--status", "--resume", "--rollback"].contains(&mode.as_str()) => mode,
+            _ => return Err("unknown update arguments".into()),
+        };
+        let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT")
+            .ok_or("use the managed installation launcher for updates")?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&sifttext_file_graph::updates::update(
+                Path::new(&root),
+                mode
+            )?)?
+        );
         return Ok(());
     }
     let runtime = local::runtime()?;
@@ -66,7 +94,9 @@ fn run() -> Result<()> {
     sifttext_file_graph::graph_transition::Transition::checked(&policy)?;
     let output = match args.as_slice() {
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
-        [cmd, root, home] if cmd == "install-home" => sifttext_file_graph::updates::initialize(&policy, &absolute(root)?, &absolute(home)?)?,
+        [cmd, root, home] if cmd == "install-home" => {
+            sifttext_file_graph::updates::initialize(&policy, &absolute(root)?, &absolute(home)?)?
+        }
         [cmd, home] if cmd == "init" => {
             sifttext_file_graph::native_kb::init(&policy, &absolute(home)?)?
         }
@@ -131,6 +161,15 @@ fn run() -> Result<()> {
         }
         [cmd, home] if cmd == "advance" => local::advance(&policy, Path::new(home))?,
         [cmd, home] if cmd == "worktree" => local::worktree(&policy, Path::new(home))?,
+        [cmd, source, descriptor, archive] if cmd == "session-capture" => {
+            let descriptor_path = absolute(descriptor)?;
+            let metadata = std::fs::symlink_metadata(&descriptor_path)?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err("descriptor must be a regular file".into());
+            }
+            let value = serde_json::from_slice(&std::fs::read(descriptor_path)?)?;
+            local::capture_session(Path::new(source), &value, Path::new(archive))?
+        }
         [cmd, home, node, descriptor, topic, archive] if cmd == "session-attach" => {
             let descriptor_path = absolute(descriptor)?;
             let metadata = std::fs::symlink_metadata(&descriptor_path)?;
@@ -138,9 +177,7 @@ fn run() -> Result<()> {
                 return Err("descriptor must be a regular file".into());
             }
             let value = serde_json::from_slice(&std::fs::read(descriptor_path)?)?;
-            local::attach_session(
-                Path::new(home), node, &value, topic, Path::new(archive),
-            )?
+            local::attach_session(Path::new(home), node, &value, topic, Path::new(archive))?
         }
         [cmd, home, archive] if cmd == "session-restore" => {
             local::restore_session_links(Path::new(home), Path::new(archive))?
@@ -176,7 +213,10 @@ fn run() -> Result<()> {
         [cmd, path] if cmd == "index" => {
             let v = local::refresh(&policy, Path::new(path))?;
             let output = json!({"status":v.status,"version":v.version,"nodes":v.nodes.len(),"links":v.links.len()});
-            println!("{}", sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?);
+            println!(
+                "{}",
+                sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
+            );
             return Ok(());
         }
         [cmd, path, id, rest @ ..] if cmd == "outline" && (rest.is_empty() || rest == ["full"]) => {
@@ -241,12 +281,18 @@ fn absolute(path: &str) -> Result<PathBuf> {
 fn main() {
     let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
     let result = (|| -> Result<()> {
-        let _operation = if updating { None } else { sifttext_file_graph::updates::operation_lock()? };
+        let _operation = if updating {
+            None
+        } else {
+            sifttext_file_graph::updates::operation_lock()?
+        };
         run()
     })();
     if let Err(error) = result {
         eprintln!("rejected: {error}");
         std::process::exit(1);
     }
-    if !updating { sifttext_file_graph::updates::opportunistic(); }
+    if !updating {
+        sifttext_file_graph::updates::opportunistic();
+    }
 }

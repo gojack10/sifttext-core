@@ -17,11 +17,20 @@ export function checkpointPiSession(descriptor: PiSessionDescriptor, archiveRoot
   if (git(["rev-parse", "--show-toplevel"]) !== root) throw new Error("Pi archive root must be a Git worktree");
 
   git(["add", "--", descriptor.archive_key]);
+  let hasHead = true;
   try {
-    execFileSync("git", ["-C", root, "diff", "--cached", "--quiet", "HEAD", "--", descriptor.archive_key], { stdio: "ignore" });
-    return git(["rev-parse", "HEAD"]);
+    git(["rev-parse", "--verify", "--quiet", "HEAD"]);
   } catch (error) {
     if ((error as { status?: number }).status !== 1) throw error;
+    hasHead = false;
+  }
+  if (hasHead) {
+    try {
+      execFileSync("git", ["-C", root, "diff", "--cached", "--quiet", "HEAD", "--", descriptor.archive_key], { stdio: "ignore" });
+      return git(["rev-parse", "HEAD"]);
+    } catch (error) {
+      if ((error as { status?: number }).status !== 1) throw error;
+    }
   }
   git(["commit", "--only", "-m", `session: capture ${descriptor.session_id}`, "--", descriptor.archive_key]);
   return git(["rev-parse", "HEAD"]);

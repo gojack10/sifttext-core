@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
-    os::unix::fs::symlink,
+    os::unix::fs::{OpenOptionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -77,7 +77,12 @@ fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
     } else {
         PathBuf::from(git(
             home,
-            &["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+            &[
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-path",
+                "info/exclude",
+            ],
         )?)
     };
     match fs::symlink_metadata(&file) {
@@ -436,7 +441,9 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
                 None,
             );
             require(report.status == "current", &report.lean()?)?;
-            Ok(capture.ok_or("missing validated starter capture")?.into_snapshot())
+            Ok(capture
+                .ok_or("missing validated starter capture")?
+                .into_snapshot())
         })
         .transpose()?;
     // A new independent repository cannot inherit an ancestor repo's local
@@ -1201,7 +1208,10 @@ mod home_reader_advance_tests;
 fn valid_attachment_name(value: &str) -> bool {
     let path = Path::new(value);
     path.components().count() == 1
-        && matches!(path.components().next(), Some(std::path::Component::Normal(_)))
+        && matches!(
+            path.components().next(),
+            Some(std::path::Component::Normal(_))
+        )
 }
 
 fn chat_name(value: &str) -> String {
@@ -1218,16 +1228,24 @@ fn chat_name(value: &str) -> String {
             separator = true;
         }
     }
-    if name.is_empty() { "session".into() } else { name }
+    if name.is_empty() {
+        "session".into()
+    } else {
+        name
+    }
 }
 
 fn checked_archive_target(root: &Path, record: &Value) -> Result<PathBuf> {
-    let key = record["archive_key"].as_str().ok_or("missing archive key")?;
+    let key = record["archive_key"]
+        .as_str()
+        .ok_or("missing archive key")?;
     let relative = Path::new(key);
     require(
         !relative.as_os_str().is_empty()
             && !relative.is_absolute()
-            && relative.components().all(|part| matches!(part, std::path::Component::Normal(_))),
+            && relative
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_))),
         "archive key must be a relative path without traversal",
     )?;
     let root = fs::canonicalize(root)?;
@@ -1250,6 +1268,182 @@ fn checked_archive_target(root: &Path, record: &Value) -> Result<PathBuf> {
     Ok(path)
 }
 
+fn validate_session_snapshot(path: &Path, descriptor: &Value) -> Result<()> {
+    let session_id = descriptor["session_id"]
+        .as_str()
+        .ok_or("missing session id")?;
+    let expected_ids = descriptor["entry_ids"]
+        .as_array()
+        .ok_or("missing entry ids")?;
+    let expected_branch = descriptor["branch_entry_ids"]
+        .as_array()
+        .ok_or("missing branch entry ids")?;
+    let bytes = fs::read(path)?;
+    let mut lines = std::str::from_utf8(&bytes)?.lines();
+    let header: Value = serde_json::from_str(lines.next().ok_or("missing Pi session header")?)?;
+    require(
+        header["type"] == "session" && header["id"] == session_id,
+        "Pi session header mismatch",
+    )?;
+
+    let mut ids = Vec::new();
+    let mut parents = BTreeMap::new();
+    for line in lines {
+        let record: Value = serde_json::from_str(line)?;
+        let id = record["id"].as_str().ok_or("missing Pi entry id")?;
+        let parent = match &record["parentId"] {
+            Value::Null => None,
+            Value::String(parent) => Some(parent.clone()),
+            _ => return Err("invalid Pi entry parent id".into()),
+        };
+        require(
+            parents.insert(id.to_owned(), parent).is_none(),
+            "duplicate Pi entry id",
+        )?;
+        ids.push(id.to_owned());
+    }
+    require(
+        expected_ids
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .is_some_and(|v| v == ids.iter().map(String::as_str).collect::<Vec<_>>()),
+        "Pi entry snapshot mismatch",
+    )?;
+    require(
+        descriptor["cutoff_entry_id"].as_str() == ids.last().map(String::as_str),
+        "Pi cutoff mismatch",
+    )?;
+
+    let leaf = descriptor["leaf_id"].as_str();
+    let mut branch = Vec::new();
+    let mut current = leaf;
+    let mut seen = BTreeSet::new();
+    while let Some(id) = current {
+        require(seen.insert(id), "Pi parent cycle")?;
+        current = parents
+            .get(id)
+            .ok_or("Pi leaf or parent is absent")?
+            .as_deref();
+        branch.push(id);
+    }
+    branch.reverse();
+    require(
+        expected_branch
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .is_some_and(|v| v == branch),
+        "Pi branch snapshot mismatch",
+    )?;
+    Ok(())
+}
+
+/// Copy and Git-checkpoint one descriptor-matching Pi session; invalid snapshots
+/// leave the previously retained copy untouched.
+pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -> Result<Value> {
+    if descriptor["availability"] == "unavailable" {
+        return Ok(json!({"status":"source_unavailable","commit":null}));
+    }
+    let session_id = descriptor["session_id"]
+        .as_str()
+        .ok_or("missing session id")?;
+    let key = descriptor["archive_key"]
+        .as_str()
+        .ok_or("missing archive key")?;
+    require(
+        descriptor["schema_version"] == 1
+            && descriptor["harness"] == "pi"
+            && key == format!("sessions/{session_id}.jsonl")
+            && descriptor["entry_ids"].as_array().is_some()
+            && descriptor["branch_entry_ids"].as_array().is_some()
+            && (descriptor["leaf_id"].is_null() || descriptor["leaf_id"].is_string())
+            && (descriptor["cutoff_entry_id"].is_null()
+                || descriptor["cutoff_entry_id"].is_string()),
+        "invalid Pi session descriptor",
+    )?;
+    let mut input = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(source)?;
+    require(
+        input.metadata()?.is_file(),
+        "Pi source must be a regular file",
+    )?;
+
+    fs::create_dir_all(archive_root)?;
+    let root = fs::canonicalize(archive_root)?;
+    crate::real_dir(&root)?;
+    require(
+        Path::new(&git(&root, &["rev-parse", "--show-toplevel"])?) == root,
+        "archive root must be a Git worktree",
+    )?;
+    let relative = Path::new(key);
+    require(
+        relative
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_))),
+        "invalid Pi archive key",
+    )?;
+    let target = root.join(relative);
+    let parent = target.parent().ok_or("missing archive parent")?;
+    fs::create_dir_all(parent)?;
+    let parent = fs::canonicalize(parent)?;
+    require(parent.starts_with(&root), "Pi archive key escaped its root")?;
+    let target = parent.join(target.file_name().ok_or("missing archive filename")?);
+    if let Ok(metadata) = fs::symlink_metadata(&target) {
+        require(
+            metadata.is_file() && !metadata.file_type().is_symlink(),
+            "archived source must be a regular file",
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            require(metadata.nlink() == 1, "hard-linked archived source")?;
+        }
+    }
+    let mut temp = tempfile::NamedTempFile::new_in(&parent)?;
+    std::io::copy(&mut input, &mut temp)?;
+    temp.as_file().sync_all()?;
+    validate_session_snapshot(temp.path(), descriptor)?;
+    temp.persist(&target)?;
+
+    git(&root, &["add", "--", key])?;
+    let has_head = git_command(&root)
+        .args(["rev-parse", "--verify", "--quiet", "HEAD"])
+        .status()?
+        .success();
+    let changed = if has_head {
+        Some(
+            git_command(&root)
+                .args(["diff", "--cached", "--quiet", "HEAD", "--", key])
+                .status()?,
+        )
+    } else {
+        None
+    };
+    let commit = match changed.as_ref().and_then(|status| status.code()) {
+        Some(0) => git(&root, &["rev-parse", "HEAD"])?,
+
+        Some(1) | None => {
+            git(
+                &root,
+                &[
+                    "commit",
+                    "--only",
+                    "-m",
+                    &format!("session: capture {session_id}"),
+                    "--",
+                    key,
+                ],
+            )?;
+            git(&root, &["rev-parse", "HEAD"])?
+        }
+        _ => return Err("cannot compare Pi archive checkpoint".into()),
+    };
+    Ok(json!({"status":"captured","archive_key":key,"commit":commit}))
+}
+
 /// Attach an already-retained source to one node. The tracked record carries the
 /// harness descriptor and friendly name; the ignored link is rebuilt from archive_key.
 pub fn attach_session(
@@ -1262,7 +1456,10 @@ pub fn attach_session(
     require(crate::uuid(node_id), "invalid node UUID")?;
     require(
         descriptor["schema_version"] == 1
-            && matches!(descriptor["availability"].as_str(), Some("available" | "unavailable"))
+            && matches!(
+                descriptor["availability"].as_str(),
+                Some("available" | "unavailable")
+            )
             && descriptor["harness"].as_str().is_some()
             && (descriptor["availability"] == "unavailable"
                 || (descriptor["session_id"].as_str().is_some()
@@ -1288,15 +1485,22 @@ pub fn attach_session(
     };
     let harness = descriptor["harness"].as_str().unwrap();
     let session = descriptor["session_id"].as_str();
-    let existing = session.and_then(|session| records.iter().position(|item| {
-        item["harness"] == harness && item["session_id"] == session
-    }));
+    let existing = session.and_then(|session| {
+        records
+            .iter()
+            .position(|item| item["harness"] == harness && item["session_id"] == session)
+    });
     let ext = Path::new(descriptor["archive_key"].as_str().unwrap_or(""))
         .extension()
         .and_then(|ext| ext.to_str())
         .filter(|ext| !ext.is_empty() && ext.bytes().all(|byte| byte.is_ascii_alphanumeric()))
         .unwrap_or("jsonl");
-    let base = format!("{}-{}.{}", chat_name(harness), chat_name(topic), ext.to_ascii_lowercase());
+    let base = format!(
+        "{}-{}.{}",
+        chat_name(harness),
+        chat_name(topic),
+        ext.to_ascii_lowercase()
+    );
     let chats = node.join("artifacts").join("chats");
     if available {
         if !node.join("artifacts").exists() {
@@ -1309,16 +1513,24 @@ pub fn attach_session(
         crate::real_dir(&chats)?;
     }
     let mut name = existing
-        .and_then(|index| records[index]["attachment_name"].as_str().map(str::to_owned))
+        .and_then(|index| {
+            records[index]["attachment_name"]
+                .as_str()
+                .map(str::to_owned)
+        })
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| base.clone());
-    require(valid_attachment_name(&name), "invalid session attachment name")?;
+    require(
+        valid_attachment_name(&name),
+        "invalid session attachment name",
+    )?;
     let fingerprint = crate::sha256(format!("{harness}\0{}", session.unwrap_or(topic)).as_bytes());
     let mut suffix = 0;
     loop {
-        let used_by_other = records.iter().enumerate().any(|(index, item)| {
-            Some(index) != existing && item["attachment_name"] == name
-        });
+        let used_by_other = records
+            .iter()
+            .enumerate()
+            .any(|(index, item)| Some(index) != existing && item["attachment_name"] == name);
         let path = chats.join(&name);
         let occupied = match fs::symlink_metadata(&path) {
             Ok(metadata) => {
@@ -1333,13 +1545,25 @@ pub fn attach_session(
         }
         suffix += 1;
         name = if suffix == 1 {
-            format!("{}-{}.{}", chat_name(harness), &fingerprint[..8], ext.to_ascii_lowercase())
+            format!(
+                "{}-{}.{}",
+                chat_name(harness),
+                &fingerprint[..8],
+                ext.to_ascii_lowercase()
+            )
         } else {
-            format!("{}-{}-{suffix}.{}", chat_name(harness), &fingerprint[..8], ext.to_ascii_lowercase())
+            format!(
+                "{}-{}-{suffix}.{}",
+                chat_name(harness),
+                &fingerprint[..8],
+                ext.to_ascii_lowercase()
+            )
         };
     }
     let mut record = descriptor.clone();
-    record.as_object_mut().ok_or("session descriptor must be an object")?
+    record
+        .as_object_mut()
+        .ok_or("session descriptor must be an object")?
         .insert("attachment_name".into(), Value::String(name.clone()));
     if let Some(index) = existing {
         records[index] = record;
@@ -1347,8 +1571,14 @@ pub fn attach_session(
         records.push(record);
     }
     records.sort_by(|left, right| {
-        left["harness"].as_str().cmp(&right["harness"].as_str())
-            .then(left["session_id"].as_str().cmp(&right["session_id"].as_str()))
+        left["harness"]
+            .as_str()
+            .cmp(&right["harness"].as_str())
+            .then(
+                left["session_id"]
+                    .as_str()
+                    .cmp(&right["session_id"].as_str()),
+            )
     });
     let mut file = tempfile::NamedTempFile::new_in(&node)?;
     serde_json::to_writer_pretty(&mut file, &records)?;
@@ -1360,10 +1590,50 @@ pub fn attach_session(
         symlink(&target, &temp_link)?;
         fs::rename(&temp_link, &link)?;
     }
-    Ok(json!({"status":if available {"attached"} else {"source_unavailable"},"node_id":node_id,"attachment_name":name,"archive_key":descriptor["archive_key"]}))
+    Ok(
+        json!({"status":if available {"attached"} else {"source_unavailable"},"node_id":node_id,"attachment_name":name,"archive_key":descriptor["archive_key"]}),
+    )
 }
 
 /// Rebuild local navigation links from tracked sidecars and a relocated archive.
+pub fn session_retention_config(home: &Path) -> Result<Value> {
+    require(home.is_absolute(), "SiftText home must be absolute")?;
+    let path = home.join(".sifttext/config.json");
+    let value: Value = match fs::symlink_metadata(&path) {
+        Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({"enabled": false, "archive_root": null}));
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let retention = value.get("session_retention").unwrap_or(&Value::Null);
+    require(
+        retention.is_null() || retention.is_object(),
+        "session_retention must be an object",
+    )?;
+    let enabled = retention
+        .get("enabled")
+        .map(|enabled| {
+            enabled
+                .as_bool()
+                .ok_or("session_retention.enabled must be boolean")
+        })
+        .transpose()?
+        .unwrap_or(false);
+    let archive_root = if enabled {
+        let root = retention
+            .get("archive_root")
+            .and_then(Value::as_str)
+            .ok_or("enabled session retention requires archive_root")?;
+        let root = Path::new(root);
+        require(root.is_absolute(), "archive_root must be absolute")?;
+        Some(root.to_string_lossy().into_owned())
+    } else {
+        None
+    };
+    Ok(json!({"enabled": enabled, "archive_root": archive_root}))
+}
+
 pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> {
     let store = Store::read(home)?;
     let home = store.path;
@@ -1376,14 +1646,25 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
         }
         let records: Vec<Value> = serde_json::from_slice(&crate::read_regular(&sidecar)?)?;
         for record in records {
-            require(record["schema_version"] == 1, "invalid session source record")?;
+            require(
+                record["schema_version"] == 1,
+                "invalid session source record",
+            )?;
             if record["availability"] == "unavailable" {
                 continue;
             }
-            require(record["availability"] == "available", "invalid session source status")?;
+            require(
+                record["availability"] == "available",
+                "invalid session source status",
+            )?;
             let target = checked_archive_target(archive_root, &record)?;
-            let name = record["attachment_name"].as_str().ok_or("missing attachment name")?;
-            require(valid_attachment_name(name), "invalid session attachment name")?;
+            let name = record["attachment_name"]
+                .as_str()
+                .ok_or("missing attachment name")?;
+            require(
+                valid_attachment_name(name),
+                "invalid session attachment name",
+            )?;
             let chats = node.join("artifacts").join("chats");
             if !chats.exists() {
                 fs::create_dir_all(&chats)?;
@@ -1513,7 +1794,9 @@ fn checked_snapshot(policy: &Policy, path: &Path, before: Option<&Path>) -> Resu
         None,
     );
     require(report.status == "current", &report.lean()?)?;
-    Ok(capture.ok_or("missing validated creation snapshot")?.into_snapshot())
+    Ok(capture
+        .ok_or("missing validated creation snapshot")?
+        .into_snapshot())
 }
 
 pub fn instructions(policy: &Policy, path: &Path) -> Result<Value> {
