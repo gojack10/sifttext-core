@@ -44,6 +44,6 @@ A Core development assignment uses this checkout directly. Follow a separately s
 For an authorized repair, follow this contribution checklist:
 
 1. Inspect the working tree and isolate your edits so another contributor's work remains intact. Distinguish a Core defect from configuration or incorrect use; reproduce it with safe data and preserve the user's knowledge and session traces.
-2. Implement the smallest repair and a regression test, then verify the affected behavior before offering it for review. Keep the local repair available and resume the user's task even when upstream publication is unavailable.
+2. Implement the smallest repair and verify the affected behavior with the minimum useful check; add a regression test only when existing assurance is insufficient. Keep the local repair available and resume the user's task even when upstream publication is unavailable.
 3. If contribution is already authorized, prepare it for review. Otherwise, after recovering the user's task, ask whether they want the verified fix submitted upstream. Include the repair, regression test and relevant instruction update; never include customer knowledge, session traces or secrets.
 4. A local adaptation is not automatically an officially supported integration, and a workaround is not a verified fix. Obtain permission before pushing or publishing the contribution under the license.
