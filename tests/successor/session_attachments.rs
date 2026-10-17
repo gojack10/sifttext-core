@@ -129,17 +129,36 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
         "leaf_id": "entry-1",
         "cutoff_entry_id": "entry-1"
     });
-    let attached = local::attach_session(home.path(), NODE, &descriptor, "sample topic", archive.path()).unwrap();
+    let attached = local::attach_session(
+        home.path(),
+        NODE,
+        &descriptor,
+        "sample topic",
+        archive.path(),
+    )
+    .unwrap();
     let name = attached["attachment_name"].as_str().unwrap();
     let chats = home.path().join(format!("nodes/{NODE}/artifacts/chats"));
-    assert_eq!(fs::read_link(chats.join(name)).unwrap(), fs::canonicalize(&source).unwrap());
+    assert_eq!(
+        fs::read_link(chats.join(name)).unwrap(),
+        fs::canonicalize(&source).unwrap()
+    );
     fs::remove_file(chats.join(name)).unwrap();
     let moved = relocated.path().join(key);
     fs::create_dir_all(moved.parent().unwrap()).unwrap();
     fs::write(&moved, "synthetic session\n").unwrap();
-    assert_eq!(local::restore_session_links(home.path(), relocated.path()).unwrap()["links"], 1);
-    assert_eq!(fs::read_link(chats.join(name)).unwrap(), fs::canonicalize(&moved).unwrap());
-    assert_eq!(fs::read_to_string(chats.join(name)).unwrap(), "synthetic session\n");
+    assert_eq!(
+        local::restore_session_links(home.path(), relocated.path()).unwrap()["links"],
+        1
+    );
+    assert_eq!(
+        fs::read_link(chats.join(name)).unwrap(),
+        fs::canonicalize(&moved).unwrap()
+    );
+    assert_eq!(
+        fs::read_to_string(chats.join(name)).unwrap(),
+        "synthetic session\n"
+    );
 }
 
 #[test]
@@ -164,13 +183,111 @@ fn attach_refuses_traversal_in_existing_attachment_name() {
     });
     descriptor["attachment_name"] = json!("../escape.jsonl");
     fs::write(
-        home.path().join(format!("nodes/{NODE}/session-sources.json")),
+        home.path()
+            .join(format!("nodes/{NODE}/session-sources.json")),
         serde_json::to_vec(&json!([descriptor])).unwrap(),
     )
     .unwrap();
 
-    assert!(local::attach_session(home.path(), NODE, &descriptor, "sample topic", archive.path()).is_err());
-    assert!(!home.path().join(format!("nodes/{NODE}/artifacts/escape.jsonl")).exists());
+    assert!(
+        local::attach_session(
+            home.path(),
+            NODE,
+            &descriptor,
+            "sample topic",
+            archive.path()
+        )
+        .is_err()
+    );
+    assert!(
+        !home
+            .path()
+            .join(format!("nodes/{NODE}/artifacts/escape.jsonl"))
+            .exists()
+    );
+}
+
+#[test]
+fn one_archived_session_can_be_attached_to_multiple_nodes() {
+    const SECOND: &str = "40000000-0000-4000-8000-000000000002";
+    let home = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    fixture(home.path());
+    let second = home.path().join("nodes").join(SECOND);
+    fs::create_dir_all(second.join("children")).unwrap();
+    fs::write(second.join("children.order"), "").unwrap();
+    fs::write(second.join("children/.keep"), "").unwrap();
+    fs::write(
+        second.join("node.md"),
+        format!(
+            "---\nid: \"{SECOND}\"\nname: \"Second\"\nmicro_summary: \"Second node\"\nstatus: \"in_progress\"\nsee_also: []\n---\nSecond body\n"
+        ),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(
+        format!("../nodes/{SECOND}"),
+        home.path().join("trees").join(SECOND),
+    )
+    .unwrap();
+    let key = "sessions/session-1.jsonl";
+    let source = archive.path().join(key);
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::write(&source, "synthetic session\n").unwrap();
+    let descriptor = json!({
+        "schema_version": 1,
+        "harness": "pi",
+        "session_id": "session-1",
+        "availability": "available",
+        "archive_key": key,
+        "entry_ids": ["entry-1"],
+        "branch_entry_ids": ["entry-1"],
+        "leaf_id": "entry-1",
+        "cutoff_entry_id": "entry-1"
+    });
+
+    for node in [NODE, SECOND] {
+        assert_eq!(
+            local::attach_session(home.path(), node, &descriptor, "topic", archive.path()).unwrap()
+                ["status"],
+            "attached"
+        );
+    }
+    let first_sidecar: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            home.path()
+                .join(format!("nodes/{NODE}/session-sources.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let second_sidecar: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            home.path()
+                .join(format!("nodes/{SECOND}/session-sources.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(first_sidecar.as_array().unwrap().len(), 1);
+    assert_eq!(second_sidecar.as_array().unwrap().len(), 1);
+    assert_eq!(
+        first_sidecar[0]["archive_key"],
+        second_sidecar[0]["archive_key"]
+    );
+    let first_link = home
+        .path()
+        .join(format!("nodes/{NODE}/artifacts/chats/pi-topic.jsonl"));
+    let second_link = home
+        .path()
+        .join(format!("nodes/{SECOND}/artifacts/chats/pi-topic.jsonl"));
+    assert_eq!(
+        fs::read_link(first_link).unwrap(),
+        fs::canonicalize(&source).unwrap()
+    );
+    assert_eq!(
+        fs::read_link(second_link).unwrap(),
+        fs::canonicalize(&source).unwrap()
+    );
 }
 
 #[test]
@@ -187,15 +304,27 @@ fn unavailable_session_is_recorded_without_archive_or_link() {
         "unavailable_reason": "source_file_unavailable"
     });
     let result = local::attach_session(
-        home.path(), NODE, &descriptor, "sample topic", &absent_archive,
-    ).unwrap();
+        home.path(),
+        NODE,
+        &descriptor,
+        "sample topic",
+        &absent_archive,
+    )
+    .unwrap();
     assert_eq!(result["status"], "source_unavailable");
-    let sidecar = home.path().join(format!("nodes/{NODE}/session-sources.json"));
+    let sidecar = home
+        .path()
+        .join(format!("nodes/{NODE}/session-sources.json"));
     let bytes = fs::read(&sidecar).unwrap();
     assert!(bytes.ends_with(b"\n"));
     let records: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(records[0]["availability"], "unavailable");
-    assert!(!home.path().join(format!("nodes/{NODE}/artifacts/chats")).exists());
+    assert!(
+        !home
+            .path()
+            .join(format!("nodes/{NODE}/artifacts/chats"))
+            .exists()
+    );
     assert!(!absent_archive.exists());
 }
 
@@ -246,7 +375,12 @@ fn checked_publication_keeps_source_descriptors_but_not_local_chat_links() {
     std::os::unix::fs::symlink(&archive, chats.join("pi-synthetic-topic.jsonl")).unwrap();
     let exclude = git(
         &draft,
-        &["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "info/exclude",
+        ],
     );
     fs::write(exclude, "/nodes/*/artifacts/chats/\n").unwrap();
     let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
