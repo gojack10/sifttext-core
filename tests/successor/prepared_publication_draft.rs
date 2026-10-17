@@ -15,15 +15,9 @@ fn native_draft_donor_misses_keep_complete_checked_publication() {
     if let Some(p) = &evidence {
         fs::create_dir(p).unwrap();
     }
-    for mutation in [
-        "missing",
-        "corrupt",
-        "record",
-        "column",
-        "schema",
-        "processing",
-        "version",
-    ] {
+    // Detailed invalid-cache categories are covered by prepared_index_native;
+    // retain one publication-level forged-record fallback check here.
+    for mutation in ["record"] {
         let mut receipts = Vec::new();
         let mut call = |binary: &str, q: Value| -> Value {
             let mut child = Command::new(bin_dir.join(binary))
