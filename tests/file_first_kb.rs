@@ -278,14 +278,21 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
         true,
     ))
     .unwrap();
+    let rows = instructions["rows"].as_array().unwrap();
     assert_eq!(
-        instructions["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
+        rows.iter()
             .map(|file| file["id"].as_str().unwrap())
             .collect::<Vec<_>>(),
         ordered
+    );
+    assert_eq!(
+        rows.iter()
+            .map(|file| PathBuf::from(file["path"].as_str().unwrap()))
+            .collect::<Vec<_>>(),
+        ordered
+            .iter()
+            .map(|id| home.join(format!("nodes/{id}/node.md")))
+            .collect::<Vec<_>>()
     );
 
     let file = home.join(format!("nodes/{ENTRY}/node.md"));
