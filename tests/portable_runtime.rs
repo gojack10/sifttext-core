@@ -33,10 +33,25 @@ fn cli(bin: &Path, tools: &Path, args: &[&str]) -> Output {
 
 fn json(bin: &Path, tools: &Path, args: &[&str]) -> serde_json::Value {
     let output = cli(bin, tools, args).stdout;
-    if matches!(args.first(), Some(&"instructions" | &"index")) {
-        sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&output).unwrap()).unwrap()
+    // Mirror the CLI dispatch in src/bin/sifttext.rs: search and sql print their own pretty
+    // JSON large-return receipts, and only nested-schema receipts bypass the LEAN renderer.
+    if matches!(
+        args.first(),
+        Some(&"sql")
+            | Some(&"search")
+            | Some(&"normalize")
+            | Some(&"submit")
+            | Some(&"accepted")
+            | Some(&"session-capture")
+            | Some(&"session-attach")
+            | Some(&"session-backup")
+            | Some(&"session-restore")
+    ) {
+        serde_json::from_slice(&output)
+            .unwrap_or_else(|e| panic!("{args:?}: expected JSON receipt: {e}"))
     } else {
-        serde_json::from_slice(&output).unwrap()
+        sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&output).unwrap())
+            .unwrap_or_else(|e| panic!("{args:?}: expected LEAN receipt: {e}"))
     }
 }
 
@@ -243,13 +258,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
 }
 
 fn checked(bin: &Path, tools: &Path) {
-    let out = run(bin, tools, &["runtime-check"]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let value = json(bin, tools, &["runtime-check"]);
     assert_eq!(value["status"], "checked");
     assert_eq!(value["runtime"], bin.parent().unwrap().to_str().unwrap());
 }
@@ -277,7 +286,10 @@ fn relocated_runtime_refuses_missing_and_tampered_assets() {
         "integrations/session-checkpoint.ts",
         "integrations/session-descriptor.ts",
     ] {
-        assert!(original.join(file).is_file(), "missing packaged Pi source {file}");
+        assert!(
+            original.join(file).is_file(),
+            "missing packaged Pi source {file}"
+        );
     }
     let temp = tempfile::tempdir().unwrap();
     // macOS TMPDIR commonly traverses /var -> /private/var; homes require canonical parents.
