@@ -1757,6 +1757,10 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
     };
     if backup_enabled && !cloned {
         let root = fs::canonicalize(archive_root)?;
+        require(
+            Path::new(&git(&root, &["rev-parse", "--show-toplevel"])?) == root,
+            "archive root must be a Git worktree",
+        )?;
         git(
             &root,
             &["fetch", remote.as_deref().unwrap(), "refs/heads/main"],

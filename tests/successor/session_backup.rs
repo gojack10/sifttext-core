@@ -335,6 +335,130 @@ fn backup_receipt_matches_the_commit_sent_before_concurrent_capture() {
 }
 
 #[test]
+fn restore_rejects_archive_subdirectories_before_git_mutation() {
+    let home = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    let machine = tempfile::tempdir().unwrap();
+    archive_with_session(archive.path());
+    git(remote.path(), &["init", "--bare", "-q", "-b", "main"]);
+    git(
+        archive.path(),
+        &[
+            "push",
+            "-q",
+            remote.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    let enclosing = machine.path().join("enclosing");
+    git(
+        machine.path(),
+        &["clone", "-q", remote.path().to_str().unwrap(), "enclosing"],
+    );
+    let wrong_root = enclosing.join("not-an-archive");
+    fs::create_dir(&wrong_root).unwrap();
+    fs::write(enclosing.join("staged.txt"), "preserve staged work\n").unwrap();
+    git(&enclosing, &["add", "staged.txt"]);
+    fs::write(wrong_root.join("local.txt"), "preserve local work\n").unwrap();
+    let head = git(&enclosing, &["rev-parse", "HEAD"]);
+    let index = git(&enclosing, &["write-tree"]);
+    let status = git(
+        &enclosing,
+        &["status", "--porcelain", "--untracked-files=all"],
+    );
+    let fetch_head = fs::read(enclosing.join(".git/FETCH_HEAD")).ok();
+    let key = format!("sessions/{SESSION}.jsonl");
+    let prior = fs::read(enclosing.join(&key)).unwrap();
+    fs::write(archive.path().join(&key), "updated synthetic session\n").unwrap();
+    git(archive.path(), &["add", "sessions"]);
+    git(archive.path(), &["commit", "-qm", "advance remote"]);
+    git(
+        archive.path(),
+        &[
+            "push",
+            "-q",
+            remote.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    home_with_attachment(home.path());
+    config(home.path(), &wrong_root, remote.path());
+    let sidecar = home
+        .path()
+        .join(format!("nodes/{NODE}/session-sources.json"));
+    let records = fs::read(&sidecar).unwrap();
+    let run = |root: &Path| {
+        Command::new(crate::native_bin("sifttext"))
+            .arg("session-restore")
+            .arg(home.path())
+            .arg(root)
+            .env("SIFTTEXT_NO_UPDATE", "1")
+            .output()
+            .unwrap()
+    };
+    let rejected = run(&wrong_root);
+    assert_eq!(rejected.status.code(), Some(1));
+    assert_eq!(
+        git(&enclosing, &["rev-parse", "HEAD"]),
+        head,
+        "restore moved enclosing HEAD"
+    );
+    assert_eq!(git(&enclosing, &["write-tree"]), index);
+    assert_eq!(
+        git(
+            &enclosing,
+            &["status", "--porcelain", "--untracked-files=all"]
+        ),
+        status
+    );
+    assert_eq!(fs::read(enclosing.join(".git/FETCH_HEAD")).ok(), fetch_head);
+    assert_eq!(fs::read(enclosing.join(&key)).unwrap(), prior);
+    assert_eq!(
+        fs::read(enclosing.join("staged.txt")).unwrap(),
+        b"preserve staged work\n"
+    );
+    assert_eq!(
+        fs::read(wrong_root.join("local.txt")).unwrap(),
+        b"preserve local work\n"
+    );
+    assert_eq!(fs::read(&sidecar).unwrap(), records);
+    assert!(!home.path().join(format!("nodes/{NODE}/artifacts")).exists());
+    assert!(rejected.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(rejected.stderr).unwrap(),
+        "rejected: archive root must be a Git worktree\n"
+    );
+
+    // Correcting the supplied root must allow normal restore without consuming staged work.
+    config(home.path(), &enclosing, remote.path());
+    let restored = run(&enclosing);
+    assert!(
+        restored.status.success(),
+        "{}",
+        String::from_utf8_lossy(&restored.stderr)
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(&restored.stdout).unwrap();
+    assert_eq!(receipt, json!({"status":"restored", "links":1}));
+    assert_eq!(
+        git(&enclosing, &["rev-parse", "HEAD"]),
+        git(archive.path(), &["rev-parse", "HEAD"])
+    );
+    assert_eq!(
+        git(&enclosing, &["diff", "--cached", "--name-only"]),
+        "staged.txt"
+    );
+    assert_eq!(
+        fs::read(
+            home.path()
+                .join(format!("nodes/{NODE}/artifacts/chats/pi-synthetic.jsonl"))
+        )
+        .unwrap(),
+        b"updated synthetic session\n"
+    );
+}
+
+#[test]
 fn backup_configuration_is_not_returned_as_a_secret() {
     let home = tempfile::tempdir().unwrap();
     let archive = tempfile::tempdir().unwrap();
