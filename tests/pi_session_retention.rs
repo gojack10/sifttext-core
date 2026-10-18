@@ -13,7 +13,12 @@ fn git(root: &Path, args: &[&str]) {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["-c", "user.name=Test", "-c", "user.email=test@example.invalid"])
+        .args([
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+        ])
         .args(args)
         .output()
         .unwrap();
@@ -30,7 +35,10 @@ fn request(stream: &mut TcpStream) -> std::io::Result<String> {
     let end = loop {
         let n = stream.read(&mut buf)?;
         if n == 0 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "headers"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "headers",
+            ));
         }
         data.extend_from_slice(&buf[..n]);
         if let Some(i) = data.windows(4).position(|w| w == b"\r\n\r\n") {
@@ -100,7 +108,12 @@ fn run_pi(pi: &str, extension: &Path, sessions: &Path, agent: &Path, home: &Path
         .arg(extension)
         .arg("--session-dir")
         .arg(sessions)
-        .args(["--session-id", "rust-lifecycle-test", "--no-tools", "Reply with exactly: CAPTURE-ME"])
+        .args([
+            "--session-id",
+            "rust-lifecycle-test",
+            "--no-tools",
+            "Reply with exactly: CAPTURE-ME",
+        ])
         .env("PI_CODING_AGENT_DIR", agent)
         .env("PI_OFFLINE", "1")
         .env("SIFTTEXT_HOME", home)
@@ -115,30 +128,30 @@ fn run_pi(pi: &str, extension: &Path, sessions: &Path, agent: &Path, home: &Path
         .unwrap()
 }
 
-#[test]
-#[ignore = "requires installed Pi CLI; run explicitly with --ignored"]
-fn agent_end_retains_final_response_using_local_mock_provider() {
+fn run_lifecycle(retention_enabled: bool) {
     let temp = tempfile::tempdir().unwrap();
     let agent = temp.path().join("pi-agent");
     let sessions = temp.path().join("pi-sessions");
     let home = temp.path().join("home");
     let archive = temp.path().join("archive");
-    for dir in [&agent, &sessions, &home, &archive] {
+    for dir in [&agent, &sessions, &home] {
         fs::create_dir_all(dir).unwrap();
     }
-    fs::create_dir_all(archive.join("sessions")).unwrap();
-    fs::create_dir_all(home.join(".sifttext")).unwrap();
-    fs::write(
-        home.join(".sifttext/config.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "session_retention": {"enabled": true, "archive_root": archive}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    git(&archive, &["init", "-q"]);
-    git(&archive, &["config", "user.name", "Test"]);
-    git(&archive, &["config", "user.email", "test@example.invalid"]);
+    if retention_enabled {
+        fs::create_dir_all(archive.join("sessions")).unwrap();
+        fs::create_dir_all(home.join(".sifttext")).unwrap();
+        fs::write(
+            home.join(".sifttext/config.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "session_retention": {"enabled": true, "archive_root": archive}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        git(&archive, &["init", "-q"]);
+        git(&archive, &["config", "user.name", "Test"]);
+        git(&archive, &["config", "user.email", "test@example.invalid"]);
+    }
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -151,7 +164,8 @@ fn agent_end_retains_final_response_using_local_mock_provider() {
     )
     .unwrap();
 
-    let extension = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("integrations/pi/session-retention.ts");
+    let extension =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("integrations/pi/session-retention.ts");
     let output = run_pi(
         &std::env::var("PI_BIN").unwrap_or_else(|_| "pi".into()),
         &extension,
@@ -168,13 +182,29 @@ fn agent_end_retains_final_response_using_local_mock_provider() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("CAPTURE-ME"));
 
     let retained = archive.join("sessions/rust-lifecycle-test.jsonl");
-    let bytes = fs::read(&retained).unwrap();
-    assert!(String::from_utf8_lossy(&bytes).contains("CAPTURE-ME"));
-    let commit = Command::new("git")
-        .arg("-C")
-        .arg(&archive)
-        .args(["rev-parse", "--verify", "HEAD"])
-        .output()
-        .unwrap();
-    assert!(commit.status.success(), "session was not Git-checkpointed");
+    if retention_enabled {
+        let bytes = fs::read(&retained).unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("CAPTURE-ME"));
+        let commit = Command::new("git")
+            .arg("-C")
+            .arg(&archive)
+            .args(["rev-parse", "--verify", "HEAD"])
+            .output()
+            .unwrap();
+        assert!(commit.status.success(), "session was not Git-checkpointed");
+    } else {
+        assert!(!retained.exists(), "disabled retention wrote an archive");
+    }
+}
+
+#[test]
+#[ignore = "requires installed Pi CLI; run explicitly with --ignored"]
+fn agent_end_retains_final_response_using_local_mock_provider() {
+    run_lifecycle(true);
+}
+
+#[test]
+#[ignore = "requires installed Pi CLI; run explicitly with --ignored"]
+fn agent_end_does_not_retain_when_config_is_absent() {
+    run_lifecycle(false);
 }
