@@ -70,7 +70,7 @@ fn replace(p: &Path) {
 }
 
 #[test]
-fn ordinary_git_revert_recovers_without_removing_residue() {
+fn ordinary_git_revert_recovers_and_cleanup_removes_residue() {
     let (temp, baseline) = fixture();
     let store = temp.path();
     let tree = git(store, &["rev-parse", "HEAD^{tree}"]);
@@ -84,14 +84,19 @@ fn ordinary_git_revert_recovers_without_removing_residue() {
     let view = index::refresh(&policy(), store, None, index::Mode::Incremental, None).unwrap();
     assert_eq!(view.status, "current");
     assert_eq!(view.version, baseline.version);
-    captured.unchanged().unwrap();
     assert_eq!(git(store, &["rev-parse", "HEAD^{tree}"]), tree);
     assert!(git(store, &["status", "--porcelain"]).is_empty());
     assert_eq!(
         fs::read(store.join("nodes").join(ROOT).join("node.md")).unwrap(),
         bytes
     );
-    assert!(residue(store, "outline.full.lean").is_file());
+    // Strict cleanup is the selected behavior: refreshing a reverted-away node
+    // removes its generated residue rather than leaving it behind.
+    assert!(!residue(store, "outline.full.lean").exists());
+    assert!(!residue(store, "outline.lean").exists());
+    let settled = Capture::read(store, None).unwrap();
+    index::refresh(&policy(), store, None, index::Mode::Incremental, None).unwrap();
+    settled.unchanged().unwrap();
     // Historical proof comes from Git source, not the editable or missing cache.
     fs::remove_file(store.join(".sifttext/index.sqlite")).unwrap();
     assert_eq!(
