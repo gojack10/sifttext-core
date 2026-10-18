@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
-    os::unix::fs::{OpenOptionsExt, symlink},
+    os::unix::fs::{MetadataExt, OpenOptionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -1388,6 +1388,7 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
     )?;
     let _archive_lock = session_archive_lock(&root)?;
     let target = root.join(relative);
+    recover_interrupted_session_capture(&root, key, &target)?;
     let parent = target.parent().ok_or("missing archive parent")?;
     fs::create_dir_all(parent)?;
     let parent = fs::canonicalize(parent)?;
@@ -1412,9 +1413,17 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
     std::io::copy(&mut input, &mut temp)?;
     temp.as_file().sync_all()?;
     validate_session_snapshot(temp.path(), descriptor)?;
+    let transaction = session_capture_marker(&root, key)?;
+    let mut transaction_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&transaction)?;
+    transaction_file.write_all(key.as_bytes())?;
+    transaction_file.sync_all()?;
     let previous = if target.exists() {
-        let backup = tempfile::NamedTempFile::new_in(&parent)?.into_temp_path();
-        fs::remove_file(&backup)?;
+        let backup = session_capture_backup(&parent, key);
+        require(!backup.exists(), "stale interrupted capture backup")?;
         fs::hard_link(&target, &backup)?;
         Some(backup)
     } else {
@@ -1468,15 +1477,136 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
             } else {
                 git(&root, &["rm", "--cached", "--ignore-unmatch", "--", key])?;
             }
-            if let Some(previous) = previous {
-                previous.persist(&target)?;
+            if let Some(previous) = previous.as_ref() {
+                fs::rename(previous, &target)?;
             } else if target.exists() {
                 fs::remove_file(&target)?;
             }
+            fs::remove_file(&transaction)?;
             return Err(error);
         }
     };
+    if let Some(previous) = previous.as_ref() {
+        fs::remove_file(previous)?;
+    }
+    fs::remove_file(&transaction)?;
     Ok(json!({"status":"captured","archive_key":key,"commit":commit}))
+}
+
+fn session_capture_marker(root: &Path, key: &str) -> Result<PathBuf> {
+    let git_dir = PathBuf::from(git(root, &["rev-parse", "--absolute-git-dir"])?);
+    let key_hex = key
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(git_dir.join(format!("sifttext-capture-{key_hex}.pending")))
+}
+
+fn session_capture_backup(parent: &Path, key: &str) -> PathBuf {
+    let key_hex = key
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    parent.join(format!(".sifttext-capture-{key_hex}.previous"))
+}
+
+fn recover_interrupted_session_capture(root: &Path, key: &str, target: &Path) -> Result<()> {
+    let session_id = Path::new(key)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or("invalid Pi archive key")?;
+    let marker = session_capture_marker(root, key)?;
+    match fs::symlink_metadata(&marker) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+        Ok(metadata) => require(
+            metadata.is_file() && metadata.nlink() == 1,
+            "invalid interrupted capture marker",
+        )?,
+    }
+    let mut marker_file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&marker)?;
+    let metadata = marker_file.metadata()?;
+    require(
+        metadata.is_file() && metadata.nlink() == 1,
+        "invalid interrupted capture marker",
+    )?;
+    let mut marker_contents = String::new();
+    marker_file.read_to_string(&mut marker_contents)?;
+    require(marker_contents == key, "invalid interrupted capture marker")?;
+    let backup = session_capture_backup(target.parent().ok_or("missing archive parent")?, key);
+    if !target.exists() {
+        if backup.exists() {
+            fs::rename(&backup, target)?;
+        }
+        fs::remove_file(marker)?;
+        return Ok(());
+    }
+    let target_hash = git(
+        root,
+        &[
+            "hash-object",
+            target.to_str().ok_or("invalid archive path")?,
+        ],
+    )?;
+    let committed = git_command(root)
+        .args(["rev-parse", "--verify", "--quiet", &format!("HEAD:{key}")])
+        .output()?;
+    if committed.status.success()
+        && String::from_utf8_lossy(&committed.stdout).trim() == target_hash
+    {
+        if backup.exists() {
+            fs::remove_file(backup)?;
+        }
+        fs::remove_file(marker)?;
+        return Ok(());
+    }
+    let staged = git_command(root)
+        .args(["rev-parse", "--verify", "--quiet", &format!(":{key}")])
+        .output()?;
+    if !staged.status.success() {
+        if backup.exists() {
+            fs::rename(&backup, target)?;
+        } else {
+            fs::remove_file(target)?;
+        }
+        fs::remove_file(marker)?;
+        return Ok(());
+    }
+    if String::from_utf8_lossy(&staged.stdout).trim() != target_hash {
+        if backup.exists() {
+            fs::rename(&backup, target)?;
+        } else {
+            fs::remove_file(target)?;
+        }
+        if committed.status.success() {
+            git(root, &["reset", "--quiet", "HEAD", "--", key])?;
+        } else {
+            git(root, &["rm", "--cached", "--ignore-unmatch", "--", key])?;
+        }
+        fs::remove_file(marker)?;
+        return Ok(());
+    }
+    git(
+        root,
+        &[
+            "commit",
+            "--only",
+            "-m",
+            &format!("session: capture {session_id}"),
+            "--",
+            key,
+        ],
+    )?;
+    if backup.exists() {
+        fs::remove_file(backup)?;
+    }
+    fs::remove_file(marker)?;
+    Ok(())
 }
 
 /// Attach an already-retained source to one node. The tracked record carries the
