@@ -291,6 +291,49 @@ fn one_archived_session_can_be_attached_to_multiple_nodes() {
 }
 
 #[test]
+fn same_topic_sessions_get_distinct_links_without_overwriting() {
+    let home = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    fixture(home.path());
+
+    let mut names = Vec::new();
+    for (session_id, contents) in [("session-a", "first\n"), ("session-b", "second\n")] {
+        let key = format!("sessions/{session_id}.jsonl");
+        let source = archive.path().join(&key);
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, contents).unwrap();
+        let descriptor = json!({
+            "schema_version": 1,
+            "harness": "pi",
+            "session_id": session_id,
+            "availability": "available",
+            "archive_key": key,
+            "entry_ids": ["entry-1"],
+            "branch_entry_ids": ["entry-1"],
+            "leaf_id": "entry-1",
+            "cutoff_entry_id": "entry-1"
+        });
+        let result = local::attach_session(home.path(), NODE, &descriptor, "same topic", archive.path())
+            .unwrap();
+        names.push(result["attachment_name"].as_str().unwrap().to_owned());
+    }
+
+    assert_ne!(names[0], names[1]);
+    let chats = home.path().join(format!("nodes/{NODE}/artifacts/chats"));
+    let mut contents: Vec<_> = names
+        .iter()
+        .map(|name| fs::read_to_string(chats.join(name)).unwrap())
+        .collect();
+    contents.sort();
+    assert_eq!(contents, ["first\n", "second\n"]);
+    let records: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.path().join(format!("nodes/{NODE}/session-sources.json"))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(records.as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn unavailable_session_is_recorded_without_archive_or_link() {
     let home = tempfile::tempdir().unwrap();
     let absent_archive = home.path().join("not-created");
