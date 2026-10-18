@@ -65,7 +65,19 @@ fn passed(root: &Path) -> gate::Report {
 fn rejected(root: &Path) -> gate::Report {
     let r = gate::validate(&policy(), &request(root));
     assert_ne!(r.status, "current");
-    assert!(r.lean().unwrap().contains("rule"));
+    let output = r.lean().unwrap();
+    assert!(output.contains("rule"));
+    for field in [
+        "graph_mode",
+        "graph_reason",
+        "graph_base_version",
+        "graph_candidate_version",
+    ] {
+        assert!(
+            !output.contains(field),
+            "ordinary report leaked {field}: {output}"
+        );
+    }
     r
 }
 

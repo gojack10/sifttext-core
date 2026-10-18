@@ -49,7 +49,7 @@ sifttext instructions [STORE]              Print checked file-first version and 
 sifttext read STORE UUID [-y]              Check source; -y prints exact node.md above 15000 tokens
 sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
                                           Check/save in draft, refresh HOME, remove completed draft
-sifttext accepted REPO                     Recover a current detached accepted view
+sifttext accepted REPO [-y]                Recover accepted view; -y allows >15000 receipt tokens
 sifttext advance HOME                      Explicit ff-only clean home reader + derived refresh
 sifttext worktree HOME                     Allocate a private branch/worktree; prints its path
 sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
@@ -225,7 +225,10 @@ fn run() -> Result<()> {
                 },
             )?;
             print_large_return(
-                &format!("{}\n", serde_json::to_string_pretty(&receipt)?),
+                &format!(
+                    "{}\n",
+                    sifttext_file_graph::checked_publication::cli_json(&receipt)?
+                ),
                 force,
             )?;
             if receipt["status"] != "current" {
@@ -233,7 +236,8 @@ fn run() -> Result<()> {
             }
             return Ok(());
         }
-        [cmd, repo] if cmd == "accepted" => {
+        [cmd, repo, rest @ ..] if cmd == "accepted" && (rest.is_empty() || rest == ["-y"]) => {
+            let force = !rest.is_empty();
             let receipt = sifttext_file_graph::checked_publication::submit(
                 &policy,
                 &sifttext_file_graph::checked_publication::Request {
@@ -247,7 +251,13 @@ fn run() -> Result<()> {
                     pause_after_publish: None,
                 },
             );
-            println!("{}", serde_json::to_string_pretty(&receipt)?);
+            print_large_return(
+                &format!(
+                    "{}\n",
+                    sifttext_file_graph::checked_publication::cli_json(&receipt)?
+                ),
+                force,
+            )?;
             if receipt.status != "current" {
                 return Err("accepted view unavailable; retain existing files".into());
             }

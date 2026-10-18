@@ -302,9 +302,6 @@ impl Report {
             "nodes": self.nodes, "ceiling": CEILING, "encoding": "o200k_base",
             "tokenizer_version": "tiktoken-rs/0.6.0;ordinary;crystallization/v1",
             "commit_rule": COMMIT_RULE, "decomposition_rule": DECOMPOSITION_RULE,
-            "graph_mode": self.graph.mode, "graph_reason": self.graph.reason,
-            "graph_base_version": self.graph.base_version,
-            "graph_candidate_version": self.graph.candidate_version,
             "rows": self.rows,
         });
         if let Some(failure) = self.failure {

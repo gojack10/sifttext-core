@@ -120,12 +120,81 @@ impl Receipt {
             "accepted_before":self.accepted_before,"candidate":self.candidate,
             "tree":self.tree,"draft_commit":self.draft_commit,"draft_base":self.draft_base,
             "draft_branch":self.draft_branch,"version":self.version,
-            "graph_mode":self.graph_checks.last().map(|g| g.mode),
-            "graph_reason":self.graph_checks.last().map(|g| g.reason),
             "rule":gate::CANDIDATE_RULE,"rows":[],
         }))
         .map_err(|e| std::io::Error::other(e).into())
     }
+}
+
+/// Customer-facing transaction receipt; `Serialize` retains full internal diagnostics.
+pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
+    let mut value = serde_json::to_value(receipt)?;
+    if let Some(object) = value.as_object_mut() {
+        object.remove("graph_checks");
+    }
+    if let Some(validation) = value
+        .get_mut("validation")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        validation.remove("graph");
+    }
+    serde_json::to_string_pretty(&value).map_err(Into::into)
+}
+
+#[cfg(test)]
+#[test]
+fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
+    let graph = gate::GraphCheck {
+        mode: "preserved",
+        reason: "base",
+        base_version: Some("base-version".into()),
+        candidate_version: Some("candidate-version".into()),
+    };
+    let receipt = Receipt {
+        status: "rejected",
+        check: "candidate_validation_rejected",
+        accepted_before: None,
+        candidate: None,
+        tree: None,
+        draft_commit: None,
+        draft_base: None,
+        draft_branch: None,
+        published: false,
+        version: None,
+        view: None,
+        validation: Some(gate::Report {
+            status: "rejected",
+            version: None,
+            before_version: None,
+            nodes: 0,
+            rows: vec![gate::Row {
+                id: None,
+                check: "invalid_candidate",
+                rule: gate::CANDIDATE_RULE,
+                tokens: None,
+                source: None,
+                target: None,
+                law: None,
+            }],
+            graph: graph.clone(),
+            failure: None,
+        }),
+        index_reuse: None,
+        accepted_index_available: false,
+        draft_index_available: false,
+        graph_checks: vec![graph],
+        semantic_findings: vec![],
+        elapsed_ms: 0,
+    };
+    let output: serde_json::Value = serde_json::from_str(&cli_json(&receipt).unwrap()).unwrap();
+    assert_eq!(output["status"], "rejected");
+    assert_eq!(output["check"], "candidate_validation_rejected");
+    assert_eq!(
+        output["validation"]["rows"][0]["check"],
+        "invalid_candidate"
+    );
+    assert!(output.get("graph_checks").is_none());
+    assert!(output["validation"].get("graph").is_none());
 }
 
 // Disable inherited Git routing/config and execution hooks. Repository-local

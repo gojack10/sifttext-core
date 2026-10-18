@@ -237,6 +237,26 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
         "fast-forward must not manufacture history"
     );
     n.finished(&home, &first, &first_receipt, &first_files);
+    let accepted = n.cli(&["accepted", text(&home)]);
+    assert_eq!(accepted["status"], "current");
+    let forced = n.run(
+        env!("CARGO_BIN_EXE_sifttext"),
+        &["accepted", text(&home), "-y"],
+        true,
+    );
+    let forced = receipt(&forced);
+    for key in ["status", "candidate", "check", "validation"] {
+        assert_eq!(forced[key], accepted[key], "accepted -y field {key}");
+    }
+    assert!(accepted.get("graph_checks").is_none());
+    assert!(accepted["validation"].get("graph").is_none());
+    // A lost CLI response can be recovered by retrying the original request;
+    // after draft removal it must return the accepted receipt without advancing again.
+    let retried = n.submit(&home, &first, &first_sha, true);
+    assert_eq!(retried["candidate"], first_receipt["candidate"]);
+    assert_eq!(n.git(&home, &["rev-parse", "refs/heads/main"]), first_sha);
+    assert!(!first_path.exists());
+    assert_eq!(snapshot(&home), first_files);
     assert_eq!(snapshot(&second_path), second_files);
     assert_eq!(n.git(&second_path, &["rev-parse", "HEAD"]), second_sha);
     assert_eq!(
@@ -352,5 +372,36 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     assert_eq!(repair_receipt["candidate"], repair_sha);
     let next = n.cli(&["worktree", text(&home)]);
     assert_eq!(next["base"], repair_receipt["candidate"]);
-    fs::write(evidence.join("result.json"), serde_json::to_vec_pretty(&json!({"status":"passed","scope":"same-base concurrent drafts, fast-forward/merge history, exact normal-home bytes/read/SQL/search/navigation, draft/branch cleanup and actual in-draft conflict repair","last":repair_receipt,"commands":n.records.len()})).unwrap()).unwrap();
+    let invalid_path = PathBuf::from(next["worktree"].as_str().unwrap());
+    let authored = invalid_path.join(&relative);
+    let invalid = fs::read_to_string(&authored)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            if line.starts_with("name: ") {
+                "name: ' '"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&authored, invalid).unwrap();
+    let invalid_sha = n.commit(&invalid_path);
+    let before_refusal = snapshot(&home);
+    let invalid_receipt = n.submit(&home, &next, &invalid_sha, false);
+    assert_eq!(invalid_receipt["status"], "rejected");
+    assert_eq!(invalid_receipt["check"], "candidate_validation_rejected");
+    assert_eq!(invalid_receipt["validation"]["status"], "rejected");
+    assert!(
+        !invalid_receipt["validation"]["rows"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(invalid_receipt.get("graph_checks").is_none());
+    assert!(invalid_receipt["validation"].get("graph").is_none());
+    assert_eq!(snapshot(&home), before_refusal);
+    assert!(invalid_path.exists());
+    fs::write(evidence.join("result.json"), serde_json::to_vec_pretty(&json!({"status":"passed","scope":"same-base concurrent drafts, fast-forward/merge history, exact normal-home bytes/read/SQL/search/navigation, draft/branch cleanup, conflict repair, and real CLI candidate-validation rejection without graph-routing metadata","last":repair_receipt,"validation_rejection":invalid_receipt,"commands":n.records.len()})).unwrap()).unwrap();
 }
