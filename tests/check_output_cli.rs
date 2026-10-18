@@ -69,6 +69,10 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     assert_eq!(refused.status.code(), Some(1), "{refused:?}");
     assert!(refused.stdout.is_empty(), "{refused:?}");
     assert!(String::from_utf8_lossy(&refused.stderr).contains("status_transition_or_reason"));
+    let small_refusal = cli(&["check", path, prior]);
+    assert_eq!(small_refusal.status.code(), Some(1), "{small_refusal:?}");
+    assert!(small_refusal.stdout.is_empty(), "{small_refusal:?}");
+    assert_eq!(small_refusal.stderr, refused.stderr);
     let explicit = cli(&["check", path, prior, id, "-y"]);
     assert_eq!(explicit.status.code(), Some(0), "{explicit:?}");
     assert!(explicit.stderr.is_empty(), "{explicit:?}");
@@ -98,6 +102,39 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     assert_eq!(retried.status.code(), Some(0), "{retried:?}");
     assert_eq!(retried.stdout, full.stdout);
     assert!(retried.stderr.is_empty(), "{retried:?}");
+    // Rejection is still a complete report, not just the failing row. The same
+    // output boundary must cover stderr without making -y bypass validation.
+    fs::write(&source, &resolved).unwrap();
+    let full_refusal = cli(&["check", path, prior, "-y"]);
+    assert_eq!(full_refusal.status.code(), Some(1), "{full_refusal:?}");
+    assert!(full_refusal.stdout.is_empty(), "{full_refusal:?}");
+    let diagnostics = std::str::from_utf8(&full_refusal.stderr).unwrap();
+    assert!(diagnostics.starts_with("rejected: "), "{diagnostics}");
+    assert!(diagnostics.contains("status_transition_or_reason"));
+    let tokens = tiktoken_rs::o200k_base_singleton()
+        .lock()
+        .encode_ordinary(diagnostics)
+        .len();
+    assert!(tokens > 15_000, "fixture refusal too small: {tokens}");
+    let guarded_refusal = cli(&["check", path, prior]);
+    assert_eq!(
+        guarded_refusal.status.code(),
+        Some(1),
+        "{guarded_refusal:?}"
+    );
+    assert!(guarded_refusal.stderr.is_empty(), "{guarded_refusal:?}");
+    assert_eq!(guarded_refusal.stdout, format!("[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").as_bytes());
+    let retried_refusal = cli(&["check", path, prior, "-y"]);
+    assert_eq!(
+        retried_refusal.status.code(),
+        Some(1),
+        "{retried_refusal:?}"
+    );
+    assert!(retried_refusal.stdout.is_empty(), "{retried_refusal:?}");
+    assert_eq!(retried_refusal.stderr, full_refusal.stderr);
+    assert_eq!(fs::read_to_string(&source).unwrap(), resolved);
+    fs::write(&source, node(id)).unwrap();
+
     for n in 1..=400 {
         let id = format!("00000000-0000-4000-8000-{n:012x}");
         let dir = store.join("nodes").join(&id);
@@ -110,4 +147,9 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
         );
     }
     assert_eq!(fs::read_dir(&store).unwrap().count(), 2);
+    assert_eq!(
+        fs::read_to_string(before.join("nodes").join(id).join("node.md")).unwrap(),
+        node(id)
+    );
+    assert_eq!(fs::read_dir(&before).unwrap().count(), 2);
 }
