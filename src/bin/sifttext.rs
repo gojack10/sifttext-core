@@ -4,10 +4,15 @@ use std::{
     collections::BTreeSet,
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
 };
+
+const SOURCE_REPOSITORY: &str = "https://github.com/gojack10/sifttext-core.git";
+const MAINTENANCE_NODE: &str = "6da0b35a-955a-4ad2-bdce-2994ba26119c";
 
 const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived retrieval
 
+sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
 sifttext update                            Check and apply compatible official product updates
 sifttext update --status                    Show installed identities and pending update state
@@ -94,6 +99,17 @@ fn run() -> Result<()> {
         println!(
             "{}",
             serde_json::to_string(&local::backup_session_archive(Path::new(home))?)?
+        );
+        return Ok(());
+    }
+    if args.first().is_some_and(|arg| arg == "source-code") {
+        if args.len() != 1 {
+            return Err("usage: sifttext source-code".into());
+        }
+        let output = source_code()?;
+        println!(
+            "{}",
+            sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
         );
         return Ok(());
     }
@@ -338,6 +354,80 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+fn valid_revision(revision: &str) -> bool {
+    revision.len() == 40
+        && revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn source_code() -> Result<serde_json::Value> {
+    let revision = option_env!("SIFTTEXT_SOURCE_REVISION")
+        .filter(|revision| valid_revision(revision))
+        .ok_or("matching source revision is unavailable for this build")?;
+    let checkout = clone_source_at(SOURCE_REPOSITORY, revision)?;
+    let guide = checkout
+        .join("nodes")
+        .join(MAINTENANCE_NODE)
+        .join("node.md");
+    if !guide.is_file() {
+        let _ = std::fs::remove_dir_all(&checkout);
+        return Err("matching source checkout lacks its maintenance guide".into());
+    }
+    Ok(json!({
+        "path": checkout.display().to_string(),
+        "revision": revision,
+        "maintenance_instructions": guide.display().to_string()
+    }))
+}
+
+fn clone_source_at(repository: &str, revision: &str) -> Result<PathBuf> {
+    if !valid_revision(revision) {
+        return Err("invalid source revision".into());
+    }
+    let checkout = tempfile::Builder::new()
+        .prefix("sifttext-source-")
+        .tempdir()?;
+    let path = checkout.path();
+    let clone = Command::new("git")
+        .args([
+            "clone",
+            "--quiet",
+            "--filter=blob:none",
+            "--no-checkout",
+            repository,
+        ])
+        .arg(path)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()?;
+    if !clone.status.success() {
+        return Err(format!(
+            "source clone failed: {}",
+            String::from_utf8_lossy(&clone.stderr)
+        )
+        .into());
+    }
+    let path_arg = path.to_str().ok_or("source path is not UTF-8")?;
+    let result = Command::new("git")
+        .args(["-C", path_arg, "checkout", "--quiet", "--detach", revision])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()?;
+    if !result.status.success() {
+        return Err(format!(
+            "source revision unavailable: {}",
+            String::from_utf8_lossy(&result.stderr)
+        )
+        .into());
+    }
+    let actual = Command::new("git")
+        .args(["-C", path_arg, "rev-parse", "HEAD"])
+        .output()?;
+    if !actual.status.success() || String::from_utf8_lossy(&actual.stdout).trim() != revision {
+        return Err("source checkout revision mismatch".into());
+    }
+    Ok(checkout.keep())
+}
+
 fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String> {
     if mode == "--config"
         || ["--grant=", "--mode=", "--pin="]
@@ -362,6 +452,83 @@ fn absolute(path: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_revision_validation_requires_a_full_git_id() {
+        assert!(valid_revision("0123456789abcdef0123456789abcdef01234567"));
+        assert!(!valid_revision("main"));
+        assert!(!valid_revision("0123456789ABCDEF0123456789ABCDEF01234567"));
+        assert!(!valid_revision("0123456789abcdef0123456789abcdef0123456z"));
+    }
+
+    #[test]
+    fn source_checkout_is_detached_at_the_requested_revision() {
+        let source = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(source.path())
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        run(&["init", "--quiet"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "user.email", "test@example.invalid"]);
+        std::fs::write(source.path().join("README.md"), "matching source\\n").unwrap();
+        run(&["add", "README.md"]);
+        run(&["commit", "--quiet", "-m", "test source"]);
+        let revision = run(&["rev-parse", "HEAD"]);
+        let checkout = clone_source_at(source.path().to_str().unwrap(), &revision).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(checkout.join("README.md")).unwrap(),
+            "matching source\\n"
+        );
+        let actual = Command::new("git")
+            .args(["-C", checkout.to_str().unwrap(), "rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        assert!(actual.status.success());
+        assert_eq!(String::from_utf8(actual.stdout).unwrap().trim(), revision);
+        assert!(checkout.join(".git").exists());
+        let origin = Command::new("git")
+            .args([
+                "-C",
+                checkout.to_str().unwrap(),
+                "remote",
+                "get-url",
+                "origin",
+            ])
+            .output()
+            .unwrap();
+        assert!(origin.status.success());
+        assert_eq!(
+            String::from_utf8(origin.stdout).unwrap().trim(),
+            source.path().to_str().unwrap()
+        );
+        assert!(
+            Command::new("git")
+                .args([
+                    "-C",
+                    checkout.to_str().unwrap(),
+                    "symbolic-ref",
+                    "--quiet",
+                    "HEAD"
+                ])
+                .output()
+                .unwrap()
+                .status
+                .code()
+                .is_some_and(|code| code != 0)
+        );
+        std::fs::remove_dir_all(checkout).unwrap();
+    }
 
     #[test]
     fn update_settings_use_lean_and_transaction_receipts_stay_json() {

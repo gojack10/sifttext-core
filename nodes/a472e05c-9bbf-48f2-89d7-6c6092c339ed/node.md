@@ -3,11 +3,15 @@ id: "a472e05c-9bbf-48f2-89d7-6c6092c339ed"
 name: "CLI Operations"
 micro_summary: "Covers creation, retrieval, validation and recovery through the local CLI, excluding the legacy MCP surface."
 status: "in_progress"
-see_also: []
+see_also: [{"target":"6da0b35a-955a-4ad2-bdce-2994ba26119c","reason":"Use the diagnosed-problem path to matching source and maintenance guidance."}]
 scope: "Use the narrow local command without confusing it with hosted sifttext-mcp or assuming customer-release tooling exists."
 warnings: ""
 ---
 For official binary installations, read [Managed Releases and Updates](../8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md) before update operations. Its update policy supersedes the per-update consent statements in the preserved source-build procedure below. A release check only reports a newer compatible release; the agent reads that guide and runs `sifttext update` within the user's existing permissions.
+
+## When an operation fails
+
+Inspect the returned diagnostic and affected state before retrying. Resolve it within the current assignment using the installed instructions. If the behavior remains unexplained or appears defective, `sifttext source-code` provides matching source and maintenance instructions. Preserve existing work and return to the original task after investigation. This is a diagnostic path, not permission to publish code, project data or credentials.
 
 ## Preserved source-build procedure
 
