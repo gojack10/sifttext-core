@@ -388,6 +388,12 @@ fn print_read(output: &str, force: bool) -> Result<()> {
 }
 
 fn print_large_return(output: &str, force: bool) -> Result<()> {
+    check_large_return(output, force)?;
+    std::io::stdout().lock().write_all(output.as_bytes())?;
+    Ok(())
+}
+
+fn check_large_return(output: &str, force: bool) -> Result<()> {
     if !force {
         let tokens = tiktoken_rs::o200k_base_singleton()
             .lock()
@@ -397,7 +403,6 @@ fn print_large_return(output: &str, force: bool) -> Result<()> {
             return Err(LargeReturnSuppressed(tokens).into());
         }
     }
-    std::io::stdout().lock().write_all(output.as_bytes())?;
     Ok(())
 }
 
@@ -608,6 +613,8 @@ mod tests {
 
 fn main() {
     let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
+    let checking = std::env::args().nth(1).is_some_and(|arg| arg == "check");
+    let force = std::env::args().last().is_some_and(|arg| arg == "-y");
     let result = (|| -> Result<()> {
         let _operation = if updating {
             None
@@ -620,7 +627,12 @@ fn main() {
         if let Some(suppressed) = error.downcast_ref::<LargeReturnSuppressed>() {
             let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
         } else {
-            eprintln!("rejected: {error}");
+            let rendered = format!("rejected: {error}\n");
+            if checking && let Err(suppressed) = check_large_return(&rendered, force) {
+                let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
+            } else {
+                let _ = std::io::stderr().lock().write_all(rendered.as_bytes());
+            }
         }
         std::process::exit(1);
     }
