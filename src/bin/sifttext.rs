@@ -296,10 +296,10 @@ fn run() -> Result<()> {
     if args.first().is_some_and(|cmd| {
         matches!(
             cmd.as_str(),
-            "sql" | "search" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
+            "sql" | "search" | "normalize" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
         )
     }) {
-        // SQL/search have nested result schemas beyond LEAN's scalar-row dialect.
+        // These receipts have nested schemas beyond LEAN's scalar-row dialect.
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!(
