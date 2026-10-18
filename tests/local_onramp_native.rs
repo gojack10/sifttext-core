@@ -181,7 +181,12 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         true
     );
     assert_eq!(authored(&home), original);
-    let pipeline = n.json(&["instructions", text(&home)]);
+    let instruction_output = n.cli(&["instructions", text(&home)]);
+    let mut instruction_lines = instruction_output.lines();
+    assert!(instruction_lines.next().unwrap().starts_with("version:"));
+    assert!(instruction_lines.next().unwrap().starts_with("path:"));
+    assert!(instruction_lines.next().is_none());
+    let pipeline = sifttext_file_graph::outlines::decode_lean(&instruction_output).unwrap();
     assert_eq!(
         pipeline["path"].as_str().unwrap(),
         text(&home.join("nodes").join(ENTRY).join("node.md"))

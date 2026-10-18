@@ -27,7 +27,17 @@ pub fn render(document: &Value) -> Result<String, String> {
     }
     let mut lines: Vec<String> = Vec::new();
     let mut rows: Option<Vec<&Map<String, Value>>> = None;
-    for (key, value) in root {
+    // The instruction response has an owner-selected field order; other documents stay sorted.
+    let keys = if root.len() == 2
+        && root.contains_key("version")
+        && root.contains_key("path")
+    {
+        vec!["version", "path"]
+    } else {
+        root.keys().map(String::as_str).collect()
+    };
+    for key in keys {
+        let value = &root[key];
         validate_key(key)?;
         if key == ROWS {
             rows = Some(rows_of(value)?);
