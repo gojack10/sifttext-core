@@ -284,3 +284,48 @@ fn failed_checkpoint_keeps_previous_archive_bytes_and_git_state() {
     assert_eq!(git(archive.path(), &["rev-parse", "HEAD"]), head);
     assert_eq!(git(archive.path(), &["status", "--porcelain"]), "");
 }
+
+#[test]
+fn capture_waits_for_the_shared_archive_lock() {
+    let archive = archive();
+    let source_dir = tempfile::tempdir().unwrap();
+    let source = source_dir.path().join("source.jsonl");
+    fs::write(&source, snapshot()).unwrap();
+
+    // Restore fetches and fast-forward merges this same archive worktree while
+    // it is checkpointed and, on refusal, rolled back against HEAD. Neither may
+    // run across the other, so both take one advisory lock per archive.
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(archive.path().join(".git").join("sifttext-archive.lock"))
+        .unwrap();
+    lock.lock().unwrap();
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let (capture_source, capture_archive) = (source.clone(), archive.path().to_path_buf());
+    std::thread::spawn(move || {
+        let _ = sender
+            .send(local::capture_session(&capture_source, &descriptor(), &capture_archive).is_ok());
+    });
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .is_err(),
+        "capture mutated the archive while another operation held the archive lock"
+    );
+
+    drop(lock);
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .unwrap(),
+        "capture failed after the archive lock was released"
+    );
+    assert_eq!(
+        fs::read(archive.path().join("sessions/session-1.jsonl")).unwrap(),
+        snapshot()
+    );
+}

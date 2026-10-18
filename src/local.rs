@@ -1386,6 +1386,7 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
             .all(|part| matches!(part, std::path::Component::Normal(_))),
         "invalid Pi archive key",
     )?;
+    let _archive_lock = session_archive_lock(&root)?;
     let target = root.join(relative);
     let parent = target.parent().ok_or("missing archive parent")?;
     fs::create_dir_all(parent)?;
@@ -1480,6 +1481,31 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
 
 /// Attach an already-retained source to one node. The tracked record carries the
 /// harness descriptor and friendly name; the ignored link is rebuilt from archive_key.
+/// One advisory lock per session archive, held for the whole archive mutation.
+/// Capture replaces and checkpoints an archive path while restore fetches and
+/// fast-forward merges the same worktree, and capture's checkpoint-failure
+/// rollback resets against HEAD, so neither may run across the other's
+/// mutation. Backup only reads HEAD and pushes the commit it named, which stays
+/// correct underneath a concurrent capture, so it deliberately takes no lock.
+fn session_archive_lock(root: &Path) -> Result<fs::File> {
+    use std::os::unix::fs::MetadataExt;
+
+    let git_dir = PathBuf::from(git(root, &["rev-parse", "--absolute-git-dir"])?);
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(git_dir.join("sifttext-archive.lock"))?;
+    require(
+        lock.metadata()?.is_file() && lock.metadata()?.nlink() == 1,
+        "unsafe session archive lock",
+    )?;
+    lock.lock()?;
+    Ok(lock)
+}
+
 fn session_attachment_lock(home: &Path, node_id: &str) -> Result<fs::File> {
     use std::os::unix::fs::MetadataExt;
 
@@ -1806,6 +1832,7 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
             Path::new(&git(&root, &["rev-parse", "--show-toplevel"])?) == root,
             "archive root must be a Git worktree",
         )?;
+        let _archive_lock = session_archive_lock(&root)?;
         git(
             &root,
             &["fetch", remote.as_deref().unwrap(), "refs/heads/main"],
