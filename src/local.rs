@@ -1814,15 +1814,28 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
         let remote = remote
             .as_deref()
             .ok_or("session backup remote is missing")?;
-        if let Some(parent) = archive_root.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        let parent = archive_root.parent().ok_or("missing archive parent")?;
+        fs::create_dir_all(parent)?;
+        let staged = tempfile::Builder::new()
+            .prefix(".sifttext-restore-")
+            .tempdir_in(parent)?;
         let output = Command::new("git")
             .args(["clone", "--no-hardlinks", "--branch", "main", "--", remote])
-            .arg(archive_root)
+            .arg(staged.path())
             .output()?;
         git_output(output)?;
-        true
+        let candidate = staged.keep();
+        match fs::rename(&candidate, archive_root) {
+            Ok(()) => true,
+            Err(_error) if archive_root.exists() => {
+                fs::remove_dir_all(candidate)?;
+                false
+            }
+            Err(error) => {
+                let _ = fs::remove_dir_all(candidate);
+                return Err(error.into());
+            }
+        }
     } else {
         false
     };

@@ -186,6 +186,89 @@ fn restore_clones_configured_archive_and_rebuilds_local_link() {
 /// A knowledge home that reached another machine by clone or pull carries no
 /// `.git/info/exclude`, so a restored private chat link must not surface there.
 #[test]
+fn failed_first_clone_leaves_no_partial_archive_and_can_be_retried() {
+    let home = tempfile::tempdir().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    let machine = tempfile::tempdir().unwrap();
+    let shim_dir = machine.path().join("bin");
+    fs::create_dir(&shim_dir).unwrap();
+    let failed_once = machine.path().join("failed-once");
+    let real_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|path| path.is_file())
+        .unwrap();
+    let shim = shim_dir.join("git");
+    fs::write(
+        &shim,
+        r#"#!/bin/sh
+if [ "$1" = clone ] && [ ! -e "$SIFTTEXT_TEST_CLONE_FAILED" ]; then
+  touch "$SIFTTEXT_TEST_CLONE_FAILED"
+  for destination do :; done
+  mkdir -p "$destination"
+  printf partial > "$destination/partial"
+  exit 42
+fi
+exec "$SIFTTEXT_TEST_REAL_GIT" "$@"
+"#,
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+    git(remote.path(), &["init", "--bare", "-q", "-b", "main"]);
+    let restored = machine.path().join("archive");
+    config(home.path(), &restored, remote.path());
+    home_with_attachment(home.path());
+    let path = format!("{}:{}", shim_dir.display(), std::env::var("PATH").unwrap());
+    let run = || {
+        Command::new(crate::native_bin("sifttext"))
+            .args([
+                "session-restore",
+                home.path().to_str().unwrap(),
+                restored.to_str().unwrap(),
+            ])
+            .env("PATH", &path)
+            .env("SIFTTEXT_NO_UPDATE", "1")
+            .env("SIFTTEXT_TEST_CLONE_FAILED", &failed_once)
+            .env("SIFTTEXT_TEST_REAL_GIT", &real_git)
+            .output()
+            .unwrap()
+    };
+
+    let failed = run();
+    assert!(!failed.status.success());
+    assert!(!restored.exists());
+    assert!(fs::read_dir(machine.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".sifttext-restore-")
+    }));
+
+    let archive = tempfile::tempdir().unwrap();
+    archive_with_session(archive.path());
+    git(
+        archive.path(),
+        &[
+            "push",
+            "-q",
+            remote.path().to_str().unwrap(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    let restored_result = run();
+    assert!(
+        restored_result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&restored_result.stderr)
+    );
+    let link = home
+        .path()
+        .join(format!("nodes/{NODE}/artifacts/chats/pi-synthetic.jsonl"));
+    assert_eq!(fs::read(link).unwrap(), b"synthetic session bytes\n");
+}
+
+#[test]
 fn restore_excludes_private_chat_links_in_a_cloned_home() {
     let remote = tempfile::tempdir().unwrap();
     let archive = tempfile::tempdir().unwrap();
