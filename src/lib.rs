@@ -47,6 +47,7 @@ pub(crate) fn native_bin(name: &str) -> PathBuf {
 }
 
 pub mod graph_transition;
+pub(crate) mod patch_build;
 
 #[cfg(test)]
 #[path = "../tests/successor/candidate_refusals.rs"]

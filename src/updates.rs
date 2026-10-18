@@ -416,6 +416,157 @@ fn verify_cached_application(path: &Path, manifest: &Manifest, asset: &Asset) ->
         "cached application identity differs from release; retain it and stage a fresh candidate",
     )
 }
+
+/// Build or reuse a checked source package, leaving the source and working release intact.
+fn build_candidate(root: &Path, source: &Path) -> Result<PathBuf> {
+    let info = package(source)?;
+    let inputs = crate::patch_build::fingerprint(source)?;
+    let releases = root.join("releases");
+    let candidate = releases.join(format!("{}-patched-{inputs}", info.version));
+    match fs::symlink_metadata(&candidate) {
+        Ok(metadata) => {
+            require(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "unsafe cached patched candidate",
+            )?;
+            let cached = package(&candidate)?;
+            let receipt: crate::patch_build::BuildReceipt =
+                load(&candidate.join(".sifttext-build.json"))?;
+            require(
+                cached.version == info.version
+                    && cached.source == info.source
+                    && cached.format == info.format,
+                "cached patched package identity differs from source",
+            )?;
+            crate::patch_build::verify_receipt(
+                &candidate,
+                &receipt,
+                &cached.version,
+                &cached.source,
+                cached.format,
+                &inputs,
+            )?;
+            require(
+                crate::patch_build::fingerprint(&candidate)? == inputs,
+                "cached patched source inputs changed; preserve it and rebuild",
+            )?;
+            checked_runtime(&candidate)?;
+            return Ok(candidate);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let cache = root.join("build-cache");
+    match fs::symlink_metadata(&cache) {
+        Ok(metadata) => require(
+            metadata.is_dir() && !metadata.file_type().is_symlink(),
+            "unsafe source-build cache",
+        )?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&cache)?,
+        Err(error) => return Err(error.into()),
+    }
+    let target = cache.join("target");
+    let built = Command::new("sh")
+        .arg("scripts/build.sh")
+        .arg("--release")
+        .current_dir(source)
+        .env("CARGO_TARGET_DIR", &target)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()?;
+    require(
+        built.status.success(),
+        &format!(
+            "patched source build failed; retain the working release: {}",
+            String::from_utf8_lossy(&built.stderr)
+        ),
+    )?;
+    fs::copy(target.join("release/sifttext"), source.join("sifttext"))?;
+    let receipt = crate::patch_build::write_receipt(
+        source,
+        &info.version,
+        &info.source,
+        info.format,
+        &inputs,
+    )?;
+    persist(&source.join(".sifttext-build.json"), &receipt)?;
+    checked_runtime(source)?;
+    fs::rename(source, &candidate)?;
+    Ok(candidate)
+}
+
+/// Build a patched copy of an official source package; leave the verified official cache intact.
+fn patched_candidate(
+    root: &Path,
+    home: &Path,
+    official: &Path,
+    manifest: &Manifest,
+) -> Result<Option<PathBuf>> {
+    let temp = tempfile::tempdir_in(root.join("releases"))?;
+    let source = temp.path().join("source");
+    copy_tree(official, &source)?;
+    let patches = crate::patch_build::apply_recorded(&source, home)?;
+    if patches.is_empty() {
+        return Ok(None);
+    }
+    let info = package(&source)?;
+    require(
+        info.version == manifest.application.version
+            && info.source == manifest.application.source
+            && info.format == manifest.application.format,
+        "patched source package identity differs from release",
+    )?;
+    build_candidate(root, &source).map(Some)
+}
+
+fn rebuild_active(root: &Path, state: &mut State) -> Result<Value> {
+    require(
+        state.pending.is_none(),
+        "finish the pending update before rebuilding",
+    )?;
+    let active = root.join(&state.application);
+    let temp = tempfile::tempdir_in(root.join("releases"))?;
+    let source = temp.path().join("source");
+    copy_tree(&active, &source)?;
+    crate::patch_build::apply_recorded(&source, &state.home)?;
+    let candidate = build_candidate(root, &source)?;
+    let relative = candidate.strip_prefix(root)?.to_owned();
+    let info = package(&candidate)?;
+    let receipt: crate::patch_build::BuildReceipt = load(&candidate.join(".sifttext-build.json"))?;
+    let pinned = format!("local-{}", &receipt.inputs[..40]);
+    let previous = Recovery {
+        application: state.application.clone(),
+        application_sha256: state.application_sha256.clone(),
+        knowledge: state.knowledge.clone(),
+        baseline: state.baseline.clone(),
+        update_commit: None,
+    };
+    persist(
+        &root.join("activation.json"),
+        &json!({
+            "application":relative,
+            "application_sha256":receipt.executable.clone(),
+            "knowledge":state.knowledge,
+            "baseline":state.baseline,
+            "previous":Some(previous.clone()),
+            "pinned":pinned,
+        }),
+    )?;
+    set_update_config(&state.home, "pinned", &pinned)?;
+    activate(root, &candidate)?;
+    state.application = relative;
+    state.application_sha256 = receipt.executable;
+    state.previous = Some(previous);
+    persist(&root.join("state.json"), state)?;
+    fs::remove_file(root.join("activation.json"))?;
+    Ok(json!({
+        "status":"rebuilt",
+        "application":info.version,
+        "source":info.source,
+        "pinned":pinned,
+        "path":candidate,
+    }))
+}
+
 fn checked_runtime(path: &Path) -> Result<Policy> {
     let output = Command::new(path.join("sifttext"))
         .arg("runtime-check")
@@ -722,7 +873,20 @@ fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
                 },
             )?;
         }
-        path
+        match patched_candidate(root, &state.home, &destination, manifest) {
+            Ok(Some(candidate)) => candidate.strip_prefix(root)?.to_owned(),
+            Ok(None) => path,
+            Err(error) => {
+                return Ok(json!({
+                    "status":"needs_agent",
+                    "reason":"patched_build_failed",
+                    "error":error.to_string(),
+                    "application":manifest.application.version,
+                    "active_application":state.application,
+                    "guide":state.home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
+                }));
+            }
+        }
     } else {
         state.application.clone()
     };
@@ -1001,6 +1165,9 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
         }
         local::check(&policy, &state.home, None, BTreeSet::new())?;
         activate(root, &root.join(&app))?;
+        if let Some(pinned) = activation.get("pinned").and_then(Value::as_str) {
+            set_update_config(&state.home, "pinned", pinned)?;
+        }
         state.application = app;
         state.application_sha256 = activation["application_sha256"]
             .as_str()
@@ -1038,6 +1205,9 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
     }
     if mode == "--status" {
         return Ok(serde_json::to_value(&state)?);
+    }
+    if mode == "--rebuild" {
+        return rebuild_active(root, &mut state);
     }
     if mode == "--resume" {
         if recovering {
@@ -2004,5 +2174,9 @@ mod tests {
         persist(&root.join("state.json"), &s).unwrap();
         let got: State = load(&root.join("state.json")).unwrap();
         assert_eq!(got.knowledge, s.knowledge);
+    }
+
+    mod patch_build_tests {
+        include!("../tests/successor/patch_build.rs");
     }
 }

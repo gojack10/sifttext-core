@@ -34,6 +34,7 @@ sifttext update                            Check and apply compatible official p
 sifttext update --status                    Show installed identities and pending update state
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
+sifttext update --rebuild                   Rebuild the selected local source and retain its pin
 sifttext update --config                    Read the user's update mode and standing grant
 sifttext update --grant standing|ask        Record or revoke the user's routine-update grant
 sifttext update --mode notify|disabled      Choose whether ordinary commands check releases
@@ -128,8 +129,15 @@ fn run() -> Result<()> {
         let mode = match args.as_slice() {
             [_] => String::new(),
             [_, mode]
-                if ["--status", "--resume", "--rollback", "--config", "--unpin"]
-                    .contains(&mode.as_str()) =>
+                if [
+                    "--status",
+                    "--resume",
+                    "--rollback",
+                    "--config",
+                    "--unpin",
+                    "--rebuild",
+                ]
+                .contains(&mode.as_str()) =>
             {
                 if mode == "--unpin" {
                     "--pin=current".to_owned()
