@@ -99,4 +99,4 @@ Read the returned entry file and every ordered instruction child completely, the
 
 If a required instruction file is missing or unreadable, report its exact path and preserve the installation for repair. Resume at that file after an authorized repair so the remaining project work uses the installed version's guidance.
 
-When a human installs directly, give their agent the same handoff using the actual local paths. With default locations, ask the agent to run `"$HOME/.local/share/sifttext/sifttext" instructions "$HOME/sifttext"` and read the returned files.
+When a human installs directly, give their agent the same handoff using the actual local paths. With default locations, ask the agent to run `"$HOME/.local/share/sifttext/sifttext" instructions "$HOME/sifttext"` and read the entry file it returns; that entry names the other instruction files a task actually needs.

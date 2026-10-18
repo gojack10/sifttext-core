@@ -52,7 +52,7 @@ fn embedded_onboarding_requires_no_hosted_connector_or_builtin_agent() {
     let entry = node("e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6");
     for required in [
         "verified Core command path",
-        "all six ordered",
+        "SiftText Read before interpreting",
         "permission",
         "Stop",
         "preserve drafts",

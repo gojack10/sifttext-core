@@ -20,14 +20,14 @@ Installation defaults to `~/.local/share/sifttext` for the application and `~/si
 
 Managed v0.1.0 installations check official releases after four hours and report a newer compatible release instead of applying it; the agent runs `sifttext update` under the standing permission the user records with `sifttext update --grant standing`, which `sifttext update --config` reports; these commands arrive with the next official release, and published v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`. To skip the background release check, run `sifttext update --mode disabled` once available or use `SIFTTEXT_NO_UPDATE=1` on installation and subsequent invocations.
 
-After installation, run the installed command's `instructions` operation with the knowledge-home path and read every returned file in order. Those local instructions govern project knowledge work for that installed version. Return to the user's task after the reads, or ask what they would like to work on if no task is established.
+After installation, run the installed command's `instructions` operation with the knowledge-home path and read the entry file it returns. Those local instructions govern project knowledge work for that installed version. Return to the user's task after the reads, or ask what they would like to work on if no task is established.
 
 For work using this source checkout, read these files with ordinary file tools before running commands:
 
 1. `nodes/5e565245-14fe-406c-977c-cf94a9be246b/node.md`.
-2. Every direct child's `node.md`, following `children/` in the order recorded in `nodes/5e565245-14fe-406c-977c-cf94a9be246b/children.order`.
+2. `nodes/5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d/node.md` before interpreting stored knowledge, and `nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md` before an authorized knowledge write.
 
-Read all six instruction children completely so setup and knowledge publication follow the same local procedure. If a required file is missing or unreadable, stop and report its exact path. Resume that read after repair without substituting another instruction source.
+The entrypoint selects the remaining direct children under `nodes/5e565245-14fe-406c-977c-cf94a9be246b/children.order` only when the task needs them, so setup and knowledge publication follow the same local procedure without a fixed six-read route. If a required file is missing or unreadable, stop and report its exact path. Resume that read after repair without substituting another instruction source.
 
 Handle prerequisites within the permissions already granted. When missing authority or an unresolved consequential choice blocks progress, ask the human for that decision. If they are unavailable, preserve a continuation for the blocked action while continuing independent authorized work.
 

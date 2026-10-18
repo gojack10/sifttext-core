@@ -285,21 +285,14 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
         true,
     ))
     .unwrap();
-    let rows = instructions["rows"].as_array().unwrap();
     assert_eq!(
-        rows.iter()
-            .map(|file| file["id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ordered
+        instructions["path"].as_str().unwrap(),
+        text(&home.join(format!("nodes/{ENTRY}/node.md")))
     );
     assert_eq!(
-        rows.iter()
-            .map(|file| PathBuf::from(file["path"].as_str().unwrap()))
-            .collect::<Vec<_>>(),
-        ordered
-            .iter()
-            .map(|id| home.join(format!("nodes/{id}/node.md")))
-            .collect::<Vec<_>>()
+        ordered.first(),
+        Some(&ENTRY),
+        "the single returned entry precedes its conditional children"
     );
     assert_eq!(
         sifttext_file_graph::outlines::decode_lean(&commands.run(

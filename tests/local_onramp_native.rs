@@ -182,26 +182,15 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     );
     assert_eq!(authored(&home), original);
     let pipeline = n.json(&["instructions", text(&home)]);
-    assert_eq!(pipeline["version_scope"], "authored_store");
-    let ordered: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
     assert_eq!(
-        pipeline["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f["id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ordered
+        pipeline["path"].as_str().unwrap(),
+        text(&home.join("nodes").join(ENTRY).join("node.md"))
     );
-    for f in pipeline["rows"].as_array().unwrap() {
-        let path = home
-            .join("nodes")
-            .join(f["id"].as_str().unwrap())
-            .join("node.md");
-        assert_eq!(f["path"], text(&path));
+    let ordered: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
+    for id in ordered.iter().copied() {
+        let path = home.join("nodes").join(id).join("node.md");
         assert_eq!(
-            n.cli(&["read", text(&home), f["id"].as_str().unwrap()])
-                .as_bytes(),
+            n.cli(&["read", text(&home), id]).as_bytes(),
             fs::read(path).unwrap()
         );
     }

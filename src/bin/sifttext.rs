@@ -176,7 +176,7 @@ fn run() -> Result<()> {
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
         let instructions = local::instructions(&policy, &path)?;
-        let output = json!({"version":instructions["version"],"version_scope":"authored_store","rows":instructions["files"]});
+        let output = json!({"version":instructions["version"],"path":instructions["path"]});
         println!(
             "{}",
             sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?

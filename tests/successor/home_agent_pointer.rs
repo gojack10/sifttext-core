@@ -297,11 +297,13 @@ fn accepted_advance_moves_a_pointer_home_without_touching_the_pointer() {
     );
     assert!(!git(&home, &["ls-files"]).lines().any(|f| f == POINTER));
     assert_eq!(
-        local::instructions(&policy, &home).unwrap()["files"]
-            .as_array()
-            .unwrap()
-            .len(),
-        7
+        fs::canonicalize(
+            local::instructions(&policy, &home).unwrap()["path"]
+                .as_str()
+                .unwrap()
+        )
+        .unwrap(),
+        fs::canonicalize(home.join(format!("nodes/{ENTRY}/node.md"))).unwrap()
     );
     assert_eq!(
         fs::read(home.join(format!("nodes/{ENTRY}/node.md"))).unwrap(),

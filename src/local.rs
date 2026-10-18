@@ -43,13 +43,14 @@ fn pointer_text() -> String {
          Read in this order with ordinary local file tools:\n\
          \n\
          1. `nodes/{ENTRY}/node.md` - the Local Core Agent Entrypoint for this home.\n\
-         2. Every direct child's `node.md` under that entry, in the order recorded by\n\
-            `nodes/{ENTRY}/children.order` - the six ordered instruction nodes.\n\
-            The entry plus those children are the whole pipeline; this pointer adds no\n\
-            instruction of its own and replaces no authored node.\n\
+            It names the SiftText Read procedure to use before interpreting stored\n\
+            knowledge and the SiftText Commit procedure to use before an authorized\n\
+            knowledge write, and selects the other direct children under\n\
+            `nodes/{ENTRY}/children.order` only when the task needs them. This pointer\n\
+            adds no instruction of its own and replaces no authored node.\n\
          \n\
-         Then follow those nodes. `sifttext instructions .` prints the same paths and\n\
-         `sifttext -h` lists the local commands. Edit only in a private worktree from\n\
+         Then follow those nodes. `sifttext instructions .` prints the checked entry path\n\
+         and `sifttext -h` lists the local commands. Edit only in a private worktree from\n\
          `sifttext worktree <home>`, then publish with `sifttext submit`. If the entry file\n\
          above is missing or unreadable, stop and report that exact path; do not substitute\n\
          another instruction source.\n"
@@ -2115,11 +2116,12 @@ pub fn instructions(policy: &Policy, path: &Path) -> Result<Value> {
         children.iter().map(String::as_str).collect::<Vec<_>>() == PIPELINE,
         "instruction identities/order unavailable",
     )?;
-    let files: Vec<_> = std::iter::once(&entry)
-        .chain(children.iter())
-        .map(|id| json!({"id":id,"path":store.path.join("nodes").join(id).join("node.md")}))
-        .collect();
-    Ok(json!({"version":report.version,"files":files}))
+    // The entry path already carries its own UUID, so the ordinary return names one file
+    // instead of repeating every pipeline identity.
+    Ok(json!({
+        "version": report.version,
+        "path": store.path.join("nodes").join(&entry).join("node.md"),
+    }))
 }
 
 pub fn read(policy: &Policy, path: &Path, prefix: &str) -> Result<String> {

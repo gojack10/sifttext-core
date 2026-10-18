@@ -141,12 +141,13 @@ fn embedded_inventory_is_complete_and_copied_by_native_init() {
         candidate_validation::version(&copied),
         candidate_validation::version(&store)
     );
+    let entry = local::instructions(&p, &home).unwrap()["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert_eq!(
-        local::instructions(&p, &home).unwrap()["files"]
-            .as_array()
-            .unwrap()
-            .len(),
-        7
+        fs::canonicalize(&entry).unwrap(),
+        fs::canonicalize(home.join(format!("nodes/{}/node.md", local::ENTRY))).unwrap()
     );
     let cli = local::read(&p, &home, "a472e05c-9bbf-48f2-89d7-6c6092c339ed").unwrap();
     assert!(cli.contains("\"$BIN\" init \"$home\""));
@@ -225,16 +226,13 @@ fn default_init_generates_the_file_first_pointer_the_repaired_body_describes() {
     assert!(fs::symlink_metadata(&pointer).unwrap().is_file());
     let text = String::from_utf8(pointer_bytes.clone()).unwrap();
     assert!(text.contains(&format!("nodes/{}/node.md", local::ENTRY)));
-    // The pointer names the canonical entry and the entry's own order supplies the six.
-    let files = local::instructions(&p, &home).unwrap()["files"]
-        .as_array()
+    // The pointer names the canonical entry plus the selected Read and Commit procedures;
+    // the entry itself decides which other children a task needs.
+    let entry = local::instructions(&p, &home).unwrap()["path"]
+        .as_str()
         .unwrap()
-        .clone();
-    assert_eq!(files.len(), 7);
-    for file in &files {
-        let path = Path::new(file["path"].as_str().unwrap());
-        assert!(path.is_file(), "{}", path.display());
-    }
+        .to_owned();
+    assert!(Path::new(&entry).is_file(), "{entry}");
     let from_pointer = std::iter::once(local::ENTRY.to_owned())
         .chain(
             fs::read_to_string(home.join(format!("nodes/{}/children.order", local::ENTRY)))
@@ -245,11 +243,9 @@ fn default_init_generates_the_file_first_pointer_the_repaired_body_describes() {
         .map(|id| fs::canonicalize(home.join(format!("nodes/{id}/node.md"))).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(
-        from_pointer,
-        files
-            .iter()
-            .map(|f| fs::canonicalize(f["path"].as_str().unwrap()).unwrap())
-            .collect::<Vec<_>>()
+        fs::canonicalize(&entry).unwrap(),
+        from_pointer[0],
+        "instructions must return the pointer's own first read target"
     );
     assert_eq!(
         local::read(&p, &home, local::ENTRY).unwrap(),
@@ -271,11 +267,13 @@ fn default_init_generates_the_file_first_pointer_the_repaired_body_describes() {
         "the untracked home pointer travelled into a private worktree"
     );
     assert_eq!(
-        local::instructions(&p, &draft).unwrap()["files"]
-            .as_array()
-            .unwrap()
-            .len(),
-        7
+        fs::canonicalize(
+            local::instructions(&p, &draft).unwrap()["path"]
+                .as_str()
+                .unwrap()
+        )
+        .unwrap(),
+        fs::canonicalize(draft.join(format!("nodes/{}/node.md", local::ENTRY))).unwrap()
     );
     // `--empty` gets no broken pointer.
     let empty = dir.path().join("empty");

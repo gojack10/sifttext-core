@@ -81,7 +81,10 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     let original = fs::read(&node).unwrap();
     let pointer = fs::read(Path::new(home).join("AGENTS.md")).unwrap();
     let pipeline = json(bin, tools, &["instructions", home]);
-    assert_eq!(pipeline["rows"].as_array().unwrap().len(), 7);
+    assert_eq!(
+        pipeline["path"].as_str().unwrap(),
+        format!("{home}/nodes/{entry}/node.md")
+    );
     assert_eq!(cli(bin, tools, &["read", home, entry]).stdout, original);
     let index = json(bin, tools, &["index", home]);
     let count = index["nodes"].as_u64().unwrap();

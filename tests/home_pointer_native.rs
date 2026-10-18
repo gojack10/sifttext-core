@@ -219,25 +219,11 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     assert_eq!(authored(&home), original);
     let pipeline = native.cli(&["instructions", text(&home)]);
     let ids: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
-    let files = pipeline["rows"].as_array().unwrap();
     assert_eq!(
-        files
-            .iter()
-            .map(|f| f["id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ids
+        pipeline["path"].as_str().unwrap(),
+        text(&home.join("nodes").join(ENTRY).join("node.md"))
     );
-    for f in files {
-        assert_eq!(
-            f["path"].as_str().unwrap(),
-            text(
-                &home
-                    .join("nodes")
-                    .join(f["id"].as_str().unwrap())
-                    .join("node.md")
-            )
-        );
-    }
+    assert_eq!(ids.first(), Some(&ENTRY));
     for banned in [
         "://",
         "sifttext-mcp",
@@ -306,16 +292,9 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     assert!(!draft.join("AGENTS.md").exists());
     let draft_pipeline = native.cli(&["instructions", text(&draft)]);
     assert_eq!(
-        draft_pipeline["rows"],
-        json!(
-            ids.iter()
-                .map(|id| json!({
-                    "id": id,
-                    "path": draft.join("nodes").join(id).join("node.md")
-                }))
-                .collect::<Vec<_>>()
-        ),
-        "worktree instruction lookup must use its own ordered authored files"
+        draft_pipeline["path"].as_str().unwrap(),
+        text(&draft.join("nodes").join(ENTRY).join("node.md")),
+        "worktree instruction lookup must use its own authored entry"
     );
     let created = native.cli(&[
         "create",
@@ -399,12 +378,14 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     );
     assert_eq!(authored(&home), authored(&view));
     assert_eq!(native.cli(&["advance", text(&home)])["advanced"], false);
-    assert_eq!(
-        native.cli(&["instructions", text(&home)])["rows"]
-            .as_array()
-            .unwrap()
-            .len(),
-        7
+    let entry_path = native.cli(&["instructions", text(&home)])["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        entry_path.starts_with(text(&home))
+            && entry_path.ends_with(&format!("nodes/{ENTRY}/node.md")),
+        "advance must keep the canonical entry readable: {entry_path}"
     );
 
     let empty = evidence.join("empty");

@@ -157,20 +157,15 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     assert_eq!(initial["starter_nodes"], source_nodes);
     assert_eq!(original, source, "exact readable source bytes and links");
     let pipeline = n.json(&["instructions", h]);
-    let ordered: Vec<&str> = std::iter::once(ENTRY).chain(ORDER).collect();
     assert_eq!(
-        pipeline["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f["id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ordered
+        pipeline["path"].as_str().unwrap(),
+        format!("{h}/nodes/{ENTRY}/node.md")
     );
-    for f in pipeline["rows"].as_array().unwrap() {
+    let ordered: Vec<&str> = std::iter::once(ENTRY).chain(ORDER).collect();
+    for id in ordered.iter().copied() {
         assert_eq!(
-            n.cli(&["read", h, f["id"].as_str().unwrap()], true),
-            fs::read_to_string(f["path"].as_str().unwrap()).unwrap()
+            n.cli(&["read", h, id], true),
+            fs::read_to_string(format!("{h}/nodes/{id}/node.md")).unwrap()
         );
     }
     let pointer = home.join("AGENTS.md");
@@ -183,7 +178,8 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         .collect();
     assert_eq!(
         named,
-        std::collections::BTreeSet::from([format!("nodes/{ENTRY}/node.md").as_str()])
+        std::collections::BTreeSet::from([format!("nodes/{ENTRY}/node.md").as_str()]),
+        "the pointer names only the canonical entry; the entry itself selects the rest"
     );
     let from_pointer: Vec<_> = std::iter::once(ENTRY.to_owned())
         .chain(
@@ -194,14 +190,10 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         )
         .map(|id| fs::canonicalize(home.join(format!("nodes/{id}/node.md"))).unwrap())
         .collect();
-    assert_eq!(
-        from_pointer,
-        pipeline["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| fs::canonicalize(f["path"].as_str().unwrap()).unwrap())
-            .collect::<Vec<_>>()
+    let entry_path = fs::canonicalize(pipeline["path"].as_str().unwrap()).unwrap();
+    assert!(
+        from_pointer.contains(&entry_path),
+        "the single returned entry path must be the pointer's own first read target"
     );
     assert_eq!(
         n.git(&home, &["status", "--porcelain", "--untracked-files=all"]),
@@ -404,13 +396,8 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let d = text(&draft);
     assert!(!draft.join("AGENTS.md").exists());
     assert_eq!(
-        n.json(&["instructions", d])["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|f| f["id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ordered
+        n.json(&["instructions", d])["path"].as_str().unwrap(),
+        format!("{d}/nodes/{ENTRY}/node.md")
     );
     let created = n.json(&[
         "create",
