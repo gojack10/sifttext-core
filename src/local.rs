@@ -1479,6 +1479,38 @@ pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -
 
 /// Attach an already-retained source to one node. The tracked record carries the
 /// harness descriptor and friendly name; the ignored link is rebuilt from archive_key.
+fn session_attachment_lock(home: &Path, node_id: &str) -> Result<fs::File> {
+    use std::os::unix::fs::MetadataExt;
+
+    let state = home.join(".sifttext");
+    if let Err(error) = fs::create_dir(&state)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(error.into());
+    }
+    crate::real_dir(&state)?;
+    let locks = state.join("locks");
+    if let Err(error) = fs::create_dir(&locks)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(error.into());
+    }
+    crate::real_dir(&locks)?;
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(locks.join(format!("session-attach-{node_id}.lock")))?;
+    require(
+        lock.metadata()?.is_file() && lock.metadata()?.nlink() == 1,
+        "unsafe session attachment lock",
+    )?;
+    lock.lock()?;
+    Ok(lock)
+}
+
 pub fn attach_session(
     home: &Path,
     node_id: &str,
@@ -1510,6 +1542,7 @@ pub fn attach_session(
     };
     let node = home.join("nodes").join(node_id);
     crate::real_dir(&node)?;
+    let _attachment_lock = session_attachment_lock(&home, node_id)?;
     let sidecar = node.join("session-sources.json");
     let mut records: Vec<Value> = if sidecar.exists() {
         serde_json::from_slice(&crate::read_regular(&sidecar)?)?

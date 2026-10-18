@@ -4,7 +4,14 @@ use crate::{
     local,
 };
 use serde_json::json;
-use std::{collections::BTreeSet, fs, path::Path, process::Command};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::Path,
+    process::Command,
+    sync::{Arc, Barrier},
+    thread,
+};
 
 const NODE: &str = "40000000-0000-4000-8000-000000000001";
 
@@ -331,6 +338,63 @@ fn same_topic_sessions_get_distinct_links_without_overwriting() {
     )
     .unwrap();
     assert_eq!(records.as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn concurrent_same_node_attachments_preserve_every_record_and_link() {
+    let home = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    fixture(home.path());
+    let count = 8;
+    let start = Arc::new(Barrier::new(count));
+    let workers: Vec<_> = (0..count)
+        .map(|index| {
+            let key = format!("sessions/session-{index}.jsonl");
+            let source = archive.path().join(&key);
+            fs::create_dir_all(source.parent().unwrap()).unwrap();
+            fs::write(&source, format!("session-{index}\\n")).unwrap();
+            let descriptor = json!({
+                "schema_version": 1,
+                "harness": "pi",
+                "session_id": format!("session-{index}"),
+                "availability": "available",
+                "archive_key": key,
+                "entry_ids": ["entry-1"],
+                "branch_entry_ids": ["entry-1"],
+                "leaf_id": "entry-1",
+                "cutoff_entry_id": "entry-1"
+            });
+            let home = home.path().to_owned();
+            let archive = archive.path().to_owned();
+            let start = Arc::clone(&start);
+            thread::spawn(move || {
+                start.wait();
+                local::attach_session(&home, NODE, &descriptor, "same topic", &archive).unwrap();
+            })
+        })
+        .collect();
+    for worker in workers {
+        worker.join().unwrap();
+    }
+
+    let node = home.path().join(format!("nodes/{NODE}"));
+    let records: serde_json::Value =
+        serde_json::from_slice(&fs::read(node.join("session-sources.json")).unwrap()).unwrap();
+    assert_eq!(records.as_array().unwrap().len(), count);
+    for record in records.as_array().unwrap() {
+        let name = record["attachment_name"].as_str().unwrap();
+        let link = node.join("artifacts/chats").join(name);
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(link).unwrap(),
+            format!("{}\\n", record["session_id"].as_str().unwrap())
+        );
+    }
 }
 
 #[test]
