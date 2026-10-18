@@ -39,10 +39,72 @@ KNOWLEDGE_PARENT=$(CDPATH= cd -P -- "$(dirname "$KNOWLEDGE")" && pwd)
 KNOWLEDGE=$KNOWLEDGE_PARENT/$(basename "$KNOWLEDGE")
 case "$PREFIX/" in "$KNOWLEDGE/"*) echo 'Keep application software outside the knowledge home.' >&2; exit 1 ;; esac
 case "$KNOWLEDGE/" in "$PREFIX/"*) echo 'Keep knowledge outside the application directory.' >&2; exit 1 ;; esac
+# A user-owned command, never an overwrite of another program or a system directory.
+BIN=$HOME/.local/bin
+case "$BIN" in *'
+'*) echo 'Installation paths cannot contain newlines.' >&2; exit 1 ;; esac
+QUOTED_PREFIX=$(printf '%s' "$PREFIX" | sed "s/'/'\\\\''/g")
+COMMAND=$(printf "#!/bin/sh\n# SiftText managed command\nexec '%s/sifttext' \"\$@\"\n" "$QUOTED_PREFIX")
+check_command() {
+  if [ -e "$BIN/sifttext" ] || [ -L "$BIN/sifttext" ]; then
+    [ ! -L "$BIN/sifttext" ] && [ -f "$BIN/sifttext" ] && [ "$(cat "$BIN/sifttext")" = "$COMMAND" ] || {
+      echo 'Refusing to replace an unrelated ~/.local/bin/sifttext command.' >&2; exit 1;
+    }
+  fi
+}
+check_command
+FOUND=$(command -v sifttext || :)
+case "$FOUND" in ''|"$BIN/sifttext"|"$PREFIX/sifttext") ;; *)
+  echo 'An unrelated sifttext command already exists on PATH. Nothing was installed.' >&2; exit 1 ;;
+esac
+expose_command() {
+  check_command
+  mkdir -p "$BIN"
+  if [ ! -e "$BIN/sifttext" ] && [ ! -L "$BIN/sifttext" ]; then
+    (set -C; printf '%s\n' "$COMMAND" > "$BIN/sifttext")
+  fi
+  chmod +x "$BIN/sifttext"
+  case ":$PATH:" in *":$BIN:"*) return ;; esac
+  # A piped installer cannot change its parent shell. Persist PATH for the next shell.
+  case "${SHELL:-/bin/sh}" in
+    */zsh) PROFILES="${ZDOTDIR:-$HOME}/.zshrc" ;;
+    */bash)
+      if [ -e "$HOME/.bash_profile" ]; then LOGIN=$HOME/.bash_profile
+      elif [ -e "$HOME/.bash_login" ]; then LOGIN=$HOME/.bash_login
+      else LOGIN=$HOME/.profile; fi
+      PROFILES=$LOGIN ;;
+    */sh|*/dash|*/ksh) PROFILES=$HOME/.profile ;;
+    *) echo 'Cannot configure PATH for this shell. No success banner was printed.' >&2; return 1 ;;
+  esac
+  PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+  grep -Fqx "$PATH_LINE" "$PROFILES" 2>/dev/null || printf '\n%s\n' "$PATH_LINE" >> "$PROFILES"
+  case "${SHELL:-/bin/sh}" in */bash)
+    grep -Fqx "$PATH_LINE" "$HOME/.bashrc" 2>/dev/null || printf '\n%s\n' "$PATH_LINE" >> "$HOME/.bashrc" ;;
+  esac
+}
+success() {
+  cat <<'LOGO'
+░▒▓█████████████████
+
+    ░▒▓█████████████
+
+        ░▒▓█████████
+
+            ░▒▓█████
+
+                ░▒▓█
+LOGO
+  CYAN= RESET=
+  if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ "${NO_COLOR+x}" != x ]; then
+    CYAN=$(printf '\033[1;36m'); RESET=$(printf '\033[0m')
+  fi
+  printf 'Login with %ssifttext login%s.\nTell your agent to run %ssifttext instructions%s.\n' "$CYAN" "$RESET" "$CYAN" "$RESET"
+}
 if [ -e "$PREFIX" ]; then
   [ -f "$PREFIX/state.json" ] && [ -x "$PREFIX/sifttext" ] || { echo 'Application path exists. Choose a new empty application path.' >&2; exit 1; }
-  "$PREFIX/current/sifttext" install-home "$PREFIX" "$KNOWLEDGE"
-  printf 'Existing installation preserved. Run %s/sifttext update to check official releases.\n' "$PREFIX"
+  "$PREFIX/current/sifttext" install-home "$PREFIX" "$KNOWLEDGE" >/dev/null
+  expose_command
+  success
   exit 0
 fi
 STAGE=$(mktemp -d "$PARENT/.sifttext-install.XXXXXX")
@@ -88,11 +150,11 @@ export SIFTTEXT_INSTALL_ROOT
 exec "$SIFTTEXT_INSTALL_ROOT/current/sifttext" "$@"
 LAUNCHER
 chmod +x "$STAGE/application/sifttext"
-"$STAGE/application/current/sifttext" runtime-check
-"$STAGE/application/current/sifttext" install-home "$STAGE/application" "$KNOWLEDGE"
+"$STAGE/application/current/sifttext" runtime-check >/dev/null
+"$STAGE/application/current/sifttext" install-home "$STAGE/application" "$KNOWLEDGE" >/dev/null
 # This invocation owns only the new application directory. A failed home setup
 # leaves any created knowledge available for inspection and never overwrites it.
 [ ! -e "$PREFIX" ] && [ ! -L "$PREFIX" ] || { echo 'Application path appeared during installation. Preserving it.' >&2; exit 1; }
 mv "$STAGE/application" "$PREFIX"
-printf 'Installed %s. Local command %s/sifttext\nKnowledge home %s\n' "$VERSION" "$PREFIX" "$KNOWLEDGE"
-"$PREFIX/sifttext" instructions "$KNOWLEDGE"
+expose_command
+success
