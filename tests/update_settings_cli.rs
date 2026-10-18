@@ -31,7 +31,7 @@ fn update_config_cli_emits_lean_settings() {
     .unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_sifttext"))
-        .args(["update", "--config"])
+        .args(["update", "--config", "-y"])
         .env("SIFTTEXT_INSTALL_ROOT", &root)
         .output()
         .unwrap();

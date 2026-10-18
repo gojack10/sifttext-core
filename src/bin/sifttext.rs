@@ -31,6 +31,7 @@ const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived 
 sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
 sifttext update                            Check and apply compatible official product updates
+sifttext update [-y]                       Allow a large update receipt
 sifttext update --status                    Show installed identities and pending update state
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
@@ -127,7 +128,12 @@ fn run() -> Result<()> {
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "update") {
-        let mode = match args.as_slice() {
+        let mut update_args = args.as_slice();
+        let force = update_args.last().is_some_and(|arg| arg == "-y");
+        if force {
+            update_args = &update_args[..update_args.len() - 1];
+        }
+        let mode = match update_args {
             [_] => String::new(),
             [_, mode]
                 if [
@@ -157,8 +163,13 @@ fn run() -> Result<()> {
         };
         let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT")
             .ok_or("use the managed installation launcher for updates")?;
-        let output = sifttext_file_graph::updates::update(Path::new(&root), &mode)?;
-        println!("{}", render_update_output(&mode, &output)?);
+        let output = sifttext_file_graph::updates::update_with_receipt_preflight(
+            Path::new(&root),
+            &mode,
+            |receipt| preflight_update_receipt(&mode, receipt, force),
+        )?;
+        let rendered = render_update_output(&mode, &output)?;
+        print_large_return(&format!("{rendered}\n"), force)?;
         return Ok(());
     }
     let runtime = local::runtime()?;
@@ -542,6 +553,13 @@ fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String
     }
 }
 
+fn preflight_update_receipt(mode: &str, receipt: &serde_json::Value, force: bool) -> Result<()> {
+    check_large_return(
+        &format!("{}\n", render_update_output(mode, receipt)?),
+        force,
+    )
+}
+
 fn absolute(path: &str) -> Result<PathBuf> {
     let path = PathBuf::from(path);
     Ok(if path.is_absolute() {
@@ -630,6 +648,14 @@ mod tests {
                 .is_some_and(|code| code != 0)
         );
         std::fs::remove_dir_all(checkout).unwrap();
+    }
+
+    #[test]
+    fn large_update_receipt_preflight_obeys_override() {
+        let receipt =
+            json!({"status":"updated", "refresh_instruction_paths":["path".repeat(20_000)]});
+        assert!(preflight_update_receipt("", &receipt, false).is_err());
+        assert!(preflight_update_receipt("", &receipt, true).is_ok());
     }
 
     #[test]

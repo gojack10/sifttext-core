@@ -712,7 +712,11 @@ fn finish(
         json!({"status":"updated","application":manifest.application.version,"knowledge":state.knowledge,"refresh_instruction_paths":changed}),
     )
 }
-fn resume(root: &Path, state: &mut State) -> Result<Value> {
+fn resume(
+    root: &Path,
+    state: &mut State,
+    preflight: &mut impl FnMut(&Value) -> Result<()>,
+) -> Result<Value> {
     let mut pending = state.pending.clone().ok_or("no update is pending")?;
     if let UpdatePlan::Rollback(previous) = &pending.plan {
         return resume_rollback(root, state, previous.clone());
@@ -737,6 +741,19 @@ fn resume(root: &Path, state: &mut State) -> Result<Value> {
         state.pending = Some(pending.clone());
         persist(&root.join("state.json"), state)?;
     }
+    let projected_receipt = json!({
+        "status":"updated",
+        "application": match &pending.plan {
+            UpdatePlan::Release(manifest) => &manifest.application.version,
+            _ => unreachable!(),
+        },
+        "knowledge": match &pending.plan {
+            UpdatePlan::Release(manifest) => &manifest.knowledge.revision,
+            _ => unreachable!(),
+        },
+        "refresh_instruction_paths": pending.changed,
+    });
+    preflight(&projected_receipt)?;
     let receipt = local::submit(
         &policy,
         &crate::checked_publication::Request {
@@ -806,7 +823,12 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
     }
     Ok(notice)
 }
-fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
+fn apply(
+    root: &Path,
+    state: &mut State,
+    manifest: &Manifest,
+    preflight: &mut impl FnMut(&Value) -> Result<()>,
+) -> Result<Value> {
     validate_manifest(manifest)?;
     let current = package(&root.join(&state.application))?;
     let config = update_config(&state.home)?;
@@ -904,7 +926,7 @@ fn apply(root: &Path, state: &mut State, manifest: &Manifest) -> Result<Value> {
         "unactivated knowledge package already exists; inspect it before retrying",
     )?;
     unpack(&manifest.knowledge.asset, &kb)?;
-    merge_knowledge(root, state, manifest, app, &policy, &kb)
+    merge_knowledge(root, state, manifest, app, &policy, &kb, preflight)
 }
 fn merge_knowledge(
     root: &Path,
@@ -913,6 +935,7 @@ fn merge_knowledge(
     app: PathBuf,
     policy: &Policy,
     kb: &Path,
+    preflight: &mut impl FnMut(&Value) -> Result<()>,
 ) -> Result<Value> {
     let baseline = state
         .baseline
@@ -1004,7 +1027,7 @@ fn merge_knowledge(
             &format!("knowledge: merge official {}", manifest.knowledge.revision),
         ],
     )?;
-    resume(root, state)
+    resume(root, state, preflight)
 }
 fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(source)?;
@@ -1129,6 +1152,14 @@ fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
 }
 
 pub fn update(root: &Path, mode: &str) -> Result<Value> {
+    update_with_receipt_preflight(root, mode, |_| Ok(()))
+}
+
+pub fn update_with_receipt_preflight(
+    root: &Path,
+    mode: &str,
+    mut preflight: impl FnMut(&Value) -> Result<()>,
+) -> Result<Value> {
     let _lock = lock(root, false)?;
     let mut state: State = load(&root.join("state.json"))?;
     if mode == "--config" {
@@ -1199,7 +1230,7 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
                 .is_ok()
             })
         {
-            return resume(root, &mut state);
+            return resume(root, &mut state, &mut preflight);
         }
         return Ok(json!({"status":"recovered"}));
     }
@@ -1215,7 +1246,7 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
                 json!({"status":"recovered","application":state.application,"knowledge":state.knowledge}),
             );
         }
-        return resume(root, &mut state);
+        return resume(root, &mut state, &mut preflight);
     }
     if mode == "--rollback" {
         return rollback(root, &mut state);
@@ -1272,7 +1303,7 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
         let current = package(&root.join(&state.application))?;
         opportunistic_notice(&current, &state, &manifest)?
     } else {
-        apply(root, &mut state, &manifest)?
+        apply(root, &mut state, &manifest, &mut preflight)?
     };
     state.success = now();
     persist(&root.join("state.json"), &state)?;
@@ -1745,7 +1776,7 @@ mod tests {
         let mut newer = manifest.clone();
         newer.application.version = "v2".into();
         newer.knowledge.requires_application = "v2".into();
-        let pinned = apply(&root, &mut state, &newer).unwrap();
+        let pinned = apply(&root, &mut state, &newer, &mut |_| Ok(())).unwrap();
         assert_eq!(pinned["status"], "update_pinned", "{pinned}");
         assert_eq!(pinned["pinned"], "v1");
         assert_eq!(pinned["application"], "v2");
@@ -2100,6 +2131,7 @@ mod tests {
             PathBuf::from("releases/v1"),
             &policy,
             &kb,
+            &mut |_| Ok(()),
         )
         .unwrap();
         assert_eq!(result["status"], "updated", "{result}");
@@ -2131,6 +2163,52 @@ mod tests {
         assert!(fs::read_to_string(&b).unwrap().contains("Base paragraph."));
     }
     #[test]
+    fn update_receipt_preflight_refuses_before_publication_and_retry_returns_same_receipt() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (policy, mut state, _, b, manifest) = fixture(&root);
+        let initial_head = git(&state.home, &["rev-parse", "HEAD"]).unwrap();
+        let kb = root.join("incoming");
+        let incoming = kb.join(b.strip_prefix(&state.home).unwrap());
+        fs::write(
+            &incoming,
+            fs::read_to_string(&incoming)
+                .unwrap()
+                .replace("Base paragraph.", "Official paragraph."),
+        )
+        .unwrap();
+
+        let mut preview = None;
+        let error = merge_knowledge(
+            &root,
+            &mut state,
+            &manifest,
+            PathBuf::from("releases/v1"),
+            &policy,
+            &kb,
+            &mut |receipt| {
+                preview = Some(receipt.clone());
+                Err("receipt suppressed".into())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("receipt suppressed"));
+        assert_eq!(
+            git(&state.home, &["rev-parse", "HEAD"]).unwrap(),
+            initial_head
+        );
+        assert!(state.pending.as_ref().unwrap().commit.is_some());
+
+        let result = resume(&root, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(result, preview.unwrap());
+        assert_ne!(
+            git(&state.home, &["rev-parse", "HEAD"]).unwrap(),
+            initial_head
+        );
+        assert_eq!(result["status"], "updated");
+    }
+
+    #[test]
     fn conflict_keeps_accepted_state_readable_and_agent_resolution_resumes() {
         let dir = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(dir.path()).unwrap();
@@ -2152,6 +2230,7 @@ mod tests {
             PathBuf::from("releases/v1"),
             &policy,
             &kb,
+            &mut |_| Ok(()),
         )
         .unwrap();
         assert_eq!(result["status"], "needs_agent", "{result}");
@@ -2243,7 +2322,7 @@ mod tests {
             &["commit", "-qm", "knowledge: reconcile official update"],
         )
         .unwrap();
-        let result = resume(&root, &mut state).unwrap();
+        let result = resume(&root, &mut state, &mut |_| Ok(())).unwrap();
         assert_eq!(result["status"], "updated", "{result}");
         assert!(
             fs::read_to_string(&a)
