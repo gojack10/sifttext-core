@@ -8,8 +8,7 @@ We believe agents will do far more of our work, so people need a way to question
 
 Use the source revision in the [v0.1.0 binary release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0)'s SHA256SUMS to inspect the installer in the [source repository](https://github.com/gojack10/sifttext-core), whose [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/main/LICENSE) permits source access while restricting competing products.
 
-Follow [INSTALL.md](https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md) to inspect the downloaded installer and verify its bytes against the pinned source and published checksum. These checks rely on the publisher's GitHub account over HTTPS. Stop if the user's policy requires signed build provenance, which the unsigned and unnotarized v0.1.0 release cannot supply.
-
+Follow [INSTALL.md](https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md) to inspect the downloaded installer and verify its bytes against the pinned source and published checksum. The checksum shows agreement with the release record; it does not establish which build produced the package.
 ## Installation authority
 
 When installation is already requested, follow the installation guide within the user's permission and handle its commands yourself. If they are still exploring SiftText, answer their question and offer installation when relevant, waiting for permission before executing an installer.

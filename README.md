@@ -24,9 +24,9 @@ Continue local work during a blocked update while your agent reconciles the know
 
 ## Inspect a release
 
-Each [release record](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) includes SHA256SUMS with the source revision used to build its packages. Follow that revision in the [source repository](https://github.com/gojack10/sifttext-core) to inspect the installer, then use [INSTALL.md](INSTALL.md) to compare the downloaded bytes and verify their checksum before execution.
+Each [official release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) publishes SHA256SUMS with its source revision. Use that revision to inspect the installer in the [source repository](https://github.com/gojack10/sifttext-core), then follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. The checksum confirms the downloaded bytes match the release record; it does not establish which build produced them.
 
-The checksums depend on the publisher's GitHub account and HTTPS delivery. A checksum shows the package matches the bytes the official release serves; it does not show which build produced them. Because v0.1.0 is unsigned and unnotarized, users whose policy requires signed build provenance must wait for a release that supplies it. The installer requires Git, curl, tar and either `shasum` or `sha256sum`; it never requires GitHub CLI, and it neither downloads nor bootstraps a verifier of its own.
+The installer requires Git, curl, tar and either `shasum` or `sha256sum`; it never requires GitHub CLI or a separately bootstrapped verifier.
 
 ## How it works
 

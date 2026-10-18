@@ -14,7 +14,7 @@ For delegation, use only the harness's supported capabilities within the user's 
 
 ## Check prerequisites and identity
 
-The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Before downloading it, check for Git, curl, tar and either shasum or sha256sum. The installer needs no other tool: it never requires GitHub CLI and neither downloads nor bootstraps a verifier. Published v0.1.0 remains unsigned and unnotarized, so the published digest records that the bytes match the official release, not which build produced them. Handle missing prerequisites within existing permissions, obtaining approval before any additional system or privileged changes.
+The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Before downloading it, check for Git, curl, tar and either shasum or sha256sum. The installer needs no other tool: it never requires GitHub CLI and neither downloads nor bootstraps a verifier. Handle missing prerequisites within existing permissions, obtaining approval before any additional system or privileged changes.
 
 Reuse the Git name and email already selected for this knowledge home. If none is available, ask which identity to use, offering `SiftText Agent <agent@sifttext.com>` if the user needs a default. After they choose, use `git config --file` to put the identity in a private temporary config and set `GIT_CONFIG_GLOBAL` to that file for the installer invocation. Initialization copies the selection into the new repository's local config while leaving global Git configuration unchanged.
 
@@ -54,9 +54,7 @@ Then verify the downloaded installer's published checksum:
 )
 ```
 
-Stop if a download or either comparison fails, retaining the files and command output for diagnosis.
-
-For the unsigned and unnotarized v0.1.0 release, source and checksum verification relies on the publisher's GitHub account over HTTPS, so stop if the user's policy requires signed build provenance.
+Stop if a download or either comparison fails, retaining the files and command output for diagnosis. A matching checksum confirms the downloaded bytes match the official release record over HTTPS; it does not establish which build produced them.
 
 ## Execute the reviewed installer
 
