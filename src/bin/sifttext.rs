@@ -63,8 +63,8 @@ sifttext session-restore HOME ARCHIVE_ROOT Rebuild links; clone configured backu
 sifttext session-retention-config HOME  Read local session-retention/backup settings (default off)
 sifttext check STORE [BEFORE [EXPLICIT_UUID ...]] [-y]
                                           Complete candidate check; -y allows >15000 output tokens
-sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
-                                          Apply native status activation/reopening only
+sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]
+                                          Apply native status activation/reopening; -y allows >15000 receipt tokens
 sifttext index STORE                       Refresh derived SQLite and LEAN outlines
 sifttext outline STORE UUID [full] [-y]  Refresh, verify, then print shallow/full LEAN
 sifttext search STORE QUERY [UNDER_UUID] [-y]
@@ -322,13 +322,22 @@ fn run() -> Result<()> {
             print_large_return(&format!("{}\n", report.lean()?), force)?;
             return Ok(());
         }
-        [cmd, before, after, explicit @ ..] if cmd == "normalize" => {
-            let normalized = sifttext_file_graph::status::normalize(
+        [cmd, before, after, rest @ ..] if cmd == "normalize" => {
+            let force = rest.last().is_some_and(|arg| arg == "-y");
+            let explicit = if force { &rest[..rest.len() - 1] } else { rest };
+            let normalized = sifttext_file_graph::status::normalize_with_preflight(
                 &policy,
                 Path::new(before),
                 Path::new(after),
                 &explicit.iter().cloned().collect(),
                 None,
+                |receipt| {
+                    let output = serde_json::to_value(receipt)?;
+                    check_large_return(
+                        &format!("{}\n", serde_json::to_string_pretty(&output)?),
+                        force,
+                    )
+                },
             )?;
             normalized.report_reopenings();
             serde_json::to_value(normalized)?
@@ -407,8 +416,6 @@ fn run() -> Result<()> {
         matches!(
             cmd.as_str(),
             "normalize"
-                | "submit"
-                | "accepted"
                 | "session-capture"
                 | "session-attach"
                 | "session-backup"

@@ -414,6 +414,62 @@ fn direct_child_table_reopening_and_no_auto_resolution() {
 }
 
 #[test]
+fn normalize_receipt_preflight_can_refuse_before_writing() {
+    let policy = policy();
+    let before = tempfile::tempdir().unwrap();
+    let after = tempfile::tempdir().unwrap();
+    let nodes = vec![state(Status::NotExamined); 1024];
+    fixture(before.path(), &nodes);
+    fixture(after.path(), &nodes);
+    fs::write(
+        file(after.path(), 1024),
+        text(1024, &state(Status::NotExamined), true),
+    )
+    .unwrap();
+    let original = inventory(after.path());
+
+    let result = status::normalize_with_preflight(
+        &policy,
+        before.path(),
+        after.path(),
+        &BTreeSet::new(),
+        None,
+        |receipt| {
+            assert_eq!(receipt.normalized_ids, [id(1024)]);
+            assert_eq!(receipt.reopened_ids, [id(1024)]);
+            assert_eq!(receipt.nodes[&id(1024)].status, Status::InProgress);
+            let output = serde_json::to_value(receipt).unwrap();
+            let rendered = format!("{}\n", serde_json::to_string_pretty(&output).unwrap());
+            let tokens = tiktoken_rs::o200k_base_singleton()
+                .lock()
+                .encode_ordinary(&rendered)
+                .len();
+            assert!(tokens > 15_000, "receipt rendered as {tokens} tokens");
+            Err("suppressed before mutation".into())
+        },
+    );
+    assert!(result.is_err());
+    assert_eq!(inventory(after.path()), original);
+
+    let mut planned = None;
+    let accepted = status::normalize_with_preflight(
+        &policy,
+        before.path(),
+        after.path(),
+        &BTreeSet::new(),
+        None,
+        |receipt| {
+            planned = Some(serde_json::to_string(receipt).unwrap());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(serde_json::to_string(&accepted).unwrap(), planned.unwrap());
+    assert_ne!(inventory(after.path()), original);
+    assert_eq!(native_state(after.path(), 1024).status, Status::InProgress);
+}
+
+#[test]
 fn creation_derived_only_and_actual_helper_reference_cleanup() {
     let policy = policy();
     let before = tempfile::tempdir().unwrap();

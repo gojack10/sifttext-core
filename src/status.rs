@@ -300,7 +300,7 @@ impl PauseBeforeAccept {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Acceptance {
     pub status: &'static str,
     pub normalized_ids: Vec<String>,
@@ -316,7 +316,7 @@ impl Acceptance {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct StateView {
     pub status: Status,
 }
@@ -332,6 +332,18 @@ pub fn normalize(
     after: &Path,
     explicit: &BTreeSet<String>,
     pause: Option<&PauseBeforeAccept>,
+) -> Result<Acceptance> {
+    normalize_with_preflight(policy, before, after, explicit, pause, |_| Ok(()))
+}
+
+/// Checks the exact normalized receipt before applying its status changes.
+pub fn normalize_with_preflight(
+    policy: &Policy,
+    before: &Path,
+    after: &Path,
+    explicit: &BTreeSet<String>,
+    pause: Option<&PauseBeforeAccept>,
+    preflight: impl FnOnce(&Acceptance) -> Result<()>,
 ) -> Result<Acceptance> {
     let before_capture = Capture::read(before, None)?;
     let candidate_capture = Capture::read(after, None)?;
@@ -367,6 +379,36 @@ pub fn normalize(
         depth
     };
     ids.sort_by_key(|id| (depth(id), id.clone()));
+    let candidate_states = states(&candidate_capture.metadata)?;
+    let nodes = normalized
+        .nodes
+        .keys()
+        .map(|id| {
+            let text = std::str::from_utf8(bytes(&normalized, id)?)?;
+            Ok((
+                id.clone(),
+                StateView {
+                    status: State::read(text)?.status,
+                },
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let reopened_ids = ids
+        .iter()
+        .filter(|id| {
+            !explicit.contains(*id)
+                && candidate_states[*id].status != Status::InProgress
+                && nodes[*id].status == Status::InProgress
+        })
+        .cloned()
+        .collect();
+    let receipt = Acceptance {
+        status: "current",
+        normalized_ids: ids.clone(),
+        reopened_ids,
+        nodes,
+    };
+    preflight(&receipt)?;
     // ponytail: <=256 nodes; stage complete files instead of in-place writes.
     // Publication remains single-writer after the final identity check; a broader
     // unmanaged-writer guarantee needs Core's separately owned workspace boundary.
@@ -403,21 +445,11 @@ pub fn normalize(
         accepted.inventory == normalized.inventory,
         "normalized candidate changed during acceptance",
     )?;
-    let candidate_states = states(&candidate_capture.metadata)?;
     let after_states = states(&metadata)?;
-    let reopened_ids = ids
-        .iter()
-        .filter(|id| {
-            !explicit.contains(*id)
-                && candidate_states[*id].status != Status::InProgress
-                && after_states[*id].status == Status::InProgress
-        })
-        .cloned()
-        .collect();
-    Ok(Acceptance {
+    let accepted = Acceptance {
         status: "current",
         normalized_ids: ids,
-        reopened_ids,
+        reopened_ids: receipt.reopened_ids.clone(),
         nodes: after_states
             .into_iter()
             .map(|(id, state)| {
@@ -429,5 +461,10 @@ pub fn normalize(
                 )
             })
             .collect(),
-    })
+    };
+    require(
+        accepted == receipt,
+        "normalized receipt changed during acceptance",
+    )?;
+    Ok(accepted)
 }

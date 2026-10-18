@@ -156,6 +156,85 @@ fn git(repo: &Path, args: &[&str]) {
 }
 
 #[test]
+fn normalize_suppresses_large_receipt_before_mutation_and_y_retrieves_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let before = tmp.path().join("before");
+    let after = tmp.path().join("after");
+    fixture(&before);
+    fixture(&after);
+    for root in [&before, &after] {
+        let path = root.join("nodes").join(PARENT).join("node.md");
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("status: \"resolved\"", "status: \"not_examined\"");
+        fs::write(path, text).unwrap();
+    }
+    let mut previous = PARENT.to_owned();
+    let mut last = String::new();
+    for index in 1..=1024 {
+        let id = format!("60000000-0000-4000-8000-{index:012}");
+        node(&before, &id, "not_examined");
+        node(&after, &id, "not_examined");
+        link(&before, &previous, &id);
+        link(&after, &previous, &id);
+        previous = id.clone();
+        last = id;
+    }
+    let last_path = after.join("nodes").join(&last).join("node.md");
+    let mut edited = fs::read_to_string(&last_path).unwrap();
+    edited.push(' ');
+    fs::write(last_path, edited).unwrap();
+
+    let before_inventory = Store::read(&before).unwrap().inventory;
+    let original = Store::read(&after).unwrap().inventory;
+    let suppressed = cli(&[
+        "normalize",
+        before.to_str().unwrap(),
+        after.to_str().unwrap(),
+    ]);
+    assert!(!suppressed.status.success());
+    assert!(
+        String::from_utf8_lossy(&suppressed.stderr).is_empty(),
+        "{suppressed:?}"
+    );
+    assert_eq!(Store::read(&before).unwrap().inventory, before_inventory);
+    assert_eq!(Store::read(&after).unwrap().inventory, original);
+
+    let accepted = cli(&[
+        "normalize",
+        before.to_str().unwrap(),
+        after.to_str().unwrap(),
+        "-y",
+    ]);
+    success(&accepted);
+    assert_eq!(
+        String::from_utf8_lossy(&accepted.stderr),
+        format!("[{last}] set to in_progress.\n")
+    );
+    let receipt: Value = serde_json::from_slice(&accepted.stdout).unwrap();
+    assert_eq!(receipt["normalized_ids"], json!([last]));
+    assert_eq!(receipt["reopened_ids"], json!([last]));
+    let tokens = tiktoken_rs::o200k_base_singleton()
+        .lock()
+        .encode_ordinary(std::str::from_utf8(&accepted.stdout).unwrap())
+        .len();
+    assert!(tokens > 15_000, "receipt rendered as {tokens} tokens");
+    let notice = format!(
+        "[{} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n",
+        tokens
+    );
+    assert_eq!(String::from_utf8_lossy(&suppressed.stdout), notice);
+    assert_ne!(Store::read(&after).unwrap().inventory, original);
+
+    let normalized = after.join("nodes").join(last).join("node.md");
+    assert!(
+        fs::read_to_string(normalized)
+            .unwrap()
+            .contains(r#"status: "in_progress""#)
+    );
+}
+
+#[test]
 fn create_reopens_resolved_chain_and_keeps_lean_receipt_usable() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path().join("repo");
