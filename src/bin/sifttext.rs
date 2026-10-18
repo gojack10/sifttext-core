@@ -56,8 +56,8 @@ sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
                                           Create a tree root or child; never commits
 sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
                                           Copy and Git-checkpoint a validated Pi session
-sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT
-                                          Attach a retained session and create a local chat link
+sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
+                                          Attach a retained session; -y allows >15000 receipt tokens
 sifttext session-backup HOME                 Push the opted-in archive to its configured Git remote
 sifttext session-restore HOME ARCHIVE_ROOT Rebuild links; clone configured backup if archive is absent
 sifttext session-retention-config HOME  Read local session-retention/backup settings (default off)
@@ -256,14 +256,29 @@ fn run() -> Result<()> {
             let value = serde_json::from_slice(&std::fs::read(descriptor_path)?)?;
             local::capture_session(Path::new(source), &value, Path::new(archive))?
         }
-        [cmd, home, node, descriptor, topic, archive] if cmd == "session-attach" => {
+        [cmd, home, node, descriptor, topic, archive, rest @ ..]
+            if cmd == "session-attach" && (rest.is_empty() || rest == ["-y"]) =>
+        {
+            let force = !rest.is_empty();
             let descriptor_path = absolute(descriptor)?;
             let metadata = std::fs::symlink_metadata(&descriptor_path)?;
             if !metadata.is_file() || metadata.file_type().is_symlink() {
                 return Err("descriptor must be a regular file".into());
             }
             let value = serde_json::from_slice(&std::fs::read(descriptor_path)?)?;
-            local::attach_session(Path::new(home), node, &value, topic, Path::new(archive))?
+            local::attach_session_with_gate(
+                Path::new(home),
+                node,
+                &value,
+                topic,
+                Path::new(archive),
+                |receipt| {
+                    check_large_return(
+                        &format!("{}\n", serde_json::to_string_pretty(receipt)?),
+                        force,
+                    )
+                },
+            )?
         }
         [cmd, home, archive] if cmd == "session-restore" => {
             local::restore_session_links(Path::new(home), Path::new(archive))?

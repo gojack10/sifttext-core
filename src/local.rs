@@ -1518,6 +1518,17 @@ pub fn attach_session(
     topic: &str,
     archive_root: &Path,
 ) -> Result<Value> {
+    attach_session_with_gate(home, node_id, descriptor, topic, archive_root, |_| Ok(()))
+}
+
+pub fn attach_session_with_gate(
+    home: &Path,
+    node_id: &str,
+    descriptor: &Value,
+    topic: &str,
+    archive_root: &Path,
+    gate: impl FnOnce(&Value) -> Result<()>,
+) -> Result<Value> {
     require(crate::uuid(node_id), "invalid node UUID")?;
     require(
         descriptor["schema_version"] == 1
@@ -1646,6 +1657,8 @@ pub fn attach_session(
                     .cmp(&right["session_id"].as_str()),
             )
     });
+    let receipt = json!({"status":if available {"attached"} else {"source_unavailable"},"node_id":node_id,"attachment_name":name,"archive_key":descriptor["archive_key"]});
+    gate(&receipt)?;
     let mut file = tempfile::NamedTempFile::new_in(&node)?;
     serde_json::to_writer_pretty(&mut file, &records)?;
     file.write_all(b"\n")?;
@@ -1656,9 +1669,7 @@ pub fn attach_session(
         symlink(&target, &temp_link)?;
         fs::rename(&temp_link, &link)?;
     }
-    Ok(
-        json!({"status":if available {"attached"} else {"source_unavailable"},"node_id":node_id,"attachment_name":name,"archive_key":descriptor["archive_key"]}),
-    )
+    Ok(receipt)
 }
 
 /// Rebuild local navigation links from tracked sidecars and a relocated archive.
