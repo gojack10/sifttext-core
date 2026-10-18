@@ -6,7 +6,7 @@ We believe agents will do far more of our work, so people need a way to question
 
 ## Release evidence
 
-Use the source revision in the [v0.1.0 binary release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0)'s SHA256SUMS to inspect the installer in the [source repository](https://github.com/gojack10/sifttext-core), whose [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/main/LICENSE) permits source access while restricting competing products.
+Use the source revision in the [v0.2.0 binary release](https://github.com/gojack10/sifttext-core/releases/tag/v0.2.0)'s SHA256SUMS to inspect the installer in the [source repository](https://github.com/gojack10/sifttext-core), whose [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/main/LICENSE) permits source access while restricting competing products.
 
 Follow [INSTALL.md](https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md) to inspect the downloaded installer and verify its bytes against the pinned source and published checksum. The checksum shows agreement with the release record; it does not establish which build produced the package.
 ## Installation authority
@@ -19,7 +19,7 @@ The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Ch
 
 ## Updates and local work
 
-Managed v0.1.0 installations check official releases after four hours and report a newer compatible release instead of applying it; your agent reads the local update guide and runs `sifttext update` when the user has recorded a standing grant with `sifttext update --grant standing`; `sifttext update --config` reports the current mode, grant and file path; those commands arrive with the next official release, and published v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`. To skip the background release check, run `sifttext update --mode disabled` once available or set `SIFTTEXT_NO_UPDATE=1` during installation and on every later invocation.
+Managed v0.2.0 installations check official releases after four hours and report a newer compatible release instead of applying it; your agent reads the local update guide and runs `sifttext update` when the user has recorded a standing grant with `sifttext update --grant standing`, and `sifttext update --config` reports the current mode, grant and file path; `sifttext update --mode disabled` skips the background check. On an older v0.1.0 installation none of those flags exist — it accepts only `update`, `--status`, `--resume` and `--rollback` — so ask the user before each update there. Alternatively set `SIFTTEXT_NO_UPDATE=1` during installation and on every later invocation.
 
 When a knowledge merge blocks an update, follow the installed update guide to reconcile the retained draft within the user's authority.
 

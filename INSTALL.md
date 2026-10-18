@@ -18,15 +18,15 @@ The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Be
 
 Reuse the Git name and email already selected for this knowledge home. If none is available, ask which identity to use, offering `SiftText Agent <agent@sifttext.com>` if the user needs a default. After they choose, use `git config --file` to put the identity in a private temporary config and set `GIT_CONFIG_GLOBAL` to that file for the installer invocation. Initialization copies the selection into the new repository's local config while leaving global Git configuration unchanged.
 
-## Inspect release v0.1.0
+## Inspect release v0.2.0
 
-The [release record](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) provides precompiled platform packages and SHA256SUMS with source revision `4fe2c0287b760837016583b51b4b42915028e220`. Use that revision to inspect [install.sh](https://github.com/gojack10/sifttext-core/blob/4fe2c0287b760837016583b51b4b42915028e220/install.sh) under the [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/4fe2c0287b760837016583b51b4b42915028e220/LICENSE).
+The [release record](https://github.com/gojack10/sifttext-core/releases/tag/v0.2.0) provides precompiled platform packages and SHA256SUMS with source revision `6f4fd233d823daf42ef2758700233032e14d90ab`. Use that revision to inspect [install.sh](https://github.com/gojack10/sifttext-core/blob/6f4fd233d823daf42ef2758700233032e14d90ab/install.sh) under the [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/6f4fd233d823daf42ef2758700233032e14d90ab/LICENSE).
 
 Download the installer and checksum file without executing them:
 
 ```sh
 review=$(mktemp -d)
-base=https://github.com/gojack10/sifttext-core/releases/download/v0.1.0
+base=https://github.com/gojack10/sifttext-core/releases/download/v0.2.0
 curl -fsSL --proto '=https' --proto-redir '=https' "$base/install.sh" -o "$review/install.sh"
 curl -fsSL --proto '=https' --proto-redir '=https' "$base/SHA256SUMS" -o "$review/SHA256SUMS"
 ```
@@ -34,7 +34,7 @@ curl -fsSL --proto '=https' --proto-redir '=https' "$base/SHA256SUMS" -o "$revie
 Read the downloaded `install.sh` completely before running it. To compare its exact bytes with the source at the recorded revision:
 
 ```sh
-source=https://raw.githubusercontent.com/gojack10/sifttext-core/4fe2c0287b760837016583b51b4b42915028e220
+source=https://raw.githubusercontent.com/gojack10/sifttext-core/6f4fd233d823daf42ef2758700233032e14d90ab
 curl -fsSL --proto '=https' --proto-redir '=https' "$source/install.sh" -o "$review/source-install.sh"
 cmp "$review/install.sh" "$review/source-install.sh"
 ```
@@ -64,12 +64,12 @@ For a new knowledge home, initialization copies the bundled knowledge into an in
 
 If installation fails, preserve any created knowledge and use the failing command's output to determine the next authorized repair.
 
-Managed v0.1.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it. The agent then runs `sifttext update` only under the standing permission the user grants. That grant is recorded with `sifttext update --grant standing`, which writes only the `updates` object of `.sifttext/config.json` inside the knowledge home and leaves other local settings intact, and `sifttext update --config` reports the current mode, grant and file path. Explain that behavior before installation so the user can choose whether to disable it. These update settings ship with the next official release: the published v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`, so on a v0.1.0 installation ask the user before each update instead of reading a recorded grant. To skip the background release check, run `sifttext update --mode disabled` once it is available, or set `SIFTTEXT_NO_UPDATE=1` on the installer invocation and every subsequent SiftText invocation.
+Managed v0.2.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it. The agent then runs `sifttext update` only under the standing permission the user grants. That grant is recorded with `sifttext update --grant standing`, which writes only the `updates` object of `.sifttext/config.json` inside the knowledge home and leaves other local settings intact, and `sifttext update --config` reports the current mode, grant and file path. Explain that behavior before installation so the user can choose whether to disable it. To skip the background release check, run `sifttext update --mode disabled`, or set `SIFTTEXT_NO_UPDATE=1` on the installer invocation and every subsequent SiftText invocation. On an older v0.1.0 installation none of those flags exist — it accepts only `update`, `--status`, `--resume` and `--rollback` — so ask the user before each update there instead of reading a recorded grant.
 
 After inspection and verification succeed, execute the same downloaded file within the user's installation permission:
 
 ```sh
-SIFTTEXT_RELEASE=v0.1.0 sh "$review/install.sh"
+SIFTTEXT_RELEASE=v0.2.0 sh "$review/install.sh"
 ```
 
 For custom locations, pass the application directory and knowledge-home path as the two arguments. Ensure their parent directories exist before invoking the installer so path validation can complete. The installer resolves existing parents to physical paths before setting up the home.
