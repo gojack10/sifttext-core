@@ -71,6 +71,8 @@ That pointer is local discovery, not authored knowledge. It is untracked and exc
 
 ## Optional Pi session association
 
+Before installing or enabling the Pi retention extension, read [Optional Pi session retention](../../integrations/pi/README.md) for its permission boundary, exact opt-in configuration, capture behavior and optional backup/restore commands. The extension is off by default; do not change Pi settings or enable transcript retention without the user's authorization.
+
 When the Pi retention extension is installed and `session_retention.enabled` is true in the selected home, associate a session only when it materially informed the current knowledge. Read the affected node and choose its exact UUID; do not infer or attach all sessions/nodes automatically. Ask the `sifttext_attach_session` tool to attach the current Pi session using that UUID, a short kebab-case topic, and the authorized private knowledge worktree (not the accepted home). Call once per relevant node. The tool captures and Git-checkpoints the current session, writes its tracked association and local chat link, and returns only the node and friendly attachment name—not transcript content or the source session ID. Inspect the changed worktree and continue through Worktree Publication's checks and checked submission. If retention is disabled, the source is unavailable, or the tool fails, do not fabricate a descriptor or block ordinary knowledge work; report the limitation.
 
 ## Scratch creation
