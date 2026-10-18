@@ -318,6 +318,42 @@ fn restore_excludes_private_chat_links_in_a_cloned_home() {
 }
 
 #[test]
+fn rejected_backup_push_preserves_archive_and_can_be_retried() {
+    let home = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    archive_with_session(archive.path());
+    git(remote.path(), &["init", "--bare", "-q", "-b", "main"]);
+    config(home.path(), archive.path(), remote.path());
+
+    let head_before = git(archive.path(), &["rev-parse", "HEAD"]);
+    let session_path = archive.path().join(format!("sessions/{SESSION}.jsonl"));
+    let bytes_before = fs::read(&session_path).unwrap();
+    let hook = remote.path().join("hooks/pre-receive");
+    fs::write(&hook, "#!/bin/sh\nexit 42\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(local::backup_session_archive(home.path()).is_err());
+    assert_eq!(git(archive.path(), &["rev-parse", "HEAD"]), head_before);
+    assert_eq!(git(archive.path(), &["status", "--porcelain"]), "");
+    assert_eq!(fs::read(&session_path).unwrap(), bytes_before);
+    assert_eq!(
+        git(remote.path(), &["for-each-ref", "--format=%(refname)"]),
+        ""
+    );
+
+    fs::remove_file(hook).unwrap();
+    let receipt = local::backup_session_archive(home.path()).unwrap();
+    assert_eq!(receipt["commit"], head_before);
+    assert_eq!(
+        git(remote.path(), &["rev-parse", "refs/heads/main"]),
+        head_before
+    );
+    assert_eq!(git(archive.path(), &["status", "--porcelain"]), "");
+}
+
+#[test]
 fn backup_receipt_matches_the_commit_sent_before_concurrent_capture() {
     let home = tempfile::tempdir().unwrap();
     let archive = tempfile::tempdir().unwrap();
