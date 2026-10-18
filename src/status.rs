@@ -380,17 +380,23 @@ pub fn normalize_with_preflight(
     };
     ids.sort_by_key(|id| (depth(id), id.clone()));
     let candidate_states = states(&candidate_capture.metadata)?;
+    // `ids` is exactly the set whose captured bytes differ, so every other node keeps
+    // the status already parsed into the candidate metadata. Re-reading them here would
+    // re-parse the whole store on every normalize just to build a preflight receipt.
+    let changed: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
     let nodes = normalized
         .nodes
         .keys()
         .map(|id| {
-            let text = std::str::from_utf8(bytes(&normalized, id)?)?;
-            Ok((
-                id.clone(),
-                StateView {
-                    status: State::read(text)?.status,
-                },
-            ))
+            let status = if changed.contains(id.as_str()) {
+                State::read(std::str::from_utf8(bytes(&normalized, id)?)?)?.status
+            } else {
+                candidate_states
+                    .get(id.as_str())
+                    .ok_or("missing captured node state")?
+                    .status
+            };
+            Ok((id.clone(), StateView { status }))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
     let reopened_ids = ids
