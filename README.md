@@ -1,38 +1,68 @@
-# SiftText
-
-> Build an understanding your agents can keep working from.
-
-We believe agents will do far more of our work, so people need a way to question their decisions without following every conversation. We're building SiftText to help your agents preserve the reasons behind those decisions across sessions, with you free to inspect or redirect the work. As circumstances change and models improve, we want that record to help future agents question earlier assumptions and discover possibilities we missed.
+![SiftText. Understanding evolves from evidence.](docs/readme/hero-dark.svg)
 
 ## Get started
 
 Give your agent this installation request:
 
-> Install SiftText for local project memory by following https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md and handle setup within my permissions.
+```text
+Install SiftText for local project memory by following https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md and handle setup within my permissions.
+```
 
 After setup, your agent reads the installed instructions before continuing your project or asking what you would like to work on.
 
 For direct terminal installation, follow [INSTALL.md](INSTALL.md) to inspect and verify the downloaded installer before executing that same file.
 
-## What installation does
+![Build an understanding that people and agents can keep developing.](docs/readme/tree-dark.svg)
 
-The precompiled [v0.1.0 release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. With Git and the download tools available, installation puts the application at `~/.local/share/sifttext` and initializes knowledge at `~/sifttext`. Keeping those locations separate from project code lets your knowledge survive software replacement.
+<details>
+<summary>Read the example as text</summary>
 
-Managed v0.1.0 installations check official releases opportunistically after four hours and report a newer compatible release instead of applying it; your agent runs `sifttext update` under the standing permission you record with `sifttext update --grant standing`; `sifttext update --config` shows the current mode, grant and file path, and nothing is granted until you record it. Those commands ship with the next official release; the published v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`, so on v0.1.0 your agent asks you before each update. To skip the background release check, run `sifttext update --mode disabled` once it is available or have your agent use `SIFTTEXT_NO_UPDATE=1` for installation and every later invocation.
+- **Choose a dependable supplier** (in progress)
+  Customer orders need a supplier we can rely on, so compare quotes and check performance on real orders.
 
-Continue local work during a blocked update while your agent reconciles the knowledge merge in its retained private worktree within your permission.
+  - **Use Company A for every order** (discarded)
+    Both suppliers’ samples passed inspection, so we chose A at $8.20/unit over B at $10.
+    That choice assumed A’s five-day delivery estimate was reliable. The later delivery review ruled out A for urgent orders.
 
-## Inspect a release
+    - **Review Company A’s deliveries** (resolved)
+      Three of five orders arrived late. Two delayed customer shipments.
+      The lower price no longer justifies relying on A for urgent work.
 
-Each [official release](https://github.com/gojack10/sifttext-core/releases/tag/v0.1.0) publishes SHA256SUMS with its source revision. Use that revision to inspect the installer in the [source repository](https://github.com/gojack10/sifttext-core), then follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. The checksum confirms the downloaded bytes match the release record; it does not establish which build produced them.
+  - **Trial Company B for urgent orders** (new decision)
+    A’s delivery review exposed missed customer deadlines. B quotes three days, but its delivery performance remains untested.
+    Trial 100 units with B. Keep A for flexible orders.
 
-The installer requires Git, curl, tar and either `shasum` or `sha256sum`; it never requires GitHub CLI or a separately bootstrapped verifier.
+    - **Check Company B’s trial results** (not examined)
+      No trial results yet.
+      Check delivery dates and quality before giving B more orders.
+
+</details>
+
+## Running agents across a team?
+
+Bring your team’s work into one place for people and agents.
+
+[Book a demo](mailto:jack@sifttext.com?subject=SiftText%20demo)
 
 ## How it works
 
 Knowledge lives in local Markdown files with Git history. Related questions form branches that agents explore through outlines and search, using the bundled instructions to find the relevant research as a project develops.
 
 To change that knowledge, an agent edits in a private Git worktree and submits it for validation of the combined structure. Accepted changes remain in Git history for later inspection or recovery.
+
+## What installation does
+
+Precompiled packages and supported platforms are listed on the [latest release](https://github.com/gojack10/sifttext-core/releases/latest). By default, installation puts the application at `~/.local/share/sifttext` and initializes knowledge at `~/sifttext`. Keeping those locations separate from project code lets your knowledge survive software replacement.
+
+Update commands and permissions depend on your installed release. Follow [INSTALL.md](INSTALL.md) and your installed instructions before updating or changing release-check settings.
+
+Continue local work during a blocked update while your agent reconciles the knowledge merge in its retained private worktree within your permission.
+
+## Inspect a release
+
+Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. Treat checksum verification as evidence of byte agreement with the release record, and check build provenance separately.
+
+The installer’s complete tool requirements are Git, curl, tar and an existing `shasum` or `sha256sum`.
 
 ## Development
 
