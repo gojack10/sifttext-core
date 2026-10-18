@@ -67,7 +67,8 @@ sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
                                           Apply native status activation/reopening only
 sifttext index STORE                       Refresh derived SQLite and LEAN outlines
 sifttext outline STORE UUID [full] [-y]  Refresh, verify, then print shallow/full LEAN
-sifttext search STORE QUERY [UNDER_UUID]    Ranked lexical search, at most 20 hits
+sifttext search STORE QUERY [UNDER_UUID] [-y]
+                                          Ranked lexical search; -y allows >15000 output tokens
 sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version query; -y allows >15000 tokens
 sifttext -h                               This reference
 
@@ -320,7 +321,12 @@ fn run() -> Result<()> {
             print_large_return(&output, force)?;
             return Ok(());
         }
-        [cmd, path, query, rest @ ..] if cmd == "search" && rest.len() <= 1 => {
+        [cmd, path, query, rest @ ..] if cmd == "search" => {
+            let force = rest.last().is_some_and(|arg| arg == "-y");
+            let rest = if force { &rest[..rest.len() - 1] } else { rest };
+            if rest.len() > 1 {
+                return Err("usage: sifttext search STORE QUERY [UNDER_UUID] [-y]".into());
+            }
             let result = sifttext_file_graph::search::local_search(
                 &policy,
                 Path::new(path),
@@ -349,7 +355,12 @@ fn run() -> Result<()> {
                     })
                     .into());
             }
-            json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"hits":result.hits})
+            let output = json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"hits":result.hits});
+            print_large_return(
+                &format!("{}\n", serde_json::to_string_pretty(&output)?),
+                force,
+            )?;
+            return Ok(());
         }
         [cmd, path, sql, rest @ ..] if cmd == "sql" && (rest.is_empty() || rest == ["-y"]) => {
             let output = local::sql(&policy, Path::new(path), sql)?;
@@ -362,8 +373,7 @@ fn run() -> Result<()> {
     if args.first().is_some_and(|cmd| {
         matches!(
             cmd.as_str(),
-            "search"
-                | "normalize"
+            "normalize"
                 | "submit"
                 | "accepted"
                 | "session-capture"
