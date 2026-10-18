@@ -13,7 +13,7 @@ Use for precise field filters, counts or relationships. Input: a confirmed `stor
 
 - `nodes(id, name, micro_summary, scope, content, status, children, record)` — text columns; `children` is an ordered JSON UUID array and `record` is the complete derived JSON row.
 - `links(source, target, reason, position)` — explicit authored see-also edges, not parent/child relationships.
-- `metadata(key, value)` — derived version/publication metadata.
+- `metadata(key, value)` — derived cache metadata. `version` fingerprints the authored store; `outlines` is an internal generated-file manifest, not a retrieval result or a version-comparison target.
 
 There is no hosted `tree_id`, `parent_id`, priority or separate `trees` table here. Derive parentage from `children`; roots have no parent. The KB root is `38a9fc79-8a84-494d-a962-2ec5134bc856`.
 
@@ -25,6 +25,6 @@ sifttext sql "$store" 'SELECT n.id,n.name FROM nodes n WHERE NOT EXISTS (SELECT 
 sifttext sql "$store" "SELECT n.id,n.name FROM nodes p,json_each(p.children) c JOIN nodes n ON n.id=c.value WHERE p.id='5e565245-14fe-406c-977c-cf94a9be246b' ORDER BY CAST(c.key AS INTEGER)"
 ```
 
-For recursive subtree navigation use Outline Navigation or scoped Leviathan Search rather than inventing a recursive-query command the wrapper does not accept. Query results report `status`, source `version`, columns and row arrays. Read the relevant `nodes/UUID/node.md` before interpreting results as guidance or deciding edits.
+For recursive subtree navigation use Outline Navigation or scoped Leviathan Search rather than inventing a recursive-query command the wrapper does not accept. Query results report `status`, `version`, `version_scope:authored_store`, columns and row arrays. The version covers the selected authored store, not an outline's displayed-view fingerprint. Read the relevant `nodes/UUID/node.md` before interpreting results as guidance or deciding edits.
 
 A manually opened `.sifttext/index.sqlite` is only a cache and may be stale; it is not a supported write API. On a noncurrent view, malformed source or query rejection, report the error and fix the query or source within authority before retrying. Return the exact query and relevant rows/version with the answer; do not infer completeness from a truncated result.

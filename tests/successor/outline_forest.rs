@@ -436,7 +436,7 @@ fn coverage_membership_and_authored_order_survive_the_batch_for_every_owner() {
         for name in ["full", "shallow"] {
             assert_eq!(
                 keys(&owned, name),
-                ["coverage", "path_template", "rows", "source_version", "token_encoding"],
+                ["coverage", "path_template", "rows", "source_version", "source_version_scope", "token_encoding"],
                 "{id} {name} keys are not canonical lexicographic with the rows block in place"
             );
             let mut ordered = columns(&owned, name);

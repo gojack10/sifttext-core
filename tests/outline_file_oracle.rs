@@ -283,7 +283,7 @@ fn expectations(
             if n["warnings"].as_str().is_some_and(|s|!s.is_empty()) {r["warnings"]=n["warnings"].clone();}
             if coverage=="shallow" {r["full_view_tokens"]=json!(costs[rid]);} r
         }).collect();
-        json!({"coverage":coverage,"path_template":"nodes/{id}/node.md","rows":rows,"source_version":version,"token_encoding":"o200k_base"})
+        json!({"coverage":coverage,"path_template":"nodes/{id}/node.md","rows":rows,"source_version":version,"source_version_scope":"outline_view","token_encoding":"o200k_base"})
     };
     let full: BTreeMap<_, _> = by
         .keys()

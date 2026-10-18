@@ -61,6 +61,7 @@ pub struct Request {
 pub struct Response<'a> {
     pub coverage: Coverage,
     pub source_version: &'a str,
+    pub source_version_scope: &'static str,
     pub path_template: &'a str,
     pub token_encoding: &'a str,
     pub rows: Vec<Row<'a>>,
@@ -228,6 +229,7 @@ impl<'a> Forest<'a> {
         Ok(Response {
             coverage,
             source_version,
+            source_version_scope: "outline_view",
             path_template: PATH_TEMPLATE,
             token_encoding: TOKEN_ENCODING,
             rows,

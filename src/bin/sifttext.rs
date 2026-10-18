@@ -156,7 +156,7 @@ fn run() -> Result<()> {
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
         let instructions = local::instructions(&policy, &path)?;
-        let output = json!({"version":instructions["version"],"rows":instructions["files"]});
+        let output = json!({"version":instructions["version"],"version_scope":"authored_store","rows":instructions["files"]});
         println!(
             "{}",
             sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
@@ -276,7 +276,7 @@ fn run() -> Result<()> {
         }
         [cmd, path] if cmd == "index" => {
             let v = local::refresh(&policy, Path::new(path))?;
-            let output = json!({"status":v.status,"version":v.version,"nodes":v.nodes.len(),"links":v.links.len()});
+            let output = json!({"status":v.status,"version":v.version,"version_scope":"authored_store","nodes":v.nodes.len(),"links":v.links.len()});
             println!(
                 "{}",
                 sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
@@ -324,7 +324,7 @@ fn run() -> Result<()> {
                     })
                     .into());
             }
-            json!({"status":result.status,"version":result.version,"total_matches":result.total_matches,"hits":result.hits})
+            json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"hits":result.hits})
         }
         [cmd, path, sql] if cmd == "sql" => local::sql(&policy, Path::new(path), sql)?,
         _ => return Err("unknown command or arguments; run sifttext -h".into()),

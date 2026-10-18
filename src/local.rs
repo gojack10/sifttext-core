@@ -2147,5 +2147,5 @@ pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
         view.status == "current",
         "SQL source changed; retry from current authored files",
     )?;
-    Ok(json!({"status":view.status,"version":view.version,"result":result}))
+    Ok(json!({"status":view.status,"version":view.version,"version_scope":"authored_store","result":result}))
 }

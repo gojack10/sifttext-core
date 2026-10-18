@@ -14,7 +14,7 @@ sifttext search "$store" 'private Git worktree'
 sifttext search "$store" 'SQLite' 5e565245-14fe-406c-977c-cf94a9be246b
 ```
 
-The optional last argument scopes to that node and its descendants. Without it, search spans the local forest. This is ranked lexical Leviathan retrieval over the native index, not semantic embeddings or the hosted MCP API. It is local to the selected working copy, including its valid uncommitted authored changes. The convenience CLI returns at most 20 hits plus `total_matches`, `status` and source `version`. Refine the query or subtree if matches exceed the displayed page; do not claim all results were examined.
+The optional last argument scopes to that node and its descendants. Without it, search spans the local forest. This is ranked lexical Leviathan retrieval over the native index, not semantic embeddings or the hosted MCP API. It is local to the selected working copy, including its valid uncommitted authored changes. The convenience CLI returns at most 20 hits plus `total_matches`, `status`, `version` and `version_scope:authored_store`. This version covers the selected authored store, not an outline's displayed-view fingerprint. Refine the query or subtree if matches exceed the displayed page; do not claim all results were examined.
 
 Use returned UUIDs to read actual `nodes/UUID/node.md`; use Outline Navigation for surrounding structure. A match is a candidate source, not a proven answer or authorization. No hits means this lexical query did not find evidence, not that the subject is absent. Try a more precise/different phrase or a structural SQL query when that distinction matters.
 

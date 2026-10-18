@@ -207,7 +207,7 @@ fn each_text_is_canonical_lexicographic_lean_with_one_final_lf() {
         assert!(!bytes.ends_with("\n\n"), "{name} has more than one final LF");
         assert_eq!(
             keys(&assembled, name),
-            ["coverage", "path_template", "rows", "source_version", "token_encoding"],
+            ["coverage", "path_template", "rows", "source_version", "source_version_scope", "token_encoding"],
             "{name} keys are not canonical lexicographic with the rows block in place"
         );
         let mut sorted = columns(&assembled, name);

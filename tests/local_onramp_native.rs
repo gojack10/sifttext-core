@@ -125,11 +125,8 @@ impl Native {
     }
     fn json(&mut self, args: &[&str]) -> Value {
         let output = self.cli(args);
-        if matches!(args.first(), Some(&"instructions" | &"index")) {
-            sifttext_file_graph::outlines::decode_lean(&output).unwrap()
-        } else {
-            serde_json::from_str(&output).unwrap()
-        }
+        serde_json::from_str(&output)
+            .unwrap_or_else(|_| sifttext_file_graph::outlines::decode_lean(&output).unwrap())
     }
     fn refuse(&mut self, args: &[&str]) {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, false);
@@ -185,6 +182,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     );
     assert_eq!(authored(&home), original);
     let pipeline = n.json(&["instructions", text(&home)]);
+    assert_eq!(pipeline["version_scope"], "authored_store");
     let ordered: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
     assert_eq!(
         pipeline["rows"]
@@ -243,6 +241,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         .count();
     let indexed = n.json(&["index", text(&home)]);
     assert_eq!(indexed["nodes"], count);
+    assert_eq!(indexed["version_scope"], "authored_store");
     let query = if supplied.is_some() {
         "SiftText"
     } else {
@@ -250,6 +249,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     };
     let search = n.json(&["search", text(&home), query]);
     assert_eq!(search["version"], indexed["version"]);
+    assert_eq!(search["version_scope"], "authored_store");
     assert!(!search["hits"].as_array().unwrap().is_empty());
     for hit in search["hits"].as_array().unwrap() {
         assert_eq!(
@@ -264,6 +264,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     }
     let sql = n.json(&["sql", text(&home), "SELECT count(*) FROM nodes"]);
     assert_eq!(sql["version"], indexed["version"]);
+    assert_eq!(sql["version_scope"], "authored_store");
     assert_eq!(sql["result"]["rows"][0][0], count);
     for q in [
         "DELETE FROM nodes",
@@ -273,14 +274,15 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     ] {
         n.refuse(&["sql", text(&home), q]);
     }
-    assert!(
-        n.cli(&["outline", text(&home), ENTRY])
-            .contains("coverage:shallow")
-    );
-    assert!(
-        n.cli(&["outline", text(&home), ENTRY, "full"])
-            .contains("coverage:full")
-    );
+    let shallow = n.json(&["outline", text(&home), ENTRY]);
+    let full = n.json(&["outline", text(&home), ENTRY, "full"]);
+    assert_eq!(shallow["coverage"], "shallow");
+    assert_eq!(full["coverage"], "full");
+    for view in [&shallow, &full] {
+        assert_eq!(view["source_version_scope"], "outline_view");
+        assert_ne!(view["source_version"], indexed["version"]);
+    }
+    assert_ne!(shallow["source_version"], full["source_version"]);
     let name = "Onramppublicationtrial";
     let allocation = n.json(&["worktree", text(&home)]);
     let draft = PathBuf::from(allocation["worktree"].as_str().unwrap());

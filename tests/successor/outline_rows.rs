@@ -176,6 +176,7 @@ fn metadata_is_fixed_and_the_supplied_version_is_returned_unchanged() {
     let document = projected(request(R, "shallow", forest()));
     assert_eq!(document["coverage"], "shallow");
     assert_eq!(document["source_version"], "projection-test-1");
+    assert_eq!(document["source_version_scope"], "outline_view");
     assert_eq!(document["path_template"], "nodes/{id}/node.md");
     assert_eq!(document["token_encoding"], "o200k_base");
     assert_eq!(
@@ -185,6 +186,7 @@ fn metadata_is_fixed_and_the_supplied_version_is_returned_unchanged() {
             "path_template",
             "rows",
             "source_version",
+            "source_version_scope",
             "token_encoding"
         ]
     );
