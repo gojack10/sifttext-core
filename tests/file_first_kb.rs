@@ -266,9 +266,12 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     let independent = evidence.join("independent");
     let hidden = evidence.join("hidden-source-nodes");
     fs::rename(source.join("nodes"), &hidden).unwrap();
-    let result: Value =
-        serde_json::from_str(&commands.run(text(&bin), &["init", text(&independent)], true))
-            .unwrap();
+    let result = sifttext_file_graph::outlines::decode_lean(&commands.run(
+        text(&bin),
+        &["init", text(&independent)],
+        true,
+    ))
+    .unwrap();
     assert_eq!(result["starter_nodes"], source_nodes);
     assert_eq!(inventory(&independent), authored);
     fs::rename(&hidden, source.join("nodes")).unwrap();
