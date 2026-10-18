@@ -73,6 +73,16 @@ The bundled tree is copied, never linked back into the source checkout. Updating
 
 That pointer is local discovery, not authored knowledge. It is untracked and excluded through the home's own `.git/info/exclude`, so the home still reports a clean Git state, and rerunning `init` never rewrites, reseeds or removes it; homes initialized before it existed are not retroactively given one. Because it is untracked it does not travel into a private worktree, a publication view or a fresh clone: there `sifttext instructions "$home"` remains the supported lookup, validating the store and printing the entry node plus its ordered child paths, which you read in the returned order. Startup therefore needs no SQL, no hosted tool and no guess about the entrypoint. After init, use Worktree Publication to allocate a private draft and capture its fixed baseline before edits.
 
+## Connect an existing project folder
+
+When the user connects a specific project to SiftText, use that project's maintained entry node as the folder's agent entrance. Add a short, removable pointer to that folder's `AGENTS.md`:
+
+```markdown
+Read <project-entry-node-path> for this project's maintained knowledge and agent instructions. Follow its links as relevant to your task. The existing repository instructions below remain applicable.
+```
+
+If `AGENTS.md` already exists, prepend the pointer and preserve all original bytes and instructions below it. If it does not exist, create it with the pointer. Verify the entry path resolves and the original file remains an exact suffix; confirm no unselected folder was changed. Do this only for the project the user connected. This is a manual file handoff, not a `sifttext` command or automatic folder scan.
+
 ## Optional Pi session association
 
 Before installing or enabling the Pi retention extension, read [Optional Pi session retention](../../integrations/pi/README.md) for its permission boundary, exact opt-in configuration, capture behavior and optional backup/restore commands. The extension is off by default; do not change Pi settings or enable transcript retention without the user's authorization.
