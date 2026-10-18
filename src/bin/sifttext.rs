@@ -9,6 +9,22 @@ use std::{
 
 const SOURCE_REPOSITORY: &str = "https://github.com/gojack10/sifttext-core.git";
 const MAINTENANCE_NODE: &str = "6da0b35a-955a-4ad2-bdce-2994ba26119c";
+const LARGE_RETURN_LIMIT: usize = 15_000;
+
+#[derive(Debug)]
+struct LargeReturnSuppressed(usize);
+
+impl std::fmt::Display for LargeReturnSuppressed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{} tokens suppressed] Re-run with -y to print them, read sql schema if needed.",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for LargeReturnSuppressed {}
 
 const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived retrieval
 
@@ -29,7 +45,7 @@ sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW in
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
                                           Existing recognized home/edits always unchanged
 sifttext instructions [STORE]              Print file-first entry and ordered child paths
-sifttext read STORE UUID                   Check current source, then print exact node.md
+sifttext read STORE UUID [-y]              Check source; -y prints exact node.md above 15000 tokens
 sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
                                           Check/save in draft, refresh HOME, remove completed draft
 sifttext accepted REPO                     Recover a current detached accepted view
@@ -51,7 +67,7 @@ sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
 sifttext index STORE                       Refresh derived SQLite and LEAN outlines
 sifttext outline STORE UUID [full]         Refresh, verify, then print shallow/full LEAN
 sifttext search STORE QUERY [UNDER_UUID]    Ranked lexical search, at most 20 hits
-sifttext sql STORE 'SELECT ...'            Read-only same-version SQLite query
+sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version query; -y allows >15000 tokens
 sifttext -h                               This reference
 
 Read node.md with ordinary file tools. Edit only your private worktree.
@@ -178,7 +194,11 @@ fn run() -> Result<()> {
             local::init(&policy, &absolute(home)?, Some(Path::new(source)))?
         }
         [cmd, path, id] if cmd == "read" => {
-            print!("{}", local::read(&policy, Path::new(path), id)?);
+            print_read(&local::read(&policy, Path::new(path), id)?, false)?;
+            return Ok(());
+        }
+        [cmd, path, id, flag] if cmd == "read" && flag == "-y" => {
+            print_read(&local::read(&policy, Path::new(path), id)?, true)?;
             return Ok(());
         }
         [cmd, repo, draft, commit, base, explicit @ ..] if cmd == "submit" => {
@@ -326,14 +346,27 @@ fn run() -> Result<()> {
             }
             json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"hits":result.hits})
         }
-        [cmd, path, sql] if cmd == "sql" => local::sql(&policy, Path::new(path), sql)?,
+        [cmd, path, sql, rest @ ..] if cmd == "sql" && (rest.is_empty() || rest == ["-y"]) => {
+            let output = local::sql(&policy, Path::new(path), sql)?;
+            let rendered = format!("{}\n", serde_json::to_string_pretty(&output)?);
+            if rest.is_empty() {
+                let tokens = tiktoken_rs::o200k_base_singleton()
+                    .lock()
+                    .encode_ordinary(&rendered)
+                    .len();
+                if tokens > 15_000 {
+                    return Err(Box::new(LargeReturnSuppressed(tokens)));
+                }
+            }
+            print!("{rendered}");
+            return Ok(());
+        }
         _ => return Err("unknown command or arguments; run sifttext -h".into()),
     };
     if args.first().is_some_and(|cmd| {
         matches!(
             cmd.as_str(),
-            "sql"
-                | "search"
+            "search"
                 | "normalize"
                 | "submit"
                 | "accepted"
@@ -351,6 +384,22 @@ fn run() -> Result<()> {
             sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
         );
     }
+    Ok(())
+}
+
+fn print_read(output: &str, force: bool) -> Result<()> {
+    let tokens = if force {
+        0
+    } else {
+        tiktoken_rs::o200k_base_singleton()
+            .lock()
+            .encode_ordinary(output)
+            .len()
+    };
+    if tokens > LARGE_RETURN_LIMIT {
+        return Err(LargeReturnSuppressed(tokens).into());
+    }
+    std::io::stdout().lock().write_all(output.as_bytes())?;
     Ok(())
 }
 
@@ -570,7 +619,11 @@ fn main() {
         run()
     })();
     if let Err(error) = result {
-        eprintln!("rejected: {error}");
+        if let Some(suppressed) = error.downcast_ref::<LargeReturnSuppressed>() {
+            let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
+        } else {
+            eprintln!("rejected: {error}");
+        }
         std::process::exit(1);
     }
     if !updating {
