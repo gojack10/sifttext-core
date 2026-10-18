@@ -74,7 +74,9 @@ After inspection and verification succeed, execute the same downloaded file with
 SIFTTEXT_RELEASE=v0.1.0 sh "$review/install.sh"
 ```
 
-For custom locations, pass the application directory and knowledge-home path as the two arguments. Ensure their parent directories exist before invoking the installer so path validation can complete.
+For custom locations, pass the application directory and knowledge-home path as the two arguments. Ensure their parent directories exist before invoking the installer so path validation can complete. The installer resolves existing parents to physical paths before setting up the home.
+
+If you run `sifttext init` directly, its absolute destination must have an existing canonical parent; it refuses symlinked or aliased parent paths rather than writing through them. `sifttext advance` likewise requires the reader home as an absolute canonical path and refuses aliases. Use the physical path for direct commands (for an existing home, `cd -P -- "$HOME/sifttext" && pwd -P` prints it); do not work around these refusals by passing a symlink path.
 
 ## Optional private session evidence
 
