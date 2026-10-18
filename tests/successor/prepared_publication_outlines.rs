@@ -12,7 +12,9 @@ fn expected(version: &str, rows: &[(usize, usize, usize, usize, &str)]) -> Strin
             id(n)
         ));
     }
-    text + &format!("source_version:{version}\ntoken_encoding:o200k_base\n")
+    text + &format!(
+        "source_version:{version}\nsource_version_scope:outline_view\ntoken_encoding:o200k_base\n"
+    )
 }
 
 fn matches(text: &str, rows: &[(usize, usize, usize, usize, &str)]) -> bool {
