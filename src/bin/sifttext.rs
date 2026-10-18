@@ -60,8 +60,8 @@ sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT
 sifttext session-backup HOME                 Push the opted-in archive to its configured Git remote
 sifttext session-restore HOME ARCHIVE_ROOT Rebuild links; clone configured backup if archive is absent
 sifttext session-retention-config HOME  Read local session-retention/backup settings (default off)
-sifttext check STORE [BEFORE [EXPLICIT_UUID ...]]
-                                          Complete candidate check; does not modify files
+sifttext check STORE [BEFORE [EXPLICIT_UUID ...]] [-y]
+                                          Complete candidate check; -y allows >15000 output tokens
 sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
                                           Apply native status activation/reopening only
 sifttext index STORE                       Refresh derived SQLite and LEAN outlines
@@ -269,13 +269,15 @@ fn run() -> Result<()> {
             )?
         }
         [cmd, path, rest @ ..] if cmd == "check" => {
+            let force = rest.last().is_some_and(|arg| arg == "-y");
+            let rest = if force { &rest[..rest.len() - 1] } else { rest };
             let report = local::check(
                 &policy,
                 Path::new(path),
                 rest.first().map(Path::new),
                 rest.iter().skip(1).cloned().collect(),
             )?;
-            println!("{}", report.lean()?);
+            print_large_return(&format!("{}\n", report.lean()?), force)?;
             return Ok(());
         }
         [cmd, before, after, explicit @ ..] if cmd == "normalize" => {
