@@ -95,7 +95,7 @@ Use the command and knowledge-home path printed by the installer to verify the r
 "$HOME/.local/share/sifttext/sifttext" instructions "$HOME/sifttext"
 ```
 
-Read the returned entry file and every ordered instruction child completely, then follow their applicable procedures to continue the user's task. If no task is established, ask what they would like to work on. When that work produces knowledge to retain, publish it through the local worktree procedure and retrieve the saved result to verify it.
+Read the returned entry file and follow its task-specific instructions to continue the user's task. If no task is established, ask what they would like to work on. When that work produces knowledge to retain, publish it through the local worktree procedure and retrieve the saved result to verify it.
 
 If a required instruction file is missing or unreadable, report its exact path and preserve the installation for repair. Resume at that file after an authorized repair so the remaining project work uses the installed version's guidance.
 
