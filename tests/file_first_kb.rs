@@ -166,7 +166,9 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     let authored = inventory(&source);
     let source_nodes = authored
         .keys()
-        .filter(|path| path.starts_with("nodes") && path.file_name().is_some_and(|name| name == "node.md"))
+        .filter(|path| {
+            path.starts_with("nodes") && path.file_name().is_some_and(|name| name == "node.md")
+        })
         .count();
     let pointer = source.join("AGENTS.md");
     let meta = fs::symlink_metadata(&pointer).unwrap();
@@ -200,7 +202,7 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     );
 
     let prefix = evidence.join("application");
-    let home = evidence.join("knowledge");
+    let home = commands.git_home.join("sifttext");
     // Native init must refuse an uninitialized existing home without leaving
     // an application prefix that prevents retry, or touching user knowledge.
     let refused_home = evidence.join("uninitialized-knowledge");
@@ -296,6 +298,16 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
             .iter()
             .map(|id| home.join(format!("nodes/{id}/node.md")))
             .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        sifttext_file_graph::outlines::decode_lean(&commands.run(
+            text(&bin),
+            &["instructions"],
+            true
+        ))
+        .unwrap(),
+        instructions,
+        "omitting STORE should select $HOME/sifttext"
     );
 
     let file = home.join(format!("nodes/{ENTRY}/node.md"));

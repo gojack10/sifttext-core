@@ -22,7 +22,7 @@ sifttext init HOME                         Copy the embedded first-party KB (fro
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
                                           Existing recognized home/edits always unchanged
-sifttext instructions STORE                Print file-first entry and ordered child paths
+sifttext instructions [STORE]              Print file-first entry and ordered child paths
 sifttext read STORE UUID                   Check current source, then print exact node.md
 sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
                                           Check/save in draft, refresh HOME, remove completed draft
@@ -120,6 +120,22 @@ fn run() -> Result<()> {
     // native Policy contract (which also supports minimal policy-only fixtures).
     sifttext_file_graph::native_kb::verify_assets(&runtime)?;
     sifttext_file_graph::graph_transition::Transition::checked(&policy)?;
+    if args.first().is_some_and(|arg| arg == "instructions") {
+        let path = match args.as_slice() {
+            [_, path] => PathBuf::from(path),
+            [_] => {
+                PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?).join("sifttext")
+            }
+            _ => return Err("usage: sifttext instructions [STORE]".into()),
+        };
+        let instructions = local::instructions(&policy, &path)?;
+        let output = json!({"version":instructions["version"],"rows":instructions["files"]});
+        println!(
+            "{}",
+            sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
+        );
+        return Ok(());
+    }
     let output = match args.as_slice() {
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
         [cmd, root, home] if cmd == "install-home" => {
@@ -133,15 +149,6 @@ fn run() -> Result<()> {
         }
         [cmd, home, flag, source] if cmd == "init" && flag == "--bundle" => {
             local::init(&policy, &absolute(home)?, Some(Path::new(source)))?
-        }
-        [cmd, path] if cmd == "instructions" => {
-            let instructions = local::instructions(&policy, Path::new(path))?;
-            let output = json!({"version":instructions["version"],"rows":instructions["files"]});
-            println!(
-                "{}",
-                sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
-            );
-            return Ok(());
         }
         [cmd, path, id] if cmd == "read" => {
             print!("{}", local::read(&policy, Path::new(path), id)?);
@@ -296,7 +303,15 @@ fn run() -> Result<()> {
     if args.first().is_some_and(|cmd| {
         matches!(
             cmd.as_str(),
-            "sql" | "search" | "normalize" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
+            "sql"
+                | "search"
+                | "normalize"
+                | "submit"
+                | "accepted"
+                | "session-capture"
+                | "session-attach"
+                | "session-backup"
+                | "session-restore"
         )
     }) {
         // These receipts have nested schemas beyond LEAN's scalar-row dialect.
