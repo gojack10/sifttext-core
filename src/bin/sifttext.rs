@@ -1,3 +1,5 @@
+mod account;
+
 use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
 use std::{
@@ -28,6 +30,10 @@ impl std::error::Error for LargeReturnSuppressed {}
 
 const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived retrieval
 
+sifttext login                            Open browser sign-in and verify paid Platform activation
+sifttext account                          Show server-confirmed account/subscription (refreshes login)
+sifttext logout                           Revoke remote login; always remove local credentials offline
+                                          Credentials: ~/.config/sifttext/account (outside knowledge)
 sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
 sifttext update                            Check and apply compatible official product updates
@@ -91,6 +97,14 @@ fn run() -> Result<()> {
     if args.is_empty() || args == ["-h"] || args == ["--help"] {
         println!("{HELP}");
         return Ok(());
+    }
+    if let Some(command) = args.first()
+        && account::is_command(command)
+    {
+        if args.len() != 1 {
+            return Err(format!("usage: sifttext {command}").into());
+        }
+        return account::run(command);
     }
     if args
         .as_slice()
@@ -688,11 +702,14 @@ mod tests {
 }
 
 fn main() {
+    let authentication = std::env::args()
+        .nth(1)
+        .is_some_and(|arg| account::is_command(&arg));
     let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
     let checking = std::env::args().nth(1).is_some_and(|arg| arg == "check");
     let force = std::env::args().last().is_some_and(|arg| arg == "-y");
     let result = (|| -> Result<()> {
-        let _operation = if updating {
+        let _operation = if updating || authentication {
             None
         } else {
             sifttext_file_graph::updates::operation_lock()?
@@ -712,7 +729,7 @@ fn main() {
         }
         std::process::exit(1);
     }
-    if !updating {
+    if !updating && !authentication {
         sifttext_file_graph::updates::opportunistic();
     }
 }
