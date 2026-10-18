@@ -60,7 +60,7 @@ Continue local work during a blocked update while your agent reconciles the know
 
 ## Inspect a release
 
-Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. Treat checksum verification as evidence of byte agreement with the release record, and check build provenance separately.
+Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. Treat checksum verification only as evidence of byte agreement with the release record; it does not establish which build produced the package.
 
 The installer’s complete tool requirements are Git, curl, tar and an existing `shasum` or `sha256sum`.
 
