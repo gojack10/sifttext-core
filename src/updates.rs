@@ -1991,6 +1991,95 @@ mod tests {
         (policy, s, a, b, manifest)
     }
     #[test]
+    fn explicit_cli_update_activates_the_staged_release_once() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (_policy, state, _, _, mut manifest) = fixture(&root);
+        manifest.application.version = "v2".into();
+        manifest.application.source = "d".repeat(40);
+        manifest.application.requires_knowledge = state.knowledge.clone();
+        manifest.knowledge.revision = state.knowledge.clone();
+        manifest.knowledge.requires_application = "v2".into();
+
+        let package_dir = root.join("package");
+        copy_tree(&root.join("releases/v1"), &package_dir).unwrap();
+        persist(
+            &package_dir.join("release.json"),
+            &Package {
+                version: "v2".into(),
+                source: manifest.application.source.clone(),
+                knowledge: state.knowledge.clone(),
+                format: 1,
+            },
+        )
+        .unwrap();
+        let archive = root.join("app.tar.gz");
+        assert!(
+            Command::new("tar")
+                .args(["-czf"])
+                .arg(&archive)
+                .args(["-C"])
+                .arg(&root)
+                .arg("package")
+                .status()
+                .unwrap()
+                .success()
+        );
+        let asset = manifest
+            .application
+            .assets
+            .get_mut(&platform().unwrap())
+            .unwrap();
+        asset.url = format!("{RELEASES}v2/app.tar.gz");
+        asset.sha256 = crate::sha256(&fs::read(&archive).unwrap());
+        let asset_sha256 = asset.sha256.clone();
+        let manifest_path = root.join("manifest.json");
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let bin = root.join("mock-bin");
+        fs::create_dir(&bin).unwrap();
+        let curl = bin.join("curl");
+        fs::write(
+            &curl,
+            "#!/bin/sh\nout=\nurl=\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --output ]; then out=$2; shift 2; else url=$1; shift; fi\ndone\necho \"$url\" >> \"$SIFTTEXT_CURL_LOG\"\ncase \"$url\" in\n  */manifest.json) cp \"$SIFTTEXT_TEST_MANIFEST\" \"$out\" ;;\n  */v2/app.tar.gz) cp \"$SIFTTEXT_TEST_APP\" \"$out\" ;;\n  *) exit 9 ;;\nesac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&curl, fs::Permissions::from_mode(0o700)).unwrap();
+        let log = root.join("curl.log");
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        let output = Command::new(crate::native_bin("sifttext"))
+            .args(["update"])
+            .env("PATH", path)
+            .env("SIFTTEXT_INSTALL_ROOT", &root)
+            .env("SIFTTEXT_TEST_MANIFEST", &manifest_path)
+            .env("SIFTTEXT_TEST_APP", &archive)
+            .env("SIFTTEXT_CURL_LOG", &log)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("\"status\": \"updated\""));
+        let expected = PathBuf::from(format!("releases/v2-{asset_sha256}"));
+        assert_eq!(
+            fs::read_link(root.join("current")).unwrap(),
+            root.join(&expected)
+        );
+        let saved: State = load(&root.join("state.json")).unwrap();
+        assert_eq!(saved.application, expected);
+        assert_eq!(
+            saved.previous.unwrap().application,
+            PathBuf::from("releases/v1")
+        );
+        assert!(!root.join("activation.json").exists());
+        assert_eq!(fs::read_to_string(log).unwrap().lines().count(), 2);
+    }
+
+    #[test]
     fn checked_three_way_merge_preserves_customer_work_and_rolls_back() {
         let dir = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(dir.path()).unwrap();
