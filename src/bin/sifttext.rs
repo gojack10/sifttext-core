@@ -45,7 +45,7 @@ sifttext init HOME                         Copy the embedded first-party KB (fro
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
                                           Existing recognized home/edits always unchanged
-sifttext instructions [STORE]              Print file-first entry and ordered child paths
+sifttext instructions [STORE]              Print checked file-first version and entry path
 sifttext read STORE UUID [-y]              Check source; -y prints exact node.md above 15000 tokens
 sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
                                           Check/save in draft, refresh HOME, remove completed draft
