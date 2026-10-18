@@ -38,7 +38,7 @@ Reuse a complete name/email already selected for this workspace or configured fo
 
 Inspect an offered GitHub source only within the task's access permissions, and confirm the discovered name/email with the human. If the human has none, chooses the default, or seems bogged down, recommend SiftText Agent <agent@sifttext.com> and ask to use it. Await the answer unless previously authorized. A bounded worker returns this question to its assigning agent. Honor a request for different attribution or omitted agent credit; Git Commit Skill owns the knowledge-commit policy.
 
-For a NEW home with an existing canonical parent, put the selected `name` and `email` in a private temporary Git config. Run one initialization command with that command-scoped selection. This example initializes the default seed; choose `--bundle` or `--empty` instead when required:
+For a NEW home, the parent must be an existing physical canonical path; `init` refuses a symlinked or aliased parent rather than writing through it. `advance` requires the entire home path to be canonical and refuses any symlink or alias along it. For an existing home, resolve its physical path with `cd -P -- "$HOME/sifttext" && pwd -P`; use that path directly and do not work around either refusal by passing an alias. Then put the selected `name` and `email` in a private temporary Git config and run one initialization command with that command-scoped selection. This example initializes the default seed; choose `--bundle` or `--empty` instead when required:
 
 ```sh
 identity=$(mktemp)
