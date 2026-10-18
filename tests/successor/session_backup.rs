@@ -1,6 +1,13 @@
 use crate::local;
 use serde_json::json;
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::Path,
+    process::Command,
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
 const NODE: &str = "40000000-0000-4000-8000-000000000001";
 const SESSION: &str = "00000000-0000-4000-8000-000000000001";
@@ -225,6 +232,106 @@ fn restore_excludes_private_chat_links_in_a_cloned_home() {
     let receipt = local::restore_session_links(&home, &restored).unwrap();
     assert_eq!(receipt["links"], 1);
     assert_eq!(git(&home, &["status", "--porcelain"]), "");
+}
+
+#[test]
+fn backup_receipt_matches_the_commit_sent_before_concurrent_capture() {
+    let home = tempfile::tempdir().unwrap();
+    let archive = tempfile::tempdir().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    archive_with_session(archive.path());
+    git(remote.path(), &["init", "--bare", "-q", "-b", "main"]);
+    config(home.path(), archive.path(), remote.path());
+
+    let hook_entered = remote.path().join("hook-entered");
+    let allow_push = remote.path().join("allow-push");
+    fs::write(
+        remote.path().join("hooks/pre-receive"),
+        format!(
+            "#!/bin/sh\ncat > '{}'\ntouch '{}'\nwhile [ ! -e '{}' ]; do sleep 0.01; done\n",
+            remote.path().join("received-refs").display(),
+            hook_entered.display(),
+            allow_push.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(
+        remote.path().join("hooks/pre-receive"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+
+    let (backup_tx, backup_rx) = mpsc::channel();
+    let home_path = home.path().to_path_buf();
+    let backup = thread::spawn(move || {
+        let result = local::backup_session_archive(&home_path);
+        backup_tx
+            .send(result.map_err(|error| error.to_string()))
+            .unwrap();
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !hook_entered.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(hook_entered.exists(), "push did not reach pre-receive hook");
+
+    let source_dir = tempfile::tempdir().unwrap();
+    let source = source_dir.path().join("source.jsonl");
+    fs::write(
+        &source,
+        concat!(
+            "{\"type\":\"session\",\"id\":\"race-session\"}\n",
+            "{\"id\":\"entry-1\",\"parentId\":null}\n"
+        ),
+    )
+    .unwrap();
+    let (capture_tx, capture_rx) = mpsc::channel();
+    let source = source.clone();
+    let archive_path = archive.path().to_path_buf();
+    let capture = thread::spawn(move || {
+        let result = local::capture_session(
+            &source,
+            &json!({
+                "schema_version": 1,
+                "harness": "pi",
+                "session_id": "race-session",
+                "availability": "available",
+                "archive_key": "sessions/race-session.jsonl",
+                "entry_ids": ["entry-1"],
+                "branch_entry_ids": ["entry-1"],
+                "leaf_id": "entry-1",
+                "cutoff_entry_id": "entry-1"
+            }),
+            &archive_path,
+        );
+        capture_tx
+            .send(result.map_err(|error| error.to_string()))
+            .unwrap();
+    });
+    let capture_before_push = capture_rx.recv_timeout(Duration::from_secs(5)).ok();
+    let capture_completed_during_push = capture_before_push.is_some();
+
+    // Always release the remote hook before asserting so a failed test cannot strand threads.
+    fs::write(&allow_push, "continue").unwrap();
+    let backup_result = backup_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    backup.join().unwrap();
+    let capture_result = match capture_before_push {
+        Some(result) => result,
+        None => capture_rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+    };
+    capture.join().unwrap();
+    assert!(
+        capture_completed_during_push,
+        "capture did not finish during push"
+    );
+
+    let receipt = backup_result.unwrap();
+    let capture = capture_result.unwrap();
+    let remote_commit = git(remote.path(), &["rev-parse", "refs/heads/main"]);
+    assert_eq!(receipt["status"], "backed_up");
+    assert_eq!(capture["status"], "captured");
+    assert_eq!(receipt["commit"].as_str(), Some(remote_commit.as_str()));
 }
 
 #[test]

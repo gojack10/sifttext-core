@@ -1721,13 +1721,12 @@ pub fn backup_session_archive(home: &Path) -> Result<Value> {
         "archive root must be a Git worktree",
     )?;
     let remote = remote.ok_or("session backup remote is missing")?;
-    git(
-        &root,
-        &["push", "--porcelain", &remote, "HEAD:refs/heads/main"],
-    )?;
+    let commit = git(&root, &["rev-parse", "HEAD"])?;
+    let refspec = format!("{commit}:refs/heads/main");
+    git(&root, &["push", "--porcelain", &remote, &refspec])?;
     Ok(json!({
         "status": "backed_up",
-        "commit": git(&root, &["rev-parse", "HEAD"])?,
+        "commit": commit,
         "destination_configured": true
     }))
 }
