@@ -127,13 +127,12 @@ fn parallel_node_inventory_preserves_serial_bytes_links_and_refusals() {
     crate::INVENTORY_SPAWN_FAILURE.with(|failure| failure.set(Some(1)));
     let refused = Store::read(d.path());
     crate::INVENTORY_SPAWN_FAILURE.with(|failure| failure.set(None));
-    assert!(
-        refused
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("injected inventory spawn failure")
-    );
+    let error = refused.err().unwrap();
+    let problem = error
+        .downcast_ref::<crate::source_error::SourceError>()
+        .unwrap();
+    assert_eq!(problem.kind, "io");
+    assert_eq!(problem.path, "nodes");
     assert_eq!(Store::read(d.path()).unwrap().nodes.len(), 128);
     for (kind, expected) in [
         (std::io::ErrorKind::NotFound, "not_found"),
@@ -144,7 +143,13 @@ fn parallel_node_inventory_preserves_serial_bytes_links_and_refusals() {
         let refused = Store::read(d.path());
         crate::INVENTORY_IO_FAILURE.with(|failure| failure.set(None));
         let error = refused.err().unwrap();
-        assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(), kind);
+        assert_eq!(
+            error
+                .downcast_ref::<crate::source_error::SourceError>()
+                .unwrap()
+                .kind,
+            expected
+        );
         assert_eq!(
             crate::index::Refusal::from_error("capture", error.as_ref()).kind,
             expected
@@ -175,8 +180,11 @@ fn parallel_identity_sweeps_preserve_maps_and_typed_refusals() {
         fs::remove_file(&file).unwrap();
         let error = coherent_capture::identities_with_workers(d.path(), &residues, 4).unwrap_err();
         assert_eq!(
-            error.downcast_ref::<std::io::Error>().unwrap().kind(),
-            std::io::ErrorKind::NotFound
+            error
+                .downcast_ref::<crate::source_error::SourceError>()
+                .unwrap()
+                .kind,
+            "not_found"
         );
         fs::write(&file, bytes).unwrap();
         assert!(capture.unchanged_all().is_err()); // same-byte inode replacement
@@ -382,6 +390,15 @@ fn freshness_identity_and_distinct_asset_protections() {
     fs::write(file.with_extension("new"), fs::read(&file).unwrap()).unwrap();
     fs::rename(file.with_extension("new"), file).unwrap();
     assert!(captured.unchanged().is_err());
+    let marker = d.path().join("nodes/.keep");
+    fs::write(&marker, "").unwrap();
+    let captured = Capture::read(d.path(), None).unwrap();
+    fs::write(d.path().join("replacement"), "").unwrap();
+    fs::rename(d.path().join("replacement"), marker).unwrap();
+    assert!(
+        captured.unchanged_all().is_err(),
+        "same-byte marker replacement must retain the physical freshness guard"
+    );
 }
 
 #[test]

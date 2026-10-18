@@ -207,6 +207,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let second = n.cli(&["worktree", text(&home)]);
     let first_path = PathBuf::from(first["worktree"].as_str().unwrap());
     let second_path = PathBuf::from(second["worktree"].as_str().unwrap());
+    fs::write(first_path.join("nodes/.keep"), "").unwrap();
     let root = n.cli(&[
         "create",
         text(&first_path),
@@ -239,6 +240,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     n.finished(&home, &first, &first_receipt, &first_files);
     let accepted = n.cli(&["accepted", text(&home)]);
     assert_eq!(accepted["status"], "current");
+    assert_eq!(fs::read(home.join("nodes/.keep")).unwrap(), b"");
     let forced = n.run(
         env!("CARGO_BIN_EXE_sifttext"),
         &["accepted", text(&home), "-y"],
@@ -401,6 +403,17 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     );
     assert!(invalid_receipt.get("graph_checks").is_none());
     assert!(invalid_receipt["validation"].get("graph").is_none());
+    assert_eq!(invalid_receipt["validation"]["field"], "name");
+    assert_eq!(
+        invalid_receipt["validation"]["path"],
+        relative.as_str()
+    );
+    assert!(invalid_receipt["validation"].get("reason").is_some());
+    assert!(
+        invalid_receipt["validation"]["rows"][0]
+            .get("rule")
+            .is_none()
+    );
     assert_eq!(snapshot(&home), before_refusal);
     assert!(invalid_path.exists());
     fs::write(evidence.join("result.json"), serde_json::to_vec_pretty(&json!({"status":"passed","scope":"same-base concurrent drafts, fast-forward/merge history, exact normal-home bytes/read/SQL/search/navigation, draft/branch cleanup, conflict repair, and real CLI candidate-validation rejection without graph-routing metadata","last":repair_receipt,"validation_rejection":invalid_receipt,"commands":n.records.len()})).unwrap()).unwrap();

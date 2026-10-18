@@ -132,11 +132,8 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
     if let Some(object) = value.as_object_mut() {
         object.remove("graph_checks");
     }
-    if let Some(validation) = value
-        .get_mut("validation")
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        validation.remove("graph");
+    if let Some(validation) = value.get_mut("validation") {
+        gate::customer_report(validation);
     }
     serde_json::to_string_pretty(&value).map_err(Into::into)
 }
@@ -178,6 +175,7 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
             }],
             graph: graph.clone(),
             failure: None,
+            problem: None,
         }),
         index_reuse: None,
         accepted_index_available: false,
@@ -824,7 +822,7 @@ fn authored_tree(repo: &Path, revision: &str) -> Result<()> {
         let link = meta.starts_with("120000 blob ");
         let allowed = match parts.as_slice() {
             [".gitignore"] => regular,
-            ["trees", ".keep"] => regular,
+            ["trees", ".keep"] | ["nodes", ".keep"] => regular,
             ["trees", id] => link && crate::uuid(id),
             ["nodes", id, "node.md" | "children.order" | "session-sources.json"] => {
                 regular && crate::uuid(id)

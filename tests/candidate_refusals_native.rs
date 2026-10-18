@@ -257,7 +257,7 @@ fn native_refusals_preserve_bytes_privacy_exit_and_git_nonpublication() {
         &store,
         json!({"store":store}),
         "rejected",
-        Some(("candidate_capture", "unknown")),
+        Some(("candidate_capture", "unsafe_filesystem")),
     );
     fs::remove_file(evidence.join("hard-link")).unwrap();
     assert_eq!(

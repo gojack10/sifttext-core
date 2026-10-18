@@ -344,7 +344,7 @@ fn run() -> Result<()> {
                 rest.first().map(Path::new),
                 rest.iter().skip(1).cloned().collect(),
             )?;
-            print_large_return(&format!("{}\n", report.lean()?), force)?;
+            print_large_return(&format!("{}\n", report.cli_lean()?), force)?;
             return Ok(());
         }
         [cmd, before, after, rest @ ..] if cmd == "normalize" => {
@@ -402,7 +402,7 @@ fn run() -> Result<()> {
             )
             .map_err(|e| {
                 if let Some(refusal) = e.downcast_ref::<sifttext_file_graph::index::Refusal>() {
-                    return *refusal;
+                    return refusal.clone();
                 }
                 sifttext_file_graph::index::Refusal::from_error(
                     if e.is::<rusqlite::Error>() {
@@ -419,6 +419,7 @@ fn run() -> Result<()> {
                     .unwrap_or(sifttext_file_graph::index::Refusal {
                         stage: "search",
                         kind: "unknown",
+                        problem: None,
                     })
                     .into());
             }

@@ -141,7 +141,7 @@ fn candidate_refusals_capture_missing_invalid_and_unknown_are_not_timeouts() {
     refused(
         &gate::validate(&p, &request(&absent)),
         "candidate_capture",
-        "unknown",
+        "unsafe_filesystem",
     );
     fs::remove_file(t.path().join("hard-link")).unwrap();
     let mut q = request(&absent);

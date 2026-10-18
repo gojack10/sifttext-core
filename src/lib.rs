@@ -87,18 +87,6 @@ pub mod native_kb;
 pub mod neighborhoods;
 pub mod outline_artifacts;
 #[cfg(test)]
-#[path = "../tests/successor/session_attachments.rs"]
-mod session_attachment_tests;
-#[cfg(test)]
-#[path = "../tests/successor/session_retention_config.rs"]
-mod session_retention_config_tests;
-#[cfg(test)]
-#[path = "../tests/successor/session_backup.rs"]
-mod session_backup_tests;
-#[cfg(test)]
-#[path = "../tests/successor/session_capture.rs"]
-mod session_capture_tests;
-#[cfg(test)]
 #[path = "../tests/successor/outline_residue.rs"]
 mod outline_residue_tests;
 pub mod outline_rows;
@@ -109,6 +97,19 @@ mod prepared_publication_tests;
 #[cfg(test)]
 #[path = "../tests/successor/publication_graph_transition.rs"]
 mod publication_graph_transition_tests;
+#[cfg(test)]
+#[path = "../tests/successor/session_attachments.rs"]
+mod session_attachment_tests;
+#[cfg(test)]
+#[path = "../tests/successor/session_backup.rs"]
+mod session_backup_tests;
+#[cfg(test)]
+#[path = "../tests/successor/session_capture.rs"]
+mod session_capture_tests;
+#[cfg(test)]
+#[path = "../tests/successor/session_retention_config.rs"]
+mod session_retention_config_tests;
+mod source_error;
 #[cfg(test)]
 #[path = "../tests/successor/structural_diagnostics.rs"]
 mod structural_diagnostics_tests;
@@ -155,11 +156,11 @@ mod token_metadata_tests;
 mod generated_metadata_tests;
 
 #[cfg(test)]
-#[path = "../tests/successor/status.rs"]
-mod status_tests;
-#[cfg(test)]
 #[path = "../tests/successor/status_gate.rs"]
 mod status_gate_tests;
+#[cfg(test)]
+#[path = "../tests/successor/status.rs"]
+mod status_tests;
 
 #[cfg(test)]
 #[path = "../tests/successor/neighborhoods.rs"]
@@ -280,10 +281,34 @@ fn markdown(text: &str) -> Result<Markdown<'_>> {
             )?;
             let trimmed = value.trim_matches([' ', '\t']);
             // Validate even unknown metadata, but never reserialize it.
-            let _: serde_json::Value = serde_json::from_str(trimmed)?;
-            require(
-                fields.insert(key, trimmed).is_none(),
-                "duplicate metadata key",
+            let known = [
+                "id",
+                "name",
+                "micro_summary",
+                "see_also",
+                "status",
+                "scope",
+                "warnings",
+                "blocker",
+                "deferred_reason",
+                "discard_reason",
+            ]
+            .contains(&key)
+            .then_some(key);
+            source_error::context(
+                serde_json::from_str::<serde_json::Value>(trimmed)
+                    .map(|_| ())
+                    .map_err(Into::into),
+                Path::new("."),
+                known,
+            )?;
+            source_error::context(
+                require(
+                    fields.insert(key, trimmed).is_none(),
+                    "duplicate metadata key",
+                ),
+                Path::new("."),
+                known,
             )?;
             if key == "name" {
                 let start = offset + line.find(':').unwrap() + 1 + value.len()
@@ -293,12 +318,28 @@ fn markdown(text: &str) -> Result<Markdown<'_>> {
         }
         offset += raw.len();
     }
-    let field = |key| fields.get(key).copied().ok_or("missing required metadata");
+    fn field<'a, T: serde::Deserialize<'a>>(
+        fields: &BTreeMap<&str, &'a str>,
+        key: &str,
+    ) -> Result<T> {
+        source_error::context(
+            (|| {
+                Ok(serde_json::from_str(
+                    fields
+                        .get(key)
+                        .copied()
+                        .ok_or("missing required metadata")?,
+                )?)
+            })(),
+            Path::new("."),
+            Some(key),
+        )
+    }
     let authored = Authored {
-        id: serde_json::from_str(field("id")?)?,
-        name: serde_json::from_str(field("name")?)?,
-        micro_summary: serde_json::from_str(field("micro_summary")?)?,
-        see_also: serde_json::from_str(field("see_also")?)?,
+        id: field(&fields, "id")?,
+        name: field(&fields, "name")?,
+        micro_summary: field(&fields, "micro_summary")?,
+        see_also: field(&fields, "see_also")?,
         content: body.ok_or("missing Markdown closing fence")?.to_owned(),
     };
     Ok(Markdown {
@@ -342,6 +383,26 @@ fn entries(path: &Path) -> Result<Vec<PathBuf>> {
         paths.push(entry?.path());
     }
     paths.sort();
+    Ok(paths)
+}
+
+// Legacy empty homes tracked this marker. It is structural, never a node.
+fn node_entries(path: &Path) -> Result<Vec<PathBuf>> {
+    let mut paths = entries(path)?;
+    paths.retain(|p| p.file_name().is_none_or(|n| n != ".keep"));
+    let marker = path.join(".keep");
+    if fs::symlink_metadata(&marker).is_ok() {
+        source_error::context(
+            (|| {
+                require(
+                    read_regular(&marker)?.is_empty(),
+                    "nonempty node directory marker",
+                )
+            })(),
+            Path::new("nodes/.keep"),
+            None,
+        )?;
+    }
     Ok(paths)
 }
 
@@ -420,12 +481,7 @@ fn inventory(path: &Path, root: &Path, result: &mut BTreeMap<PathBuf, Entry>) ->
                         .map(|()| batch)
                         // Box<dyn Error> is not Send. Keep IO identity intact;
                         // fixed native guard errors retain their exact strings.
-                        .map_err(|error| {
-                            error
-                                .downcast::<std::io::Error>()
-                                .map(|error| *error)
-                                .map_err(|error| error.to_string())
-                        })
+                        .map_err(source_error::WorkerError::capture)
                 }) {
                     Ok(worker) => workers.push(worker),
                     Err(error) => {
@@ -443,14 +499,9 @@ fn inventory(path: &Path, root: &Path, result: &mut BTreeMap<PathBuf, Entry>) ->
         // Drain every worker before returning any error or accepting bytes.
         startup?;
         for batch in batches {
-            let batch = batch.map_err(|_| "inventory worker panicked")?.map_err(
-                |error| -> Box<dyn std::error::Error> {
-                    match error {
-                        Ok(error) => error.into(),
-                        Err(message) => message.into(),
-                    }
-                },
-            )?;
+            let batch = batch
+                .map_err(|_| "inventory worker panicked")?
+                .map_err(source_error::WorkerError::restore)?;
             result.extend(batch);
         }
         Ok(())
@@ -466,76 +517,89 @@ fn inventory_entries(
 ) -> Result<()> {
     for p in paths {
         let rel = p.strip_prefix(root)?.to_path_buf();
-        if rel == Path::new(".git") {
-            continue;
-        }
-        // SQLite is derived, can exceed the authored-file limit, and changes
-        // during refresh. Never feed cache bytes back into authored validation.
-        if [
-            ".sifttext/index.sqlite",
-            ".sifttext/index.sqlite-journal",
-            ".sifttext/index.sqlite-wal",
-            ".sifttext/index.sqlite-shm",
-        ]
-        .iter()
-        .any(|cache| rel == Path::new(cache))
-        {
-            let meta = fs::symlink_metadata(&p)?;
-            require(meta.is_file(), "unsafe derived cache entry")?;
-            continue;
-        }
-        if token_metadata::derived(&rel) && token_metadata::safe_derived(&p)? {
-            continue;
-        }
-        if outlines::derived(&rel) {
-            outlines::safe_derived(&p)?;
-            continue;
-        }
-        let parts: Vec<_> = rel.components().collect();
-        if parts.len() == 4
-            && parts[0].as_os_str() == "nodes"
-            && uuid(parts[1].as_os_str().to_str().unwrap_or_default())
-            && parts[2].as_os_str() == "artifacts"
-            && parts[3].as_os_str() == "chats"
-        {
-            // Harness session links are local navigation, not authored tree assets.
-            // Never follow or serialize their targets; all other unrelated links remain refused.
-            real_dir(&p)?;
-            continue;
-        }
-        if rel.parent() == Some(Path::new("nodes")) {
-            real_dir(&p)?;
-            require(
-                uuid(&name(&p)?),
-                "node directory is not a canonical full UUID",
-            )?;
-        }
-        let authored_file = parts.len() == 3
-            && parts[0].as_os_str() == "nodes"
-            && ["node.md", "children.order"]
+        source_error::context(
+            (|| -> Result<()> {
+                if rel == Path::new(".git") {
+                    return Ok(());
+                }
+                if rel == Path::new("nodes/.keep") {
+                    let bytes = read_regular(p)?;
+                    require(bytes.is_empty(), "nonempty node directory marker")?;
+                    result.insert(rel.clone(), Entry::File(bytes));
+                    return Ok(());
+                }
+                // SQLite is derived, can exceed the authored-file limit, and changes
+                // during refresh. Never feed cache bytes back into authored validation.
+                if [
+                    ".sifttext/index.sqlite",
+                    ".sifttext/index.sqlite-journal",
+                    ".sifttext/index.sqlite-wal",
+                    ".sifttext/index.sqlite-shm",
+                ]
                 .iter()
-                .any(|n| parts[2].as_os_str() == *n);
-        let meta = fs::symlink_metadata(&p)?;
-        let e = if authored_file {
-            Entry::File(read_regular(&p)?)
-        } else if meta.file_type().is_symlink() {
-            // Only relationship directories may contain links, already checked individually.
-            let parts: Vec<_> = rel.components().collect();
-            require(
-                (parts.len() == 2 && parts[0].as_os_str() == "trees")
-                    || (parts.len() == 4
-                        && parts[0].as_os_str() == "nodes"
-                        && parts[2].as_os_str() == "children"),
-                "unsafe unrelated symlink",
-            )?;
-            Entry::Link(fs::read_link(&p)?)
-        } else if meta.is_dir() {
-            inventory(&p, root, result)?;
-            Entry::Dir
-        } else {
-            Entry::File(read_regular(&p)?)
-        };
-        result.insert(rel, e);
+                .any(|cache| rel == Path::new(cache))
+                {
+                    let meta = fs::symlink_metadata(&p)?;
+                    require(meta.is_file(), "unsafe derived cache entry")?;
+                    return Ok(());
+                }
+                if token_metadata::derived(&rel) && token_metadata::safe_derived(&p)? {
+                    return Ok(());
+                }
+                if outlines::derived(&rel) {
+                    outlines::safe_derived(&p)?;
+                    return Ok(());
+                }
+                let parts: Vec<_> = rel.components().collect();
+                if parts.len() == 4
+                    && parts[0].as_os_str() == "nodes"
+                    && uuid(parts[1].as_os_str().to_str().unwrap_or_default())
+                    && parts[2].as_os_str() == "artifacts"
+                    && parts[3].as_os_str() == "chats"
+                {
+                    // Harness session links are local navigation, not authored tree assets.
+                    // Never follow or serialize their targets; all other unrelated links remain refused.
+                    real_dir(&p)?;
+                    return Ok(());
+                }
+                if rel.parent() == Some(Path::new("nodes")) {
+                    real_dir(&p)?;
+                    require(
+                        uuid(&name(&p)?),
+                        "node directory is not a canonical full UUID",
+                    )?;
+                }
+                let authored_file = parts.len() == 3
+                    && parts[0].as_os_str() == "nodes"
+                    && ["node.md", "children.order"]
+                        .iter()
+                        .any(|n| parts[2].as_os_str() == *n);
+                let meta = fs::symlink_metadata(&p)?;
+                let e = if authored_file {
+                    Entry::File(read_regular(&p)?)
+                } else if meta.file_type().is_symlink() {
+                    // Only relationship directories may contain links, already checked individually.
+                    let parts: Vec<_> = rel.components().collect();
+                    require(
+                        (parts.len() == 2 && parts[0].as_os_str() == "trees")
+                            || (parts.len() == 4
+                                && parts[0].as_os_str() == "nodes"
+                                && parts[2].as_os_str() == "children"),
+                        "unsafe unrelated symlink",
+                    )?;
+                    Entry::Link(fs::read_link(&p)?)
+                } else if meta.is_dir() {
+                    inventory(&p, root, result)?;
+                    Entry::Dir
+                } else {
+                    Entry::File(read_regular(&p)?)
+                };
+                result.insert(rel.clone(), e);
+                Ok(())
+            })(),
+            &rel,
+            None,
+        )?;
     }
     Ok(())
 }
@@ -608,14 +672,14 @@ impl Store {
         let mut dirs = BTreeMap::new();
         if let Some((base_path, base_files)) = base {
             for (rel, entry) in base_files {
-                if rel.parent() == Some(Path::new("nodes")) {
+                if rel.parent() == Some(Path::new("nodes")) && rel != Path::new("nodes/.keep") {
                     require(matches!(entry, Entry::Dir), "not a real node directory")?;
                     dirs.insert(name(rel)?, base_path.join(rel));
                 }
             }
         }
         for (rel, entry) in &files {
-            if rel.parent() == Some(Path::new("nodes")) {
+            if rel.parent() == Some(Path::new("nodes")) && rel != Path::new("nodes/.keep") {
                 require(matches!(entry, Entry::Dir), "not a real node directory")?;
                 dirs.insert(name(rel)?, path.join(rel));
             }

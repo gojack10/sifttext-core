@@ -396,7 +396,7 @@ pub fn check(
             pause_before_accept: None,
         },
     );
-    require(report.status == "current", &report.lean()?)?;
+    require(report.status == "current", &report.cli_lean()?)?;
     Ok(report)
 }
 
@@ -441,7 +441,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
                 },
                 None,
             );
-            require(report.status == "current", &report.lean()?)?;
+            require(report.status == "current", &report.cli_lean()?)?;
             Ok(capture
                 .ok_or("missing validated starter capture")?
                 .into_snapshot())
@@ -2270,7 +2270,7 @@ fn checked_snapshot(policy: &Policy, path: &Path, before: Option<&Path>) -> Resu
         },
         None,
     );
-    require(report.status == "current", &report.lean()?)?;
+    require(report.status == "current", &report.cli_lean()?)?;
     Ok(capture
         .ok_or("missing validated creation snapshot")?
         .into_snapshot())
@@ -2318,10 +2318,10 @@ pub fn read(policy: &Policy, path: &Path, prefix: &str) -> Result<String> {
 
 pub fn refresh(policy: &Policy, path: &Path) -> Result<index::View> {
     let view = index::refresh(policy, path, None, index::Mode::Incremental, None)?;
-    require(
-        view.status == "current",
-        "index not current; inspect authored files, do not use stale results",
-    )?;
+    if view.status != "current" {
+        return Err(view.refusal.clone()
+            .ok_or("index not current; inspect authored files, do not use stale results")?.into());
+    }
     Ok(view)
 }
 
@@ -2366,9 +2366,9 @@ pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
             Ok(json!({"columns":columns,"rows":out}))
         },
     )?;
-    require(
-        view.status == "current",
-        "SQL source changed; retry from current authored files",
-    )?;
+    if view.status != "current" {
+        return Err(view.refusal
+            .ok_or("SQL source changed; retry from current authored files")?.into());
+    }
     Ok(json!({"status":view.status,"version":view.version,"version_scope":"authored_store","result":result}))
 }

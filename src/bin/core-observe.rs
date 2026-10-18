@@ -239,7 +239,7 @@ fn run(diagnostics: &mut bool) -> Result<CommandStatus> {
                 mode,
                 pause_before_accept.as_ref(),
             )?;
-            emit_retrieval(&output, output.status, output.refusal, *diagnostics)
+            emit_retrieval(&output, output.status, output.refusal.clone(), *diagnostics)
         }
         Request::IndexPrepared {
             store,

@@ -96,6 +96,52 @@ impl std::fmt::Display for StructuralIssue {
     }
 }
 impl std::error::Error for StructuralIssue {}
+impl StructuralIssue {
+    fn problem(&self) -> crate::source_error::SourceError {
+        let mut path = self
+            .source
+            .as_ref()
+            .map(|id| format!("nodes/{id}"))
+            .unwrap_or_else(|| "trees".into());
+        let (field, reason) = match self.law {
+            "src/lib.rs:Store.read_view/node_uuid_identity" => {
+                path.push_str("/node.md");
+                (
+                    Some("id".into()),
+                    "metadata id must match the node directory UUID",
+                )
+            }
+            "src/lib.rs:Store.read_view/order_uuid"
+            | "src/lib.rs:Store.read_view/order_membership" => {
+                path.push_str("/children.order");
+                (
+                    None,
+                    "children.order must list each child UUID exactly once and match the child links",
+                )
+            }
+            _ => {
+                if self.source.is_some() {
+                    path.push_str("/children");
+                }
+                if let Some(target) = &self.target {
+                    path.push('/');
+                    path.push_str(target);
+                }
+                (
+                    None,
+                    "relationship must name an existing canonical node using the expected relative symlink",
+                )
+            }
+        };
+        crate::source_error::SourceError {
+            kind: "invalid_candidate",
+            path,
+            field,
+            reason,
+            next_action: "repair this relationship or metadata in the retained files, then retry",
+        }
+    }
+}
 
 pub(crate) fn structural_guard(
     ok: bool,
@@ -143,6 +189,9 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
     if error.is::<StructuralIssue>() {
         return "invalid_candidate";
     }
+    if let Some(issue) = error.downcast_ref::<crate::source_error::SourceError>() {
+        return issue.kind;
+    }
     if let Some(error) = error.downcast_ref::<std::io::Error>() {
         return match error.kind() {
             std::io::ErrorKind::NotFound => "not_found",
@@ -162,6 +211,11 @@ fn failure_kind(stage: &str, error: &(dyn std::error::Error + 'static)) -> &'sta
         return match text.as_str() {
             "candidate file set changed; rebuild and recheck"
             | "validated capture policy changed" => "identity_changed",
+            "empty build stamp"
+            | "incorrect executable stamp"
+            | "malformed build stamp"
+            | "unsafe build stamp path"
+            | "duplicate build stamp entry" => "invalid_configuration",
             _ => "unknown",
         };
     }
@@ -261,10 +315,15 @@ pub struct Report {
     /// Absent on success so successful observations retain their exact shape.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure: Option<Failure>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<crate::source_error::SourceError>,
 }
 impl Report {
     fn observe<T>(&mut self, stage: &'static str, result: Result<T>) -> Result<T> {
         result.inspect_err(|error| {
+            self.problem = error
+                .downcast_ref::<crate::source_error::SourceError>()
+                .cloned();
             self.failure = Some(Failure {
                 stage,
                 kind: failure_kind(stage, error.as_ref()),
@@ -296,6 +355,15 @@ impl Report {
         row.target = target.filter(|id| crate::uuid(id)).map(str::to_owned);
         row.law = Some(law);
     }
+    /// The public CLI reports actionable problems; observer serialization retains diagnostics.
+    pub fn cli_lean(&self) -> Result<String> {
+        if self.status == "current" {
+            return self.lean();
+        }
+        let mut value = serde_json::to_value(self)?;
+        customer_report(&mut value);
+        Ok(crate::lean_render::render(&value).map_err(std::io::Error::other)?)
+    }
     pub fn lean(&self) -> Result<String> {
         let mut value = json!({
             "status": self.status, "version": self.version, "before_version": self.before_version,
@@ -309,6 +377,79 @@ impl Report {
             value["failure_kind"] = json!(failure.kind);
         }
         Ok(crate::lean_render::render(&value).map_err(std::io::Error::other)?)
+    }
+}
+
+/// One customer projection for direct checks and nested publication receipts.
+pub(crate) fn customer_report(value: &mut serde_json::Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    object.remove("graph");
+    if object.get("status").is_some_and(|s| s == "current") {
+        return;
+    }
+    if let Some(failure) = object.remove("failure") {
+        object.insert("failure_kind".into(), failure["kind"].clone());
+    }
+    if let Some(problem) = object
+        .remove("problem")
+        .and_then(|p| p.as_object().cloned())
+    {
+        for (key, val) in problem {
+            if key != "kind" {
+                object.insert(key, val);
+            }
+        }
+    } else {
+        let kind = object
+            .get("failure_kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("invalid_candidate");
+        let (reason, action) = match kind {
+            "not_found" => (
+                "required path is missing",
+                "check the supplied knowledge home and restore missing files; do not reinitialize existing knowledge",
+            ),
+            "permission_denied" => (
+                "permission denied",
+                "check permissions and retry; retain existing files",
+            ),
+            "invalid_configuration" => (
+                "checked application configuration is invalid",
+                "rebuild or reinstall the checked application; retain existing knowledge",
+            ),
+            "resource_exhausted" => (
+                "validation resource limit reached",
+                "free resources or use a smaller operation, then retry; retain existing files",
+            ),
+            "identity_changed" => (
+                "checked software or configuration changed",
+                "rebuild or reinstall the checked application, then retry; retain knowledge",
+            ),
+            "source_changed" => (
+                "source changed during validation",
+                "retry against a stable source; retain the draft",
+            ),
+            "invalid_candidate" => (
+                "knowledge validation rejected",
+                "inspect the reported node IDs and checks, repair the retained files, then retry",
+            ),
+            _ => (
+                "validation could not complete",
+                "retain existing files and inspect machine-readable diagnostics before retrying",
+            ),
+        };
+        object.insert("reason".into(), json!(reason));
+        object.insert("next_action".into(), json!(action));
+    }
+    if let Some(rows) = object.get_mut("rows").and_then(|v| v.as_array_mut()) {
+        for row in rows {
+            if let Some(row) = row.as_object_mut() {
+                row.remove("rule");
+                row.remove("law");
+            }
+        }
     }
 }
 
@@ -427,6 +568,7 @@ pub(crate) fn validate_with_capture(
         nodes: 0,
         rows: vec![],
         failure: None,
+        problem: None,
         graph: GraphCheck {
             mode: "full_law",
             reason: "unproven base",
@@ -445,11 +587,19 @@ pub(crate) fn validate_with_capture(
             }
             if let Some(issue) = error.downcast_ref::<StructuralIssue>() {
                 report.structural(issue.source.as_deref(), issue.target.as_deref(), issue.law);
+                report.problem = Some(issue.problem());
                 return (report, None);
             }
             // An unlocated failure (including helper timeout) does not establish
             // that any individual node is invalid. Keep one candidate-wide row.
-            report.reject(None, "capture_or_graph_invalid", CANDIDATE_RULE, None);
+            report.problem = error
+                .downcast_ref::<crate::source_error::SourceError>()
+                .cloned();
+            let check = report
+                .problem
+                .as_ref()
+                .map_or("validation_unavailable", |p| p.kind);
+            report.reject(None, check, CANDIDATE_RULE, None);
             None
         }
     };

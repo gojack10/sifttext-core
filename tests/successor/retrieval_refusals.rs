@@ -158,7 +158,7 @@ fn library_carries_refusals_without_changing_legacy_success_or_unavailable_json(
     .unwrap();
     let out = search::search(&policy, &req).unwrap();
     assert_eq!(out.status, "error");
-    assert_eq!(out.refusal.unwrap().stage, "source_capture");
+    assert_eq!(out.refusal.as_ref().unwrap().stage, "source_capture");
     assert_eq!(
         search::observation(&out),
         json!({"status":"error","version":null,"total_matches":0,"results":[],"other_groups":[]})
@@ -207,7 +207,7 @@ fn capture_permission_resource_and_cache_contention_remain_failures_and_recover(
         &run(&req),
         d.path(),
         "source_capture",
-        "unsafe_or_oversized_source",
+        "unsafe_filesystem",
     );
     fs::write(source(d.path()), original).unwrap();
     let db = rusqlite::Connection::open(d.path().join(".sifttext/index.sqlite")).unwrap();
@@ -236,10 +236,11 @@ fn checked_helper_failure_is_preserved_not_guessed() {
     let out = search::search(&policy, &req).unwrap();
     assert_eq!(out.status, "error");
     assert_eq!(
-        out.refusal.unwrap(),
+        out.refusal.clone().unwrap(),
         Refusal {
             stage: "source_validation",
-            kind: "helper_failed"
+            kind: "helper_failed",
+            problem: None
         }
     );
     assert_eq!(
@@ -295,7 +296,7 @@ fn native_search_browse_diagnostics_nonpublication_and_recovery() {
         "unknown",
     );
     assert_eq!(fs::read(&cache).unwrap(), cached);
-    let cli = |stage: &str| {
+    let cli = |stage: &str, kind: &str| {
         let out = Command::new(binary("sifttext"))
             .arg("search")
             .arg(d.path())
@@ -308,9 +309,9 @@ fn native_search_browse_diagnostics_nonpublication_and_recovery() {
             assert!(!text.contains(PRIVATE));
             assert!(!text.contains(d.path().to_str().unwrap()));
         }
-        assert!(String::from_utf8_lossy(&out.stderr).contains(&format!("{stage}: unknown")));
+        assert!(String::from_utf8_lossy(&out.stderr).contains(&format!("{stage}: {kind}")));
     };
-    cli("source_validation");
+    cli("source_validation", "unknown");
     fs::write(&p, &original).unwrap();
     assert_eq!(run(&req).stdout, first.stdout);
     fs::write(&p, format!("malformed {PRIVATE}")).unwrap();
@@ -319,7 +320,7 @@ fn native_search_browse_diagnostics_nonpublication_and_recovery() {
         &run(&browse),
         d.path(),
         "source_capture",
-        "unknown",
+        "invalid_capture",
     );
     let candidate = run(&json!({"op":"validate_candidate","store":d.path(),"diagnostics":true}));
     assert_eq!(candidate.status.code(), Some(1));
@@ -340,7 +341,7 @@ fn native_search_browse_diagnostics_nonpublication_and_recovery() {
         "source_capture",
         "not_found",
     );
-    cli("source_capture");
+    cli("source_capture", "invalid_capture");
     fs::write(&p, &original).unwrap();
     let mut scope = req.clone();
     scope["under_node_id"] = json!(PRIVATE);

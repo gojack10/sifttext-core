@@ -14,11 +14,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Fixed, privacy-safe failure identity. Never contains source/error text or paths.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+/// Fixed failure identity with optional safe native path/field context.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Refusal {
     pub stage: &'static str,
     pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<crate::source_error::SourceError>,
 }
 impl Refusal {
     pub fn from_error(stage: &'static str, error: &(dyn std::error::Error + 'static)) -> Self {
@@ -26,12 +28,19 @@ impl Refusal {
         Self {
             stage,
             kind: if kind == "rejected" { "unknown" } else { kind },
+            problem: error
+                .downcast_ref::<crate::source_error::SourceError>()
+                .cloned(),
         }
     }
 }
 impl std::fmt::Display for Refusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "retrieval refused ({}: {})", self.stage, self.kind)
+        write!(f, "retrieval refused ({}: {})", self.stage, self.kind)?;
+        if let Some(problem) = &self.problem {
+            write!(f, ": {problem}")?;
+        }
+        Ok(())
     }
 }
 impl std::error::Error for Refusal {}
@@ -71,6 +80,9 @@ mod refusal_kind_tests {
 fn error_kind(error: &(dyn std::error::Error + 'static)) -> &'static str {
     if let Some(refusal) = error.downcast_ref::<Refusal>() {
         return refusal.kind;
+    }
+    if let Some(problem) = error.downcast_ref::<crate::source_error::SourceError>() {
+        return problem.kind;
     }
     if error.is::<serde_json::Error>() {
         return "invalid_request";
@@ -628,10 +640,12 @@ pub fn outline(policy: &Policy, path: &Path, id: &str, full: bool) -> Result<Str
         &mut Reuse::default(),
         |_, store, _, publication| publication.outline_text(store, &store.resolve(id)?, full),
     )?;
-    require(
-        view.status == "current",
-        "outline not current; inspect authored source",
-    )?;
+    if view.status != "current" {
+        return Err(view
+            .refusal
+            .ok_or("outline not current; inspect authored source")?
+            .into());
+    }
     text.ok_or_else(|| "no current outline returned".into())
 }
 
@@ -651,18 +665,19 @@ fn with_query_prepared<T>(
         &crate::outlines::Publication,
     ) -> Result<T>,
 ) -> Result<(View, Option<T>)> {
-    let store_path = match working_path(path, base) {
-        Ok(p) => p,
-        Err(error) => {
-            return Ok((
-                View::unavailable(
-                    "error",
-                    Refusal::from_error("source_capture", error.as_ref()),
-                ),
-                None,
-            ));
-        }
-    };
+    let store_path =
+        match crate::source_error::context(working_path(path, base), Path::new("."), None) {
+            Ok(p) => p,
+            Err(error) => {
+                return Ok((
+                    View::unavailable(
+                        "error",
+                        Refusal::from_error("source_capture", error.as_ref()),
+                    ),
+                    None,
+                ));
+            }
+        };
     let cache_dir = store_path.join(".sifttext");
     match fs::create_dir(&cache_dir) {
         Ok(()) => (),

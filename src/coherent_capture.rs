@@ -3,7 +3,7 @@
 use crate::{
     Entry, Result, Store,
     candidate_validation::{structural_context, structural_guard},
-    markdown, require, uuid,
+    markdown, require, source_error, uuid,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -51,6 +51,17 @@ pub(crate) fn from_inventory(
         count(|c| c.relationship_entries += 1);
         // Markers and real directories are structural inputs, not arbitrary assets.
         let parts: Vec<_> = p.components().collect();
+        if p == Path::new("nodes/.keep") {
+            source_error::context(
+                require(
+                    matches!(e, Entry::File(b) if b.is_empty()),
+                    "nonempty node directory marker",
+                ),
+                p,
+                None,
+            )?;
+            continue;
+        }
         if p == Path::new("nodes")
             || p == Path::new("trees")
             || (parts.len() == 2 && parts[0].as_os_str() == "nodes")
@@ -170,7 +181,12 @@ pub(crate) fn from_inventory(
                 .into()),
             }
         };
-        let parsed = markdown(std::str::from_utf8(bytes("node.md")?)?)?;
+        let file = PathBuf::from(format!("nodes/{id}/node.md"));
+        let parsed = source_error::context(
+            (|| markdown(std::str::from_utf8(bytes("node.md")?)?))(),
+            &file,
+            None,
+        )?;
         let authored = parsed.authored;
         structural_guard(
             authored.id == *id,
@@ -179,18 +195,37 @@ pub(crate) fn from_inventory(
             "src/lib.rs:Store.read_view/node_uuid_identity",
             "duplicate/mismatched node UUID",
         )?;
-        require(
-            !authored.name.trim().is_empty() && !authored.micro_summary.trim().is_empty(),
-            "blank node name/micro-summary",
-        )?;
-        for r in &authored.see_also {
-            require(uuid(&r.target), "reference target is not a UUID")?;
-            require(!r.reason.trim().is_empty(), "blank relationship reason")?;
+        for (field, value) in [
+            ("name", &authored.name),
+            ("micro_summary", &authored.micro_summary),
+        ] {
+            source_error::context(
+                require(!value.trim().is_empty(), "blank node name/micro-summary"),
+                &file,
+                Some(field),
+            )?;
         }
-        let order: Vec<String> = std::str::from_utf8(bytes("children.order")?)?
-            .lines()
-            .map(str::to_owned)
-            .collect();
+        for r in &authored.see_also {
+            source_error::context(
+                require(uuid(&r.target), "reference target is not a UUID"),
+                &file,
+                Some("see_also.target"),
+            )?;
+            source_error::context(
+                require(!r.reason.trim().is_empty(), "blank relationship reason"),
+                &file,
+                Some("see_also.reason"),
+            )?;
+        }
+        let order_file = PathBuf::from(format!("nodes/{id}/children.order"));
+        let order: Vec<String> = source_error::context(
+            (|| Ok(std::str::from_utf8(bytes("children.order")?)?))(),
+            &order_file,
+            None,
+        )?
+        .lines()
+        .map(str::to_owned)
+        .collect();
         structural_guard(
             order.iter().all(|c| uuid(c)),
             Some(id),
@@ -415,40 +450,56 @@ mod residue_cleanup_tests {
 
 pub(crate) fn residues(path: &Path) -> Result<Residues> {
     for dir in [path.to_path_buf(), path.join("nodes"), path.join("trees")] {
-        crate::real_dir(&dir)?;
+        let relative = dir.strip_prefix(path)?;
+        source_error::context(
+            crate::real_dir(&dir),
+            if relative.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                relative
+            },
+            None,
+        )?;
     }
     let mut result = Residues::default();
-    for dir in crate::entries(&path.join("nodes"))? {
-        crate::real_dir(&dir)?;
-        if fs::symlink_metadata(dir.join("node.md"))
-            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-        {
-            let id = crate::name(&dir)?;
-            require(
-                crate::uuid(&id),
-                "node directory is not a canonical full UUID",
-            )?;
-            let files = crate::entries(&dir)?;
-            require(!files.is_empty(), "empty source-less node directory")?;
-            for p in &files {
-                let rel = p.strip_prefix(path)?;
-                require(
-                    crate::outlines::derived(rel) || crate::token_metadata::derived(rel),
-                    "unknown source-less node resource",
-                )?;
-                let m = fs::symlink_metadata(p)?;
-                require(m.is_file() && m.nlink() == 1, "unsafe residue resource")?;
-                result.files.push(p.clone());
-                result
-                    .physical
-                    .insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
-            }
-            let m = fs::symlink_metadata(&dir)?;
-            result
-                .physical
-                .insert(dir, (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
-            result.owners.insert(id);
-        }
+    for dir in crate::node_entries(&path.join("nodes"))? {
+        source_error::context(
+            (|| -> Result<()> {
+                crate::real_dir(&dir)?;
+                if fs::symlink_metadata(dir.join("node.md"))
+                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                {
+                    let id = crate::name(&dir)?;
+                    require(
+                        crate::uuid(&id),
+                        "node directory is not a canonical full UUID",
+                    )?;
+                    let files = crate::entries(&dir)?;
+                    require(!files.is_empty(), "empty source-less node directory")?;
+                    for p in &files {
+                        let rel = p.strip_prefix(path)?;
+                        require(
+                            crate::outlines::derived(rel) || crate::token_metadata::derived(rel),
+                            "unknown source-less node resource",
+                        )?;
+                        let m = fs::symlink_metadata(p)?;
+                        require(m.is_file() && m.nlink() == 1, "unsafe residue resource")?;
+                        result.files.push(p.clone());
+                        result
+                            .physical
+                            .insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
+                    }
+                    let m = fs::symlink_metadata(&dir)?;
+                    result
+                        .physical
+                        .insert(dir.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
+                    result.owners.insert(id);
+                }
+                Ok(())
+            })(),
+            dir.strip_prefix(path)?,
+            None,
+        )?;
     }
     if result.owners.is_empty() {
         return Ok(result);
@@ -666,7 +717,7 @@ fn reconstruct(repo: &Path, commit: &str, destination: &Path) -> Result<()> {
             }
             _ => None,
         };
-        let regular = matches!(parts.as_slice(), ["trees", ".keep"])
+        let regular = matches!(parts.as_slice(), ["trees" | "nodes", ".keep"])
             || matches!(parts.as_slice(), ["nodes", id, "node.md" | "children.order"] if crate::uuid(id))
             || matches!(parts.as_slice(), ["nodes", id, "children", ".keep"] if crate::uuid(id));
         require(
@@ -705,7 +756,7 @@ fn reconstruct(repo: &Path, commit: &str, destination: &Path) -> Result<()> {
         }
     }
     require(remaining.is_empty(), "unexpected historical batch output")?;
-    for dir in crate::entries(&destination.join("nodes"))? {
+    for dir in crate::node_entries(&destination.join("nodes"))? {
         crate::real_dir(&dir)?;
         fs::create_dir_all(dir.join("children"))?;
     }
@@ -880,8 +931,20 @@ pub(crate) fn identities_with_workers(
 ) -> Result<BTreeMap<PathBuf, Identity>> {
     let mut out = BTreeMap::new();
     for dir in [path.to_path_buf(), path.join("nodes"), path.join("trees")] {
-        let m = fs::symlink_metadata(&dir)?;
-        require(m.is_dir(), "unsafe store directory")?;
+        let relative = dir.strip_prefix(path).unwrap_or(Path::new("."));
+        let m = source_error::context(
+            (|| {
+                let m = fs::symlink_metadata(&dir)?;
+                require(m.is_dir(), "unsafe store directory")?;
+                Ok(m)
+            })(),
+            if relative.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                relative
+            },
+            None,
+        )?;
         // Root/node ctime includes generated output; root-shortcut directory
         // ctime is authored membership (also detects create/delete ABA).
         let times = if dir == path.join("trees") {
@@ -891,7 +954,17 @@ pub(crate) fn identities_with_workers(
         };
         out.insert(dir, (m.dev(), m.ino(), times.0, times.1));
     }
-    let paths = crate::entries(&path.join("nodes"))?;
+    let paths = crate::node_entries(&path.join("nodes"))?;
+    let marker = path.join("nodes/.keep");
+    match fs::symlink_metadata(&marker) {
+        Ok(m) => {
+            out.insert(marker, (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => {
+            return source_error::context(Err(error.into()), Path::new("nodes/.keep"), None);
+        }
+    }
     if paths.len() >= 64 && workers > 1 {
         // Each complete physical sweep still settles before byte work starts or
         // its result is accepted. Only disjoint node subtrees run concurrently.
@@ -908,12 +981,7 @@ pub(crate) fn identities_with_workers(
                     let mut batch = BTreeMap::new();
                     node_identities(chunk, residues, &mut batch)
                         .map(|()| batch)
-                        .map_err(|error| {
-                            error
-                                .downcast::<std::io::Error>()
-                                .map(|error| *error)
-                                .map_err(|error| error.to_string())
-                        })
+                        .map_err(source_error::WorkerError::capture)
                 }) {
                     Ok(handle) => handles.push(handle),
                     Err(error) => {
@@ -930,14 +998,9 @@ pub(crate) fn identities_with_workers(
         });
         startup?;
         for batch in batches {
-            let batch = batch.map_err(|_| "identity worker panicked")?.map_err(
-                |error| -> Box<dyn std::error::Error> {
-                    match error {
-                        Ok(error) => error.into(),
-                        Err(message) => message.into(),
-                    }
-                },
-            )?;
+            let batch = batch
+                .map_err(|_| "identity worker panicked")?
+                .map_err(source_error::WorkerError::restore)?;
             out.extend(batch);
         }
     } else {
@@ -962,15 +1025,27 @@ fn node_identities(
     out: &mut BTreeMap<PathBuf, Identity>,
 ) -> Result<()> {
     for dir in paths {
-        let m = fs::symlink_metadata(&dir)?;
-        require(m.is_dir(), "unsafe node directory")?;
+        let relative = PathBuf::from("nodes").join(crate::name(dir)?);
+        let m = source_error::context(
+            (|| {
+                let m = fs::symlink_metadata(&dir)?;
+                require(m.is_dir(), "unsafe node directory")?;
+                Ok(m)
+            })(),
+            &relative,
+            None,
+        )?;
         if residues.contains(&crate::name(&dir)?) {
             continue;
         }
         out.insert(dir.clone(), (m.dev(), m.ino(), 0, 0));
         for file in ["node.md", "children.order", "children"] {
             let p = dir.join(file);
-            let m = fs::symlink_metadata(&p)?;
+            let m = source_error::context(
+                fs::symlink_metadata(&p).map_err(Into::into),
+                &relative.join(file),
+                None,
+            )?;
             out.insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
             if file == "children" {
                 identity_walk(&p, out)?;
@@ -1010,7 +1085,7 @@ impl Capture {
     }
 
     fn capture(path: &Path, base: Option<&Path>) -> Result<Self> {
-        crate::real_dir(path)?;
+        source_error::context(crate::real_dir(path), Path::new("."), None)?;
         if let Some(base) = base {
             crate::real_dir(base)?;
         }
