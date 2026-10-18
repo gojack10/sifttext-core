@@ -263,6 +263,22 @@ fn relocated_runtime_refuses_missing_and_tampered_assets() {
     )
     .unwrap();
     assert!(original.join("sifttext").is_file());
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(original.join("package.json")).unwrap()).unwrap();
+    assert_eq!(
+        manifest["pi"]["extensions"][0],
+        "./integrations/pi/session-retention.ts"
+    );
+    for file in [
+        "integrations/pi/session-retention.ts",
+        "integrations/pi/README.md",
+        "integrations/session-retention.ts",
+        "integrations/session-capture.ts",
+        "integrations/session-checkpoint.ts",
+        "integrations/session-descriptor.ts",
+    ] {
+        assert!(original.join(file).is_file(), "missing packaged Pi source {file}");
+    }
     let temp = tempfile::tempdir().unwrap();
     // macOS TMPDIR commonly traverses /var -> /private/var; homes require canonical parents.
     let root = fs::canonicalize(temp.path()).unwrap();

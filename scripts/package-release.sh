@@ -16,7 +16,7 @@ sh scripts/build.sh --release
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
 mkdir -p "$STAGE/package"
-for name in Cargo.toml Cargo.lock build.rs README.md AGENTS.md .gitignore rust-toolchain.toml install-local.sh src laws scripts tests fixtures docs nodes trees; do
+for name in Cargo.toml Cargo.lock build.rs README.md AGENTS.md .gitignore rust-toolchain.toml install-local.sh package.json integrations src laws scripts tests fixtures docs nodes trees; do
   [ ! -e "$name" ] || cp -R "$name" "$STAGE/package/$name"
 done
 mkdir "$STAGE/package/build"
