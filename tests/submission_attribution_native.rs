@@ -9,6 +9,20 @@ use std::{
 fn text(path: &Path) -> &str {
     path.to_str().unwrap()
 }
+/// CLI receipts are mid-migration: LEAN by default, JSON where the schema is
+/// nested. Decode the dialect actually emitted so a receipt moving format does
+/// not silently break these content assertions.
+fn receipt(output: &str) -> Value {
+    let body = output.trim_start();
+    if body.starts_with('{') || body.starts_with('[') {
+        serde_json::from_str(body).unwrap()
+    } else {
+        // This suite's `run` trims the trailing newline; canonical CLI LEAN is
+        // newline-terminated, so restore it before the round-trip decode.
+        let lean = format!("{}\n", body.trim_end());
+        sifttext_file_graph::outlines::decode_lean(&lean).unwrap()
+    }
+}
 struct Native {
     root: PathBuf,
     calls: Vec<Value>,
@@ -48,7 +62,7 @@ impl Native {
         let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
             .map(|p| PathBuf::from(p).join("sifttext"))
             .unwrap_or_else(|| env!("CARGO_BIN_EXE_sifttext").into());
-        serde_json::from_str(&self.run(text(&bin), args)).unwrap()
+        receipt(&self.run(text(&bin), args))
     }
     fn git(&mut self, repo: &Path, args: &[&str]) -> String {
         let mut all = vec![

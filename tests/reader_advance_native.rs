@@ -13,6 +13,17 @@ use std::{
 fn text(p: &Path) -> &str {
     p.to_str().unwrap()
 }
+/// CLI receipts are mid-migration: LEAN by default, JSON where the schema is
+/// nested. Decode the dialect actually emitted so a receipt moving format does
+/// not silently break these content assertions.
+fn receipt(output: &str) -> Value {
+    let body = output.trim_start();
+    if body.starts_with('{') || body.starts_with('[') {
+        serde_json::from_str(body).unwrap()
+    } else {
+        sifttext_file_graph::outlines::decode_lean(body).unwrap()
+    }
+}
 struct Native {
     evidence: PathBuf,
     git_home: PathBuf,
@@ -53,12 +64,7 @@ impl Native {
         String::from_utf8(out.stdout).unwrap()
     }
     fn cli(&mut self, args: &[&str]) -> Value {
-        let output = self.run(env!("CARGO_BIN_EXE_sifttext"), args, true);
-        if matches!(args.first(), Some(&"instructions" | &"index")) {
-            sifttext_file_graph::outlines::decode_lean(&output).unwrap()
-        } else {
-            serde_json::from_str(&output).unwrap()
-        }
+        receipt(&self.run(env!("CARGO_BIN_EXE_sifttext"), args, true))
     }
     fn refuse(&mut self, args: &[&str]) {
         self.run(env!("CARGO_BIN_EXE_sifttext"), args, false);

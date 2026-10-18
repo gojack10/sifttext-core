@@ -11,6 +11,17 @@ use std::{
 fn text(p: &Path) -> &str {
     p.to_str().unwrap()
 }
+/// CLI receipts are mid-migration: LEAN by default, JSON where the schema is
+/// nested. Decode the dialect actually emitted so a receipt moving format does
+/// not silently break these content assertions.
+fn receipt(output: &str) -> Value {
+    let body = output.trim_start();
+    if body.starts_with('{') || body.starts_with('[') {
+        serde_json::from_str(body).unwrap()
+    } else {
+        sifttext_file_graph::outlines::decode_lean(body).unwrap()
+    }
+}
 fn snapshot(p: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, rel: PathBuf, out: &mut BTreeMap<PathBuf, Vec<u8>>) {
         let path = root.join(&rel);
@@ -75,7 +86,7 @@ impl Native {
         String::from_utf8(out.stdout).unwrap()
     }
     fn cli(&mut self, args: &[&str]) -> Value {
-        serde_json::from_str(&self.run(env!("CARGO_BIN_EXE_sifttext"), args, true)).unwrap()
+        receipt(&self.run(env!("CARGO_BIN_EXE_sifttext"), args, true))
     }
     fn git(&mut self, p: &Path, args: &[&str]) -> String {
         let mut all = vec![
