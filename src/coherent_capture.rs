@@ -268,6 +268,9 @@ impl Residues {
         Ok(())
     }
     fn cleanup(&self) -> Result<()> {
+        self.cleanup_with_hook(|| {})
+    }
+    fn cleanup_with_hook(&self, mut after_inventory: impl FnMut()) -> Result<()> {
         if self.owners.is_empty() {
             return Ok(());
         }
@@ -299,6 +302,7 @@ impl Residues {
                 crate::entries(&dir)?.len() == files.len(),
                 "unknown residue resource",
             )?;
+            after_inventory();
             for path in files {
                 // Remove only captured generated paths; never rename the owner
                 // directory, where a late unknown file could be swept along.
@@ -322,6 +326,90 @@ impl Residues {
             fs::remove_dir(&dir)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod residue_cleanup_tests {
+    use super::{Identity, Residues};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        fs,
+        os::unix::fs::MetadataExt,
+        process::Command,
+    };
+
+    #[test]
+    fn late_unknown_file_survives_cleanup_refusal() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let mut git = Command::new("git");
+        assert!(
+            git.args(["init", "-q", root.to_str().unwrap()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(
+            Command::new("git")
+                .current_dir(root)
+                .args([
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.invalid",
+                    "-c",
+                    "commit.gpgSign=false",
+                    "commit",
+                    "--allow-empty",
+                    "-qm",
+                    "fixture",
+                ])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let owner = "71000000-0000-4000-8000-000000000002";
+        let dir = root.join("nodes").join(owner);
+        fs::create_dir_all(&dir).unwrap();
+        let generated = dir.join("outline.lean");
+        fs::write(&generated, "generated\n").unwrap();
+        let identity = |path: &std::path::Path| -> Identity {
+            let metadata = fs::symlink_metadata(path).unwrap();
+            (
+                metadata.dev(),
+                metadata.ino(),
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+            )
+        };
+        let head = Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", "--verify", "HEAD^{commit}"])
+            .output()
+            .unwrap();
+        assert!(head.status.success());
+        let captured = Residues {
+            owners: BTreeSet::from([owner.to_owned()]),
+            receipts: Vec::new(),
+            files: vec![generated.clone()],
+            physical: BTreeMap::from([
+                (dir.clone(), identity(&dir)),
+                (generated.clone(), identity(&generated)),
+            ]),
+            history: Some((root.to_owned(), head.stdout)),
+        };
+
+        let result = captured.cleanup_with_hook(|| {
+            fs::write(dir.join("unknown.txt"), "preserve me\n").unwrap();
+        });
+
+        assert!(result.is_err(), "late unknown entry must refuse cleanup");
+        assert_eq!(fs::read(dir.join("unknown.txt")).unwrap(), b"preserve me\n");
+        assert!(
+            !generated.exists(),
+            "only the captured generated file is removed"
+        );
     }
 }
 

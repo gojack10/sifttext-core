@@ -387,9 +387,85 @@ fn deleted_child_later_parent_edit_retries_and_restores_from_git_history() {
     commands.git(&store, &["commit", "-qm", "fixture: delete child"]);
     commands.git(&store, &["branch", "-f", "main", "HEAD"]);
     let deletion = commands.git(&store, &["rev-parse", "HEAD"]);
-    let deleted_refresh =
-        commands.observe(json!({"op":"index", "store":store, "mode":"incremental"}));
-    assert_eq!(deleted_refresh["status"], "current");
+    // Hold one refresh at its pre-accept barrier while another begins. The second
+    // must wait for the cleanup transaction, then observe the same current state.
+    let observer = commands.bin.join("core-observe");
+    let request = json!({"op":"index", "store":store, "mode":"incremental"});
+    let first = Barrier::start(
+        &observer,
+        &evidence,
+        "overlap-first-refresh",
+        request.clone(),
+    );
+    // The waiting trace is emitted immediately before SQLite's Immediate transaction;
+    // require it before asserting the second refresh has not reached capture.
+    let trace = evidence.join("overlap-second-refresh.trace");
+    let mut second = Command::new(&observer);
+    for (key, _) in std::env::vars_os() {
+        if key.as_encoded_bytes().starts_with(b"GIT_") {
+            second.env_remove(key);
+        }
+    }
+    second
+        .env("SIFTTEXT_RETRIEVAL_TRACE", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(fs::File::create(&trace).unwrap()));
+    let mut second = second.spawn().unwrap();
+    second
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&request).unwrap())
+        .unwrap();
+    let started = std::time::Instant::now();
+    loop {
+        let output = fs::read_to_string(&trace).unwrap_or_default();
+        assert!(
+            second.try_wait().unwrap().is_none(),
+            "overlapping refresh exited before waiting on the writer lock: {output}"
+        );
+        if output.contains("\"phase\":\"waiting\"") {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(9),
+            "overlapping refresh never reached the writer-lock boundary"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let waiting = std::time::Instant::now();
+    while waiting.elapsed() < std::time::Duration::from_millis(100) {
+        let output = fs::read_to_string(&trace).unwrap_or_default();
+        assert!(
+            !output.contains("\"phase\":\"capture\""),
+            "overlapping refresh passed the writer lock while the first held it: {output}"
+        );
+        assert!(second.try_wait().unwrap().is_none());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let output = fs::read_to_string(&trace).unwrap_or_default();
+    assert!(
+        !output.contains("\"phase\":\"capture\""),
+        "overlapping refresh passed the writer lock while the first held it: {output}"
+    );
+    assert!(second.try_wait().unwrap().is_none());
+    let first_output = first.finish(false);
+    assert!(
+        first_output.status.success(),
+        "first refresh failed: {}",
+        String::from_utf8_lossy(&first_output.stderr)
+    );
+    let first_view: Value = serde_json::from_slice(&first_output.stdout).unwrap();
+    assert_eq!(first_view["status"], "current");
+    let second_output = second.wait_with_output().unwrap();
+    assert!(
+        second_output.status.success(),
+        "second refresh failed: {}",
+        String::from_utf8_lossy(&second_output.stderr)
+    );
+    let second_view: Value = serde_json::from_slice(&second_output.stdout).unwrap();
+    assert_eq!(second_view["status"], "current");
     assert!(
         !directory(&store, 2).exists(),
         "deletion refresh must retire generated residue"
