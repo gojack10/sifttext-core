@@ -28,7 +28,7 @@ mkdir -m 700 "$prefix"
 # Only remove the application we just created; preserve even an incomplete home.
 trap 'rm -rf "$prefix"' 0
 trap 'exit 1' 1 2 15
-cp -R Cargo.toml Cargo.lock build.rs install-local.sh README.md AGENTS.md .gitignore rust-toolchain.toml src laws scripts tests fixtures nodes trees "$prefix/"
+cp -R Cargo.toml Cargo.lock build.rs install-local.sh README.md AGENTS.md .gitignore rust-toolchain.toml package.json integrations src laws scripts tests fixtures nodes trees "$prefix/"
 # Optional checked documentation belongs to the stamped source inventory too.
 if [ -d docs ]; then cp -R docs "$prefix/"; fi
 # /tmp-backed build symlinks are source outputs, not installed dependencies.

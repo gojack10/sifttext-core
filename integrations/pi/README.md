@@ -1,16 +1,16 @@
 # Optional Pi session retention
 
-This package includes an opt-in Pi extension in the installed Core release or source checkout. Review the extension source before enabling it: extensions run inside Pi with the same operating-system permissions as Pi.
+This package includes an opt-in Pi extension in the installed Core release, a directory created by `install-local.sh`, or a local Core checkout. Review the extension source before enabling it: extensions run inside Pi with the same operating-system permissions as Pi.
 
 ## Install or remove
 
-From Pi, install the `current` directory under the SiftText application installation (or a local Core checkout):
+From Pi, install the SiftText application directory that contains this package. For a release install that is the `current` directory; for an `install-local.sh` prefix or a local checkout it is that directory itself:
 
 ```sh
 pi install /absolute/path/to/sifttext-install/current
 ```
 
-This explicitly adds the package to the selected Pi settings file. To remove it later, use `pi remove /absolute/path/to/sifttext-install/current`. Do not run either command if you do not want to change Pi settings.
+This explicitly adds the package to the selected Pi settings file. To remove it later, use `pi remove` with the same path. Do not run either command if you do not want to change Pi settings.
 
 Set the SiftText home and executable in the environment used to start Pi:
 

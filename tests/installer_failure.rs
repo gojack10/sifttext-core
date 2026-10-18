@@ -25,11 +25,13 @@ fn failed_install_removes_only_its_new_application_and_can_retry() {
         "AGENTS.md",
         ".gitignore",
         "rust-toolchain.toml",
+        "package.json",
     ] {
         fs::write(source.join(name), "fixture").unwrap();
     }
     for name in [
         "src",
+        "integrations",
         "laws",
         "scripts",
         "tests",
@@ -116,6 +118,9 @@ esac
         "installed change\n"
     );
     let saved = fs::read(prefix.join("sifttext")).unwrap();
+    // The opt-in Pi package must reach a source-built install, not only a release archive.
+    assert!(prefix.join("package.json").is_file());
+    assert!(prefix.join("integrations").is_dir());
     assert!(!run("init").status.success(), "existing prefix accepted");
     assert_eq!(fs::read(prefix.join("sifttext")).unwrap(), saved);
     fs::remove_dir_all(&prefix).unwrap();
