@@ -2,27 +2,110 @@
 id: "8b5361e1-20d7-42a9-9dca-26ba3bac9f25"
 name: "Managed Releases and Updates"
 status: "in_progress"
-micro_summary: "Installs verified prebuilt releases and reconciles official knowledge changes through checked private worktrees."
+micro_summary: "Guides verified managed updates while preserving user knowledge."
 see_also: []
 ---
 # Managed releases and updates
 
-Use this procedure for a binary installation made by the official `install.sh`. Keep using the installed launcher as `BIN`. Source-built installations retain their existing setup procedure.
+Use this procedure for a binary installation made by the official installer. Set `BIN` to the installed launcher's absolute path. Source-built installations use the source setup procedure in the parent CLI Operations node.
 
-The installer is available at `https://github.com/gojack10/sifttext-core/releases/latest/download/install.sh`. Read it before execution. It checks prerequisites and the package checksum, installs into a separate application directory and initializes or recognizes the knowledge home. An existing recognized home keeps its identity and edits.
+## Install or update
 
-Managed CLI invocations check official releases after four hours since the last successful check. Failed checks use a five-minute retry cooldown. A check that finds a newer compatible release only reports it: the command returns its own result plus an `update_available` notice naming the candidate release, this guide and the update command. Nothing activates on its own and there is no scheduled daemon.
+For a new authorized installation, use `curl -fsSL https://sifttext.com/install | sh`. The repository's `INSTALL.md` provides an inspect-before-run option pinned to v0.3.0.
 
-When an operation returns that notice, finish the operation, read this guide, and run `"$BIN" update` only when the notice reports `permission:standing`. That grant is the user's own, recorded in the `updates` object of `.sifttext/config.json` in the knowledge home. Run `"$BIN" update --config` to read the current mode, grant and file path. A notice that reports `permission:ask` means no grant is recorded: tell the user a release is available, ask once whether they want routine updates, and record their answer with `"$BIN" update --grant standing` only when they say so. That command rewrites just the `updates` object and leaves every other local setting intact, so never record a grant by editing the file yourself. Never grant it for yourself and never copy a grant from another machine's file. Run `"$BIN" update --mode disabled`, or set `SIFTTEXT_NO_UPDATE=1` for their launcher invocations, to skip the background release check itself; explicit update commands still work.
+Before activation, the installer performs these checks:
 
-Run `"$BIN" update --status` to inspect installed identities and pending work. Run `"$BIN" update` to check and apply the latest compatible release now. The application and upstream knowledge have separate identities. A coupled release stays pending until its knowledge can be accepted with the candidate application. Local reads continue when discovery fails or a knowledge merge is blocked.
+- Verify official release URLs and package digests.
+- Reject unsafe archive paths.
+- Test the staged native runtime.
 
-A knowledge conflict returns the retained worktree and affected paths, plus a `repair` object containing this guide's path and the customer's SiftText Maintenance tree path and ID. Read the guide at the returned path. Inspect the returned maintenance tree and any `repair_node`/`repair_node_path` already attached to this pending update. If no undertaking is attached, read relevant existing work and create or reuse one in that maintenance tree using the normal SiftText Commit procedure; publish it through checked knowledge operations. Then run `"$BIN" update --attach-node=UUID` with its UUID and retain the accepted home path returned by that command, not a temporary draft path. Later notices for this same pending update point to that stable undertaking: continue there rather than creating another undertaking or moving the pointer to a child.
+Keep application files separate from the knowledge home.
 
-Read the current accepted source and the updater's retained candidate in its worktree. Reconcile the conflict within the user's authority, then run `"$BIN" normalize "$home" "$draft"` and `"$BIN" check "$draft" "$home"`. Commit the checked resolution in that worktree. Run `"$BIN" update --resume` to perform checked publication and activation together. Keep this update draft under the updater's custody until it finishes; the published maintenance undertaking remains as the repair history after the pending transaction clears.
+To upgrade an existing healthy managed installation, run `"$BIN" update` within the user's permission. Rerunning the installer leaves that application and its knowledge in place.
 
-After activation, reread the reported `refresh_instruction_paths` that govern your task. Preserve unrelated private worktrees. A home without a verified upstream baseline needs maintainer help to identify its original bundle before an automatic knowledge merge can proceed.
+Local knowledge work and official release updates require neither payment nor cloud login.
 
-Run `"$BIN" update --pin IDENTITY` to keep a chosen build through later official releases, including one the customer or their agent patched. While pinned, a release that changes only first-party knowledge still applies, because it reuses the active executable. A release that would replace the application is reported instead of staged or activated, and the notice names the pin and points at `--unpin`. Run `"$BIN" update --unpin` to let official application updates activate again, and `"$BIN" update --config` to read the current pin. The pin lives in the same user-owned settings file as the standing grant: it is the user's choice, so never pin or unpin on their behalf and never carry a pin from another machine.
+## Release notices and permission
 
-Use `"$BIN" update --rollback` to restore the retained previous release. A required knowledge reversal is prepared in a private worktree. If rollback refuses or is interrupted, do not assume the previous release is active or retry blindly; preserve the installation and knowledge home for maintainer-assisted recovery. If the reversal conflicts with newer local work, preserve the reported draft and ask about the unresolved choice.
+Ordinary managed commands check official releases four hours after the last successful check, with a five-minute retry cooldown after failure.
+
+A newer compatible release produces an `update_available` notice without activating it automatically.
+
+Finish the current operation before acting on its notice:
+
+- For `permission:standing`, run `"$BIN" update` under the user's recorded grant.
+- For `permission:ask`, ask whether they authorize this update or routine updates.
+
+Record routine permission only after the user's approval:
+
+```sh
+"$BIN" update --grant standing
+"$BIN" update --config
+```
+
+The grant command changes only the `updates` object in the knowledge home's `.sifttext/config.json`, preserving other settings.
+
+Revoke a grant with `"$BIN" update --grant ask`. Never grant permission for yourself or copy it from another machine.
+
+To skip background checks, run `"$BIN" update --mode disabled` or set `SIFTTEXT_NO_UPDATE=1` on launcher invocations. Explicit updates remain available with either setting.
+
+These settings exist in managed v0.2.0 and v0.3.0. Older v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`, so ask before each update there.
+
+## Inspect and apply
+
+Inspect the installed identities and pending work before recovery:
+
+```sh
+"$BIN" update --status
+```
+
+To check and apply the latest compatible release under the user's permission, run `"$BIN" update`.
+
+A coupled application/knowledge release stays pending until the candidate application can accept the knowledge update. During a blocked merge or discovery failure, continue local reads.
+
+If the home has no verified upstream baseline, preserve it and ask the maintainer to identify its original bundle before automatic knowledge merging.
+
+## Reconcile a blocked knowledge update
+
+A conflict returns a retained worktree and affected paths. Read the guide at `repair.guide` and inspect the returned maintenance tree. If a repair undertaking is already attached through `repair_node` or `repair_node_path`, continue there.
+
+If none is attached, use SiftText Commit to create or reuse a suitable undertaking in that maintenance tree. Publish it through checked knowledge operations, then run `"$BIN" update --attach-node=UUID`. Retain the accepted home path returned by that command. Keep the same undertaking for subsequent notices about this update.
+
+Read the accepted source and retained candidate before resolving the conflict within the user's authority. Ask about unresolved semantic choices while preserving the draft.
+
+Check the resolution before committing it:
+
+```sh
+"$BIN" normalize "$home" "$draft"
+"$BIN" check "$draft" "$home"
+```
+
+Commit only the checked resolution in the updater's worktree. Then run `"$BIN" update --resume` for checked publication and activation. Keep the draft under updater custody until completion. The published undertaking retains the repair history after the transaction clears.
+
+After activation, reread the task-relevant `refresh_instruction_paths` returned by the updater. Continue the original task using those instructions while preserving unrelated worktrees.
+
+## Keep a chosen application build
+
+When the user chooses to retain a build, run `"$BIN" update --pin IDENTITY`.
+
+While pinned, knowledge-only releases can apply using the active executable.
+
+Releases that would replace the pinned application produce a notice naming the pin and `--unpin` command.
+
+Run `"$BIN" update --unpin` only when the user authorizes official application updates again. To inspect the current pin, run `"$BIN" update --config`.
+
+Treat the pin as a local user choice and never copy it from another machine.
+
+## Rollback and recovery
+
+Use `"$BIN" update --rollback` to restore the retained previous release. The updater prepares any required knowledge reversal in a private worktree. If that reversal conflicts with newer work, preserve the draft and ask about the unresolved choice.
+
+For interrupted activation, inspect `"$BIN" update --status` and the refusal diagnostic before resuming. The v0.3.0 recovery code can finish activation after a rollback's knowledge reversal was already accepted, including when its submitted draft was removed. An older executable needs that patched code to use this recovery behavior.
+
+If the first `"$BIN" update --resume` reports native `source_freshness`, inspect the diagnostic and pending status before an explicit retry.
+
+Preserve a persistent refusal and its journal for maintainer-assisted repair.
+
+Never reset accepted history or delete caches to bypass checks.
+
+Finish by checking installed identities and pending state with `"$BIN" update --status`. Report the actual active release and any unfinished recovery before returning to the user's task.

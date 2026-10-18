@@ -2,15 +2,25 @@
 
 ## Get started
 
-Give your agent this installation request:
+Install from your terminal:
 
-```text
-Install SiftText for local project memory by following https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md and handle setup within my permissions.
+```sh
+curl -fsSL https://sifttext.com/install | sh
 ```
 
-After setup, your agent reads the installed instructions before continuing your project or asking what you would like to work on.
+Open a new shell if `sifttext` is not yet on PATH.
 
-For direct terminal installation, follow [INSTALL.md](INSTALL.md) to inspect and verify the downloaded installer before executing that same file.
+Sign up or sign in at [SiftText Platform](https://app.sifttext.com) for Founding SiftText onboarding and ongoing service.
+
+New subscribers complete a separate $50 USD/month checkout. If you already have an active $20 subscription, keep that plan and skip checkout.
+
+After Platform confirms paid status, run `sifttext login`. It opens browser authorization and prints a copyable URL. `Authentication successful.` means the server confirmed `paid:true`.
+
+Tell your agent to run `sifttext instructions` and read the entry file it returns before continuing your project.
+
+You can also use local knowledge commands and release updates without payment or cloud login.
+
+For setup details or an inspect-before-run option, follow [INSTALL.md](INSTALL.md).
 
 ![Build an understanding that people and agents can keep developing.](docs/readme/tree-dark.svg)
 
@@ -54,13 +64,13 @@ To change that knowledge, an agent edits in a private Git worktree and submits i
 
 Precompiled packages and supported platforms are listed on the [latest release](https://github.com/gojack10/sifttext-core/releases/latest). By default, installation puts the application at `~/.local/share/sifttext` and initializes knowledge at `~/sifttext`. Keeping those locations separate from project code lets your knowledge survive software replacement.
 
-Update commands and permissions depend on your installed release. Follow [INSTALL.md](INSTALL.md) and your installed instructions before updating or changing release-check settings.
+To upgrade a healthy managed installation, use `sifttext update` within your update permission and follow the installed update guide. Rerunning the installer leaves the existing application in place.
 
-Continue local work during a blocked update while your agent reconciles the knowledge merge in its retained private worktree within your permission.
+Continue local work during a blocked knowledge merge while your agent reconciles the retained private worktree within your permission.
 
 ## Inspect a release
 
-Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. Treat checksum verification only as evidence of byte agreement with the release record; it does not establish which build produced the package.
+Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. A matching checksum establishes byte agreement with the release record. Build provenance requires separate evidence.
 
 The installer’s complete tool requirements are Git, curl, tar and an existing `shasum` or `sha256sum`.
 
@@ -82,7 +92,7 @@ Prerequisites are Git, curl, tar, shasum, a C compiler/linker and Clang 14+. Use
 
 Setup acquires verified [Bend](https://github.com/bendlang/bend) 2.0.27 and Rust 1.95.0 into checkout-local `.tools/` when needed. Before initialization, select a Git name and email for the knowledge repository using the identity procedure in the local instructions.
 
-Choose a new absolute application path whose parent already exists, with no symlink components. To keep knowledge outside the application, use the default `~/sifttext` or supply another absolute path as the installer's second argument. Once it recognizes or initializes that home, the installer prints a handoff using the resulting local paths.
+Choose a new absolute application path whose parent already exists, with no symlink components. To keep knowledge outside the application, use the default `~/sifttext` or supply another absolute path as the installer's second argument.
 
 Source-build and installed workflows were tested on macOS 26.4/arm64 and Ubuntu 24.04.4/aarch64 at `991aca3`.
 

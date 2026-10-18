@@ -1,14 +1,24 @@
 ---
 id: "38a9fc79-8a84-494d-a962-2ec5134bc856"
 name: "SiftText Knowledge Base"
-micro_summary: "Introduces the bundled local knowledge and separates its copied user-owned store from the Core software checkout."
+micro_summary: "Introduces the bundled local knowledge and its independent user-owned copy."
 status: "in_progress"
 see_also: []
-scope: "Introduce SiftText Core's first-party local Knowledge Base: native knowledge files, tree concepts and human–agent methods. Distinguish intended interaction principles from delivered local capabilities and preserve the independent user's authority over their copy."
+scope: "Orient users to the first-party knowledge bundled with local SiftText Core."
 warnings: ""
 ---
-This is the first-party Knowledge Base bundled with local SiftText Core. It explains native knowledge files, thinking in trees and methods for human–agent work. Core provides local file/Git workflows and a CLI; it does not include a SIFT assistant, hosted account, web interface or MCP server.
+Use this first-party Knowledge Base to understand and maintain local SiftText knowledge in native files with Git history.
 
-A new knowledge home receives an independent copy through local initialization. Read its nodes with ordinary file tools and use the local retrieval commands when needed. Follow Local Core Agent Entrypoint and its ordered child reads before commands or edits. The software checkout's bundled files are not your editable knowledge home, and existing homes are not silently reseeded by software updates.
+Use `~/sifttext` for knowledge and `~/.local/share/sifttext` for software by default.
 
-Concepts and metaphors describe the intended collaboration, not guarantees of agent behavior or automatic memory. Some inherited guidance still needs capability reconciliation; do not assume a described service exists. For executable operations, use the local entry pipeline and the selected command's help. Preserve user edits and require the applicable permission and checks before publishing changes.
+Before commands or edits, read Local Core Agent Entrypoint and follow its task-specific instructions for retrieval or authorized publication.
+
+Core's account commands connect to the separate SiftText Platform for paid onboarding and ongoing service.
+
+Offline knowledge work and official release updates remain available without payment or cloud login.
+
+Core supplies local files and a CLI for use by a human or separately configured agent.
+
+Hosted MCP and cloud semantic checks are outside the Core package.
+
+Before using a feature described here, check that the installed command's help supports it.

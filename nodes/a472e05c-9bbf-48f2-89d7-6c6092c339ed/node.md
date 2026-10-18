@@ -1,27 +1,57 @@
 ---
 id: "a472e05c-9bbf-48f2-89d7-6c6092c339ed"
 name: "CLI Operations"
-micro_summary: "Covers creation, retrieval, validation and recovery through the local CLI, excluding the legacy MCP surface."
+micro_summary: "Guides authorized use of the local Core command."
 status: "in_progress"
 see_also: [{"target":"6da0b35a-955a-4ad2-bdce-2994ba26119c","reason":"Use the diagnosed-problem path to matching source and maintenance guidance."}]
-scope: "Use the narrow local command without confusing it with hosted sifttext-mcp or assuming customer-release tooling exists."
+scope: "Operate local Core within the user's permissions."
 warnings: ""
 ---
-For official binary installations, read [Managed Releases and Updates](../8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md) before update operations. Its update policy supersedes the per-update consent statements in the preserved source-build procedure below. A release check only reports a newer compatible release; the agent reads that guide and runs `sifttext update` within the user's existing permissions.
+Read Local Core Agent Entrypoint and its task-applicable instructions before operating. Use `sifttext -h` as the command reference. Reuse unchanged instructions already read.
 
-## When an operation fails
+## Prebuilt installation
 
-Inspect the returned diagnostic and affected state before retrying. Resolve it within the current assignment using the installed instructions. If the behavior remains unexplained or appears defective, `sifttext source-code` provides matching source and maintenance instructions. Preserve existing work and return to the original task after investigation. This is a diagnostic path, not permission to publish code, project data or credentials.
+For authorized installation, follow the source repository's `INSTALL.md`. Its public command is:
 
-## Preserved source-build procedure
+```sh
+curl -fsSL https://sifttext.com/install | sh
+```
 
-Read the Local Core Agent Entrypoint and the task-applicable pipeline instructions before operating. Use `sifttext -h` as the command reference. Input: the authorized task, code checkout if building, and a chosen knowledge home. Do not invoke hosted `sifttext-mcp` for local work or alter its credentials/configuration.
+Open a new shell if `sifttext` is not yet on PATH. To continue in the current shell, use the default launcher at `~/.local/share/sifttext/sifttext` or the custom path selected during setup.
 
-## Setup
+To upgrade a healthy managed installation, follow the child named Managed Releases and Updates because rerunning the installer leaves the existing application in place.
 
-For an installed application, set `BIN` to the absolute command path in the installer's agent-start prompt (or supplied by the owner). Run `"$BIN" runtime-check` to verify its bundled assets, then use it without rebuilding or cloning software. If the command path is missing, ask for that path; do not guess a legacy executable or change PATH/configuration. The source build below is only for an authorized source checkout, not a prerequisite for installed use.
+## Platform account
 
-For a source checkout, first read its root `AGENTS.md` and the native files it names. The canonical authored seed lives in the checkout's `nodes/` and `trees/`, not in hand-maintained Rust strings. Build from an authorized Core checkout with its pinned tools and checked assets; do not change a compiler, law or frozen gate to make a build pass. Run the following from that checkout, then keep the compiled command with its checked runtime assets. Copying only the executable is not a supported installation.
+The human signs up or signs in at `https://app.sifttext.com` through Zitadel for Founding SiftText onboarding and ongoing service.
+
+New subscribers complete a separate $50 USD/month checkout. If they already have an active $20 subscription, they keep that plan and skip checkout.
+
+After Platform confirms paid status on its waiting page, run `sifttext login` to start PKCE browser authorization. If the browser does not open, use the authorization URL printed in the terminal.
+
+Only server-confirmed `paid:true` produces `Authentication successful.`. Check pending or inactive payment on Platform before retrying login.
+
+Use `sifttext account` to read server account/subscription status, refreshing authorization as needed.
+
+Use `sifttext logout` to delete local credentials even offline and attempt remote refresh-token revocation. Already-issued access tokens expire normally.
+
+Keep native credentials under `~/.config/sifttext/account`, outside the knowledge home and Git.
+
+Local trees stay on disk during login.
+
+Offline knowledge commands and official release updates remain available without payment or cloud login.
+
+The Core package supplies no hosted MCP server or cloud semantic checks.
+
+## Select and verify the command
+
+For an installed application, set `BIN` to its verified absolute launcher path. With a default managed installation, use `BIN="$HOME/.local/share/sifttext/sifttext"`. Ask the owner for an unknown custom path and preserve unrelated commands or configuration.
+
+Run `"$BIN" runtime-check` to verify bundled assets. Continue with the installed command without rebuilding or cloning software.
+
+For source development, follow the checkout's `AGENTS.md` and its required reads before building with pinned tools and checked assets.
+
+Diagnose a failed build without changing its frozen gates.
 
 ```sh
 sh scripts/setup-tools.sh
@@ -30,19 +60,29 @@ sh scripts/with-tools.sh cargo build --locked --bins
 CORE="$(pwd -P)"
 BIN="$CORE/target/debug/sifttext"
 "$BIN" -h
-# Optional local install AFTER building, into a new application directory:
-# sh install-local.sh /NEW/application/directory "$HOME/sifttext"
 ```
 
-In the remaining examples, `sifttext` denotes the selected verified installed or source-built command: invoke `"$BIN"`, not a legacy executable or an assumed PATH entry. It needs Git and a selected commit identity, but no hosted account, model or factory. Worktree Publication owns checked `submit`: success updates the normal home and matching retrieval and removes the completed draft. Read there before allocating the next draft; it also describes explicit `advance` recovery. `install-local.sh` copies the checked command, runtime assets and readable bundled KB into a NEW application directory, initializes the separate knowledge home (default `~/sifttext`), and prints an agent-start prompt when that home's pointer exists. It refuses an existing application path and never places software inside knowledge or knowledge inside software. Existing homes are preserved, not silently given new instructions. Install missing prerequisites within the task's existing permissions; ask the human when installation needs additional permission. Select the commit identity below before initializing. A lone executable is insufficient. This is local/source installation, not a prebuilt curl release, automatic updater, public license or universal portability promise. Approved release assets and content/license/publication review are still required for public installation.
+After building, an authorized source install uses `sh install-local.sh /NEW/application/directory "$HOME/sifttext"` to place the checked executable and its runtime assets together.
+
+Choose a new application destination separate from the knowledge home.
+
+A recognized existing home retains its edits and identity.
+
+Install missing prerequisites within existing permission, asking before additional system changes.
 
 ## Select commit identity
 
-Reuse a complete name/email already selected for this workspace or configured for its intended knowledge home. Keep existing repository-local and global Git configuration unchanged unless the owner authorizes a change. If identity is missing, ask: “Which name and email should appear in this workspace's history? You can provide your commit identity or a GitHub account, repository or commit to inspect. Otherwise, we can use SiftText Agent <agent@sifttext.com>.”
+Reuse a complete name/email already selected for this workspace or its intended knowledge home. Preserve existing global and repository-local Git configuration unless the owner authorizes a change.
 
-Inspect an offered GitHub source only within the task's access permissions, and confirm the discovered name/email with the human. If the human has none, chooses the default, or seems bogged down, recommend SiftText Agent <agent@sifttext.com> and ask to use it. Await the answer unless previously authorized. A bounded worker returns this question to its assigning agent. Honor a request for different attribution or omitted agent credit; Git Commit Skill owns the knowledge-commit policy.
+If identity is missing, ask which name and email should appear in workspace history, offering `SiftText Agent <agent@sifttext.com>` as a default. A bounded worker returns this question to its assigning agent.
 
-For a NEW home, the parent must be an existing physical canonical path; `init` refuses a symlinked or aliased parent rather than writing through it. `advance` requires the entire home path to be canonical and refuses any symlink or alias along it. For an existing home, resolve its physical path with `cd -P -- "$HOME/sifttext" && pwd -P`; use that path directly and do not work around either refusal by passing an alias. Then put the selected `name` and `email` in a private temporary Git config and run one initialization command with that command-scoped selection. This example initializes the default seed; choose `--bundle` or `--empty` instead when required:
+If the user offers a GitHub source, inspect it within access permission and confirm the discovered identity. Await a selection unless it was already authorized.
+
+Follow Git Commit Skill for attribution, honoring requests for a different identity or omitted agent credit.
+
+For a new home, choose an absolute destination with an existing physical canonical parent. Direct `init` refuses aliased or symlinked parents. Resolve an existing home with `cd -P -- "$HOME/sifttext" && pwd -P` before using commands that require its canonical path, including `advance`.
+
+Put the selected identity in a private temporary Git config for initialization:
 
 ```sh
 identity=$(mktemp)
@@ -50,61 +90,109 @@ chmod 600 "$identity"
 git config --file "$identity" user.name "$name"
 git config --file "$identity" user.email "$email"
 GIT_CONFIG_GLOBAL="$identity" "$BIN" init "$home"
-# For a local install, use the same command-scoped variable with install-local.sh instead.
+# For source installation, apply the same variable to install-local.sh instead.
 rm "$identity"
 ```
 
-Init stores the selection in the NEW repository's local config and verifies the initial commit's author and committer. Private drafts inherit that local selection. Verify with `git -C "$home" config --local --get user.name`, `git -C "$home" config --local --get user.email`, and `git -C "$home" log -1 --format='%an <%ae>'`. On refusal, retain any partial home, inspect the error, and remove only the temporary config you created. Rerunning init preserves an existing home's identity and edits.
-
-## Initialize and allocate
-
-If you initialized above, continue to Worktree Publication. Otherwise choose an authorized new home whose parent directory already exists and run one initialization with the complete configured identity. Run only the selected initialization, not all examples:
+Verify the initialized home's stored identity:
 
 ```sh
-"$BIN" init "$home"                         # NEW independent home from the embedded first-party KB (compiled from native files)
-# Alternatives, instead of the preceding command:
-"$BIN" init "$alternate_home" --bundle "$bundle"  # supplied native KB
-"$BIN" init "$empty_home" --empty                 # deliberately empty repository
+git -C "$home" config --local --get user.name
+git -C "$home" config --local --get user.email
+git -C "$home" log -1 --format='%an <%ae>'
 ```
 
-Every `init` call names an explicit home; omitting both flags selects the source-owned KB, while `--bundle` and `--empty` are mutually exclusive alternatives. The CLI still requires an explicit home; use `home="$HOME/sifttext"` for the normal independent user repository, while the local installer supplies that default. Keep Core software and any optional contributor checkout outside the knowledge home. The source-owned KB is compiled directly from the readable native files and requires no private package or build checkout at runtime. Local installs carry the same readable KB; those nodes retain omissions and the bundle is not a qualified complete reviewed public distribution. A new home receives independent Git history and a verified initial content commit using the selected name/email, saves that identity repository-locally, and leaves its reader detached at that commit. Existing recognized homes are checked and left unchanged, including user edits; init is not an updater or importer. Existing unrecognized directories and symlinks are refused. On an interrupted partial initialization, retain the directory and diagnose it; do not delete it or assume rerunning will repair it. A missing Git identity returns to the selection question above.
+On refusal, retain any partial home and inspect the error before retrying. Remove only the temporary config you created.
 
-The bundled tree is copied, never linked back into the source checkout. Updating Core does not overwrite the knowledge copy. Init seeds the home with `nodes/`, `trees/` and its own repository `.gitignore`; an `AGENTS.md` sitting in a supplied bundle is not copied. A NEW home whose copied store carries the canonical entry and its six ordered child files additionally receives a generated `AGENTS.md` at the home root: ordinary file-first discovery naming `nodes/<entry>/node.md` and directing the agent to read that entry before commands, then follow its task-conditional instructions. The entry directs agents to read SiftText Read before interpreting knowledge and SiftText Commit before authorized knowledge writes. `init` reports that file as `"pointer":"AGENTS.md"`, or `"pointer":null` when it wrote none, so `--empty` and a custom bundle without the whole pipeline never get a broken pointer.
+## Initialize and find instructions
 
-That pointer is local discovery, not authored knowledge. It is untracked and excluded through the home's own `.git/info/exclude`, so the home still reports a clean Git state, and rerunning `init` never rewrites, reseeds or removes it; homes initialized before it existed are not retroactively given one. Because it is untracked it does not travel into a private worktree, a publication view or a fresh clone: there `sifttext instructions "$home"` remains the supported lookup, validating the store and printing only checked LEAN `version` then the single canonical entry `path`. Read that file and follow its task-conditional instructions; the command does not print or require every child path. Startup therefore needs no SQL, no hosted tool and no guess about the entrypoint. After init, use Worktree Publication to allocate a private draft and capture its fixed baseline before edits.
+Run one initialization for the selected destination. If you already initialized above, skip these examples:
 
-## Connect an existing project folder
+```sh
+"$BIN" init "$home"                              # Copy the embedded first-party KB.
+# Alternatives, instead of the preceding command:
+"$BIN" init "$alternate_home" --bundle "$bundle"  # Copy supplied native knowledge.
+"$BIN" init "$empty_home" --empty                 # Start deliberately empty.
+```
 
-When the user connects a specific project to SiftText, use that project's maintained entry node as the folder's agent entrance. Add a short, removable pointer to that folder's `AGENTS.md`:
+Every `init` call requires an explicit home. For the normal location, set `home="$HOME/sifttext"`. The two flags are mutually exclusive alternatives to the default seed.
+
+The source-owned seed is compiled from readable `nodes/` and `trees/`. Initialization copies it into an independent Git repository with a checked initial commit and detached reader. Keep software and contributor checkouts outside that home.
+
+Init checks and preserves existing recognized homes while refusing unrecognized directories and symlinks.
+
+Preserve interrupted initialization for diagnosis before attempting repair.
+
+A new home with the complete canonical instruction pipeline receives a generated `AGENTS.md` pointer, reported as `"pointer":"AGENTS.md"` in the init receipt. Otherwise the receipt has `"pointer":null`.
+
+A supplied bundle's own `AGENTS.md` is excluded from the copy.
+
+The generated pointer is untracked and excluded through `.git/info/exclude`. Rerunning init preserves it, and older homes receive no retroactive pointer.
+
+In a clone or private draft without the pointer, `instructions` remains the supported lookup:
+
+```sh
+"$BIN" instructions "$home"
+```
+
+Read the entry file it returns and follow its task-specific instruction reads. Stop at an unreadable required file and report its exact path for repair. After successful reads, return to the user's task or ask what they want to work on.
+
+Before a knowledge write, follow Worktree Publication to allocate a private draft and fixed baseline. Its checked `submit` refreshes the normal home and retrieval and removes the completed draft. Read from that home before allocating the next draft.
+
+## Connect a project folder
+
+For a project the user explicitly connects, add its maintained entry-node path to that folder's `AGENTS.md`:
 
 ```markdown
 Read <project-entry-node-path> for this project's maintained knowledge and agent instructions. Follow its links as relevant to your task. The existing repository instructions below remain applicable.
 ```
 
-If `AGENTS.md` already exists, prepend the pointer and preserve all original bytes and instructions below it. If it does not exist, create it with the pointer. Verify the entry path resolves and the original file remains an exact suffix; confirm no unselected folder was changed. Do this only for the project the user connected. This is a manual file handoff, not a `sifttext` command or automatic folder scan.
+Prepend the pointer while preserving the original file as an exact suffix. If the file is absent, create it with the pointer. Verify that the path resolves and only the selected project changed.
 
 ## Optional Pi session association
 
-Before installing or enabling the Pi retention extension, read [Optional Pi session retention](../../integrations/pi/README.md) for its permission boundary, exact opt-in configuration, capture behavior and optional backup/restore commands. The extension is off by default; do not change Pi settings or enable transcript retention without the user's authorization.
+Before authorized Pi retention setup, read [Optional Pi session retention](../../integrations/pi/README.md). Retention is off by default and requires separate user permission for enablement or backup.
 
-When the Pi retention extension is installed and `session_retention.enabled` is true in the selected home, associate a session only when it materially informed the current knowledge. Read the affected node and choose its exact UUID; do not infer or attach all sessions/nodes automatically. Ask the `sifttext_attach_session` tool to attach the current Pi session using that UUID, a short kebab-case topic, and the authorized private knowledge worktree (not the accepted home). Call once per relevant node. The tool captures and Git-checkpoints the current session, writes its tracked association and local chat link, and returns only the node and friendly attachment name—not transcript content or the source session ID. Inspect the changed worktree and continue through Worktree Publication's checks and checked submission. If retention is disabled, the source is unavailable, or the tool fails, do not fabricate a descriptor or block ordinary knowledge work; report the limitation.
+When retention is enabled and a session materially informed the knowledge, read the affected node before attaching it.
+
+Call `sifttext_attach_session` once per relevant node using these arguments:
+
+- Its exact UUID.
+- A short kebab-case topic.
+- The authorized private knowledge worktree.
+
+Inspect the returned node and attachment name, then review the tracked association and local chat link in the draft. Continue through Worktree Publication's checks and checked submission. Keep the private transcript archive outside knowledge submissions.
+
+If retention is disabled or a source or tool is unavailable, report the limitation and continue ordinary knowledge work.
+
+Preserve existing Pi settings unless their modification is authorized.
 
 ## Scratch creation
 
-For an already-approved scratch creation, set `wt` to the allocated private worktree:
+For an already-approved creation, set `wt` to the allocated private worktree:
 
 ```sh
-sifttext create "$wt" 'Scratch question' 'Keeps a reversible trial separate from accepted knowledge.'
+"$BIN" create "$wt" 'Scratch question' 'Keeps a reversible trial separate from accepted knowledge.'
 # Use the actual returned root UUID below:
-sifttext create "$wt" 'Trial note' 'Records evidence from the bounded local trial.' "$root_uuid"
+"$BIN" create "$wt" 'Trial note' 'Records evidence from the bounded local trial.' "$root_uuid"
 ```
 
-The helper creates canonical UUID directories, node files, child ordering and root/child symlinks, normalizes affected statuses, and validates a staged candidate before applying it. It returns the UUID/path and does not commit. It rejects creation outside a private Git worktree. The current helper assumes one cooperative writer to that draft; after partial I/O failure preserve and inspect it rather than claiming atomic multi-file publication. Use normal file tools to read/edit the body, not a separate text-edit command vocabulary.
+After validating and applying the new structure, the helper returns the uncommitted node's UUID and path for ordinary file reads and edits.
 
-Continue through Worktree Publication's before/after checks and explicit commit/publication steps. Use the retrieval children to demonstrate that the resulting nodes can be found and read. If source validation fails, stop dependent retrieval and repair the authorized draft; do not treat stale cached results as success.
+Creation requires a private Git worktree and one cooperative writer. After partial I/O failure, preserve the draft and inspect it before retrying. Continue through Worktree Publication's full candidate checks and publication procedure.
 
-## Boundaries and return
+## Failure and return
 
-This is local/source installation, not a public signed curl installer/updater. The current seed retains inherited omissions; do not claim complete reviewed public distribution from a successful copy. Official methodology/Core knowledge updates require consent and preservation of user edits; no silent reseed or cloud sync is provided. No private migration or limit increase is authorized by this procedure.
+Inspect diagnostics before retrying a failed operation and repair within the assignment using installed guidance.
 
-Return the actual command/install path, home/worktree paths, created UUIDs, check results and commit boundary reached. Existing-home idempotence, installed operation, recovery and fresh-agent success require observations; do not infer them from the commands listed here.
+For unexplained behavior or a suspected defect, run `sifttext source-code` to obtain matching source and maintenance instructions.
+
+Publishing a repair requires separate authority and privacy review.
+
+Preserve refused drafts and unrelated work. After source-validation failure, stop dependent retrieval until repaired.
+
+Keep accepted history and frozen limits intact during diagnosis.
+
+Return the paths and changed UUIDs with native check receipts identifying the commit/publication boundary reached.
+
+Support behavior claims with observed results, then return to the original task after setup or repair.
