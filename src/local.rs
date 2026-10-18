@@ -2001,7 +2001,8 @@ pub fn create(
             stage.path().join("trees").join(&key),
         )?;
     }
-    crate::status::normalize(policy, &before.path, stage.path(), &BTreeSet::new(), None)?;
+    let normalized =
+        crate::status::normalize(policy, &before.path, stage.path(), &BTreeSet::new(), None)?;
     let after = checked_snapshot(policy, stage.path(), Some(&before.path))?;
     require(
         Store::read(path)?.inventory == before.inventory,
@@ -2027,6 +2028,7 @@ pub fn create(
         Store::read(path)?.inventory == after.inventory,
         "creation incomplete; retain and inspect private draft",
     )?;
+    normalized.report_reopenings();
     Ok(
         json!({"id":key,"path":fs::canonicalize(path)?.join("nodes").join(&key).join("node.md"),"parent":parent,"committed":false}),
     )

@@ -304,7 +304,16 @@ impl PauseBeforeAccept {
 pub struct Acceptance {
     pub status: &'static str,
     pub normalized_ids: Vec<String>,
+    pub reopened_ids: Vec<String>,
     pub nodes: BTreeMap<String, StateView>,
+}
+
+impl Acceptance {
+    pub fn report_reopenings(&self) {
+        for id in &self.reopened_ids {
+            eprintln!("[{id}] set to in_progress.");
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -394,10 +403,22 @@ pub fn normalize(
         accepted.inventory == normalized.inventory,
         "normalized candidate changed during acceptance",
     )?;
+    let candidate_states = states(&candidate_capture.metadata)?;
+    let after_states = states(&metadata)?;
+    let reopened_ids = ids
+        .iter()
+        .filter(|id| {
+            !explicit.contains(*id)
+                && candidate_states[*id].status != Status::InProgress
+                && after_states[*id].status == Status::InProgress
+        })
+        .cloned()
+        .collect();
     Ok(Acceptance {
         status: "current",
         normalized_ids: ids,
-        nodes: states(&metadata)?
+        reopened_ids,
+        nodes: after_states
             .into_iter()
             .map(|(id, state)| {
                 (

@@ -248,13 +248,15 @@ fn run() -> Result<()> {
             return Ok(());
         }
         [cmd, before, after, explicit @ ..] if cmd == "normalize" => {
-            serde_json::to_value(sifttext_file_graph::status::normalize(
+            let normalized = sifttext_file_graph::status::normalize(
                 &policy,
                 Path::new(before),
                 Path::new(after),
                 &explicit.iter().cloned().collect(),
                 None,
-            )?)?
+            )?;
+            normalized.report_reopenings();
+            serde_json::to_value(normalized)?
         }
         [cmd, path] if cmd == "index" => {
             let v = local::refresh(&policy, Path::new(path))?;

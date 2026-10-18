@@ -828,7 +828,8 @@ fn merge_knowledge(
             json!({"status":"needs_agent","worktree":draft,"conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,"error":error.to_string(),"resume":"sifttext update --resume","repair":paths}),
         );
     }
-    crate::status::normalize(&policy, &state.home, &draft, &BTreeSet::new(), None)?;
+    crate::status::normalize(&policy, &state.home, &draft, &BTreeSet::new(), None)?
+        .report_reopenings();
     local::check(&policy, &draft, Some(&state.home), BTreeSet::new())?;
     git(&draft, &["add", "--", "nodes", "trees"])?;
     git(
@@ -1177,7 +1178,8 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result
             )?;
             if !git(path, &["status", "--porcelain"])?.is_empty() {
                 // --rollback explicitly selected this retained delta's status changes.
-                crate::status::normalize(&policy, &state.home, path, &explicit, None)?;
+                crate::status::normalize(&policy, &state.home, path, &explicit, None)?
+                    .report_reopenings();
                 local::check(&policy, path, Some(&state.home), explicit.clone())?;
                 git(path, &["add", "--", "nodes", "trees"])?;
                 git(

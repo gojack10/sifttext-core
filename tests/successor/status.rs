@@ -368,10 +368,15 @@ fn direct_child_table_reopening_and_no_auto_resolution() {
             state(Status::Resolved),
         ],
     );
+    let mut edited_parent = state(Status::Resolved);
+    edited_parent.reasons.insert(
+        "blocker".into(),
+        "Inactive reason edited alongside reopening".into(),
+    );
     fixture(
         after.path(),
         &[
-            state(Status::Resolved),
+            edited_parent,
             state(Status::Resolved),
             state(Status::InProgress),
         ],
@@ -388,6 +393,24 @@ fn direct_child_table_reopening_and_no_auto_resolution() {
     for n in 1..=3 {
         assert_eq!(native_state(after.path(), n).status, Status::InProgress);
     }
+    let request = crate::candidate_validation::Request {
+        store: after.path().to_owned(),
+        before: Some(before.path().to_owned()),
+        explicit: BTreeSet::from([id(3)]),
+        expected_version: None,
+        pause_before_accept: None,
+    };
+    let report = crate::candidate_validation::validate(&policy, &request);
+    assert_eq!(report.status, "current", "{report:?}");
+    assert_eq!(result.reopened_ids, [id(1), id(2)]);
+
+    fs::write(
+        file(after.path(), 1),
+        text(1, &state(Status::Resolved), false),
+    )
+    .unwrap();
+    let invalid = crate::candidate_validation::validate(&policy, &request);
+    assert_ne!(invalid.status, "current");
 }
 
 #[test]

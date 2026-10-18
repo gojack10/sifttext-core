@@ -622,6 +622,7 @@ fn check(
     )?;
     let tokenizer = tiktoken_rs::o200k_base_singleton();
     let mut states = BTreeMap::new();
+    let mut transitions = BTreeMap::new();
     for (id, node) in &store.nodes {
         let tokens = tokenizer.lock().encode_ordinary(&node.content).len();
         report.rows.push(Row {
@@ -680,23 +681,40 @@ fn check(
                 && (node_bytes(&b.store, id).ok() != node_bytes(store, id).ok()
                     || b.store.children[id] != store.children[id])
         });
-        match status::transition(
+        let transitioned = match status::transition(
             old.as_ref(),
             &requested,
             changed,
             request.explicit.contains(id),
         ) {
-            Ok(normalized) if normalized == requested => (),
-            _ => report.reject(Some(id), "status_transition_or_reason", STATUS_RULE, None),
-        }
+            Ok(transitioned) => transitioned,
+            Err(_)
+                if !request.explicit.contains(id)
+                    && old
+                        .as_ref()
+                        .is_some_and(|old| old.status == Status::Resolved)
+                    && requested.status == Status::InProgress
+                    && store.children[id]
+                        .iter()
+                        .any(|child| state(&candidate, child).is_ok_and(|s| s.status.blocks())) =>
+            {
+                let mut prior = requested.clone();
+                prior.status = Status::Resolved;
+                prior
+            }
+            Err(_) => {
+                report.reject(Some(id), "status_transition_or_reason", STATUS_RULE, None);
+                requested.clone()
+            }
+        };
+        transitions.insert(id.clone(), transitioned);
         if requested.status == Status::Resolved && node.content.trim().is_empty() {
             report.reject(Some(id), "resolved_body_blank", STATUS_RULE, None);
         }
         states.insert(id.clone(), requested);
     }
-    if states.len() == store.nodes.len() {
-        let mut gated = states.clone();
-        if status::child_gate(&mut gated, &store.children, &request.explicit).is_err() {
+    if transitions.len() == store.nodes.len() {
+        if status::child_gate(&mut transitions, &store.children, &request.explicit).is_err() {
             for (id, state) in &states {
                 if state.status == Status::Resolved
                     && store.children[id].iter().any(|c| states[c].status.blocks())
@@ -710,9 +728,16 @@ fn check(
                 }
             }
         } else {
-            for (id, s) in &states {
-                if gated[id] != *s {
-                    report.reject(Some(id), "parent_requires_reopening", STATUS_RULE, None);
+            for (id, requested) in &states {
+                if transitions[id] != *requested {
+                    let check = if transitions[id].status == Status::InProgress
+                        && requested.status == Status::Resolved
+                    {
+                        "parent_requires_reopening"
+                    } else {
+                        "status_transition_or_reason"
+                    };
+                    report.reject(Some(id), check, STATUS_RULE, None);
                 }
             }
         }
