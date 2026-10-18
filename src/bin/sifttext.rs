@@ -206,6 +206,11 @@ fn run() -> Result<()> {
             return Ok(());
         }
         [cmd, repo, draft, commit, base, explicit @ ..] if cmd == "submit" => {
+            let mut explicit = explicit.to_vec();
+            let force = explicit.last().is_some_and(|arg| arg == "-y");
+            if force {
+                explicit.pop();
+            }
             let receipt = local::submit(
                 &policy,
                 &sifttext_file_graph::checked_publication::Request {
@@ -214,12 +219,15 @@ fn run() -> Result<()> {
                     draft: Some(draft.into()),
                     commit: Some(commit.clone()),
                     base: Some(base.clone()),
-                    explicit: explicit.iter().cloned().collect(),
+                    explicit: explicit.into_iter().collect(),
                     pause_before_publish: None,
                     pause_after_publish: None,
                 },
             )?;
-            println!("{}", serde_json::to_string_pretty(&receipt)?);
+            print_large_return(
+                &format!("{}\n", serde_json::to_string_pretty(&receipt)?),
+                force,
+            )?;
             if receipt["status"] != "current" {
                 return Err("submission unavailable; retain draft and inspect receipt".into());
             }
