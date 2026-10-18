@@ -134,6 +134,8 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
         "AGENTS.md",
         ".gitignore",
         "rust-toolchain.toml",
+        "package.json",
+        "integrations",
         "src",
         "laws",
         "scripts",

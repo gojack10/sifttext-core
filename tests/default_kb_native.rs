@@ -501,33 +501,15 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         n.json(&["search", o, "Defaultbundlescratchtrial"])["total_matches"],
         0
     );
+    // Strict cleanup removes a deleted node's recognized generated files and the
+    // directory they occupied; restoration comes from retained Git history, not
+    // from leftover residue in the reader view.
     let residue = other.join("nodes").join(created["id"].as_str().unwrap());
-    let mut names: Vec<_> = fs::read_dir(&residue)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().into_string().unwrap())
-        .collect();
-    names.sort();
-    assert_eq!(
-        names,
-        [
-            "outline.full.lean",
-            "outline.full.lean.meta.json",
-            "outline.lean",
-            "outline.lean.meta.json"
-        ]
+    assert!(
+        !residue.exists(),
+        "deleted node left generated residue at {residue:?}"
     );
-    for name in names {
-        assert!(fs::symlink_metadata(residue.join(name)).unwrap().is_file());
-    }
-    let mut final_inventory = inventory(&other);
-    assert_eq!(
-        final_inventory.remove(&PathBuf::from(format!(
-            "nodes/{}",
-            created["id"].as_str().unwrap()
-        ))),
-        Some(json!({"dir":true}))
-    );
-    assert_eq!(final_inventory, original);
+    assert_eq!(inventory(&other), original);
     assert_eq!(
         fs::read(checkout.join("src/native_kb.rs")).unwrap(),
         source_bytes

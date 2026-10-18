@@ -121,7 +121,12 @@ impl Native {
     }
     fn cli(&mut self, args: &[&str]) -> Value {
         let output = self.run(env!("CARGO_BIN_EXE_sifttext"), args, true);
-        if matches!(args.first(), Some(&"instructions" | &"index")) {
+        if args.first().is_some_and(|cmd| {
+            !matches!(
+                *cmd,
+                "sql" | "search" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
+            )
+        }) {
             sifttext_file_graph::outlines::decode_lean(&output).unwrap()
         } else {
             serde_json::from_str(&output).unwrap()
