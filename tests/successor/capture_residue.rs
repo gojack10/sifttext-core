@@ -246,7 +246,12 @@ fn missing_or_wrong_historical_source_never_mints_provenance() {
         capture.unchanged().is_err(),
         "historical Git selection is retained through acceptance"
     );
-    assert!(Capture::read(store, None).is_err());
+    // A bounded first-parent search still finds the nearest deletion commit, so a
+    // later empty commit neither removes nor falsifies the historical owner. The
+    // retired immediate-parent-only rule required refusal here; the current capture
+    // must still resolve only the surviving node and no provenance for the reverted one.
+    let rebound = Capture::read(store, None).unwrap();
+    assert_eq!(rebound.store.nodes.len(), 1);
     let (temp, _) = fixture();
     let store = temp.path();
     fs::rename(store.join(".git"), store.join("git-preserved")).unwrap();
