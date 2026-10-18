@@ -2,6 +2,7 @@ use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
 use std::{
     collections::BTreeSet,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -57,6 +58,16 @@ No fixed node-count ceiling; checked resource bounds, 1 MiB authored files,
 No hosted account, MCP, model provider, or Dark Factory required.";
 
 fn run() -> Result<()> {
+    macro_rules! println {
+        ($($arg:tt)*) => {
+            writeln!(std::io::stdout().lock(), $($arg)*)?;
+        };
+    }
+    macro_rules! print {
+        ($($arg:tt)*) => {
+            write!(std::io::stdout().lock(), $($arg)*)?;
+        };
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args == ["-h"] || args == ["--help"] {
         println!("{HELP}");
