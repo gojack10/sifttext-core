@@ -49,7 +49,7 @@ fn pointer_text() -> String {
             `nodes/{ENTRY}/children.order` only when the task needs them. This pointer\n\
             adds no instruction of its own and replaces no authored node.\n\
          \n\
-         Then follow those nodes. `sifttext instructions .` prints the checked entry path\n\
+         Follow only task-relevant instructions from the entry file above. `sifttext instructions .` prints the checked entry path\n\
          and `sifttext -h` lists the local commands. Edit only in a private worktree from\n\
          `sifttext worktree <home>`, then publish with `sifttext submit`. If the entry file\n\
          above is missing or unreadable, stop and report that exact path; do not substitute\n\

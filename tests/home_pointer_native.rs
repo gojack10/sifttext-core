@@ -193,6 +193,8 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     let meta = fs::symlink_metadata(&at).unwrap();
     assert!(meta.is_file() && !meta.is_symlink());
     let pointer = fs::read_to_string(&at).unwrap();
+    assert!(pointer.contains("Follow only task-relevant instructions from the entry file above."));
+    assert!(!pointer.contains("Then follow those nodes."));
     let re = regex::Regex::new(r"nodes/[0-9a-f-]{36}/[a-z.]+").unwrap();
     let mut named = Vec::new();
     for m in re.find_iter(&pointer) {
