@@ -127,7 +127,11 @@ impl Commands {
     }
 }
 fn residue(repo: &Path, n: usize) -> BTreeMap<PathBuf, Vec<u8>> {
-    fs::read_dir(directory(repo, n))
+    let dir = directory(repo, n);
+    if !dir.exists() {
+        return BTreeMap::new();
+    }
+    fs::read_dir(dir)
         .unwrap()
         .map(|entry| {
             let path = entry.unwrap().path();
@@ -305,7 +309,14 @@ fn checked_publication_revert_recovers_current_views_without_relocating_residue(
         "current"
     );
     for n in [3, 4] {
-        assert_eq!(residue(&draft, n), generated[&n]);
+        assert!(
+            residue(&draft, n).is_empty(),
+            "successful refresh retires recognized generated residue"
+        );
+        assert!(
+            !directory(&draft, n).exists(),
+            "retired owner directory remains"
+        );
     }
     for (path, bytes) in &authored {
         assert_eq!(&fs::read(draft.join(path)).unwrap(), bytes);
@@ -325,6 +336,197 @@ fn checked_publication_revert_recovers_current_views_without_relocating_residue(
         "recovery": recovery, "candidate": candidate, "search": search, "outlines": outlines,
         "rebuilt": rebuilt, "acceptedRefUnchanged": true, "noResidueRelocation": true,
     })).unwrap()).unwrap();
+}
+
+#[test]
+fn deleted_child_later_parent_edit_retries_and_restores_from_git_history() {
+    let temporary = tempfile::tempdir().unwrap();
+    let evidence = temporary.path().join("delete-retry-restore");
+    fs::create_dir(&evidence).unwrap();
+    let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_BIN_EXE_core-observe"))
+                .parent()
+                .unwrap()
+                .into()
+        });
+    let mut commands = Commands {
+        evidence: evidence.clone(),
+        bin,
+        sequence: 0,
+    };
+    let store = evidence.join("home");
+    let sifttext = commands.bin.join("sifttext");
+    commands.run(
+        &sifttext,
+        &["init", store.to_str().unwrap(), "--empty"],
+        None,
+    );
+    commands.git(&store, &["checkout", "main"]);
+    node(&store, 1, None);
+    node(&store, 2, Some(1));
+    node(&store, 3, None);
+    commands.git(&store, &["add", "nodes", "trees"]);
+    commands.git(&store, &["commit", "-qm", "fixture: baseline"]);
+    commands.git(&store, &["checkout", "--detach", "HEAD"]);
+    let baseline = commands.observe(json!({"op":"index", "store":store, "mode":"full"}));
+    assert_eq!(baseline["status"], "current");
+    let unaffected_outline = directory(&store, 3).join("outline.lean");
+    let unaffected_identity = fs::metadata(&unaffected_outline).unwrap();
+    let unaffected_bytes = fs::read(&unaffected_outline).unwrap();
+    let parent = directory(&store, 1);
+    fs::remove_file(parent.join("children").join(id(2))).unwrap();
+    fs::write(parent.join("children.order"), "").unwrap();
+    for name in ["node.md", "children.order"] {
+        fs::remove_file(directory(&store, 2).join(name)).unwrap();
+    }
+    fs::remove_file(directory(&store, 2).join("children/.keep")).unwrap();
+    fs::remove_dir(directory(&store, 2).join("children")).unwrap();
+    commands.git(&store, &["add", "-A"]);
+    commands.git(&store, &["commit", "-qm", "fixture: delete child"]);
+    commands.git(&store, &["branch", "-f", "main", "HEAD"]);
+    let deletion = commands.git(&store, &["rev-parse", "HEAD"]);
+    let deleted_refresh =
+        commands.observe(json!({"op":"index", "store":store, "mode":"incremental"}));
+    assert_eq!(deleted_refresh["status"], "current");
+    assert!(
+        !directory(&store, 2).exists(),
+        "deletion refresh must retire generated residue"
+    );
+    let deletion_base = commands.git(&store, &["rev-parse", "refs/heads/main"]);
+
+    // Exercise the ordinary checked-submit route from a fresh private worktree based on
+    // the accepted deletion, rather than editing the accepted home directly.
+    let draft = evidence.join("fresh-draft");
+    commands.git(
+        &store,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "sifttext/delete-retry",
+            draft.to_str().unwrap(),
+            &deletion_base,
+        ],
+    );
+    let source = directory(&draft, 1).join("node.md");
+    let source_bytes = fs::read(&source).unwrap();
+    fs::write(
+        &source,
+        source_bytes
+            .iter()
+            .copied()
+            .chain(b"Later parent edit.\n".iter().copied())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    commands.git(&draft, &["add", "nodes"]);
+    commands.git(&draft, &["commit", "-qm", "fixture: edit surviving parent"]);
+    let submitted = commands.git(&draft, &["rev-parse", "HEAD"]);
+    let submit = commands.bin.join("sifttext");
+    let submit_args = [
+        "submit",
+        store.to_str().unwrap(),
+        draft.to_str().unwrap(),
+        submitted.as_str(),
+        deletion_base.as_str(),
+    ];
+    let publication: Value =
+        serde_json::from_str(&commands.run(&submit, &submit_args, None)).unwrap();
+    assert_eq!(publication["status"], "current");
+    assert_eq!(publication["published"], true);
+    let accepted = commands.git(&store, &["rev-parse", "refs/heads/main"]);
+    assert_eq!(accepted, publication["candidate"].as_str().unwrap());
+    assert!(
+        !evidence.join("fresh-draft").exists(),
+        "successful submit must clean the private draft"
+    );
+    let refreshed = commands.observe(json!({"op":"index", "store":store, "mode":"incremental"}));
+    assert_eq!(refreshed["status"], "current");
+    assert_eq!(refreshed["version"], publication["version"]);
+    let reused = fs::metadata(&unaffected_outline).unwrap();
+    assert_eq!(fs::read(&unaffected_outline).unwrap(), unaffected_bytes);
+    assert_eq!(
+        (reused.dev(), reused.ino()),
+        (unaffected_identity.dev(), unaffected_identity.ino()),
+        "unaffected outline was rewritten"
+    );
+    assert!(
+        !directory(&store, 2).exists(),
+        "successful refresh must leave deleted residue absent"
+    );
+    assert_eq!(
+        commands.git(&store, &["rev-parse", "HEAD"]),
+        accepted,
+        "cleanup must not move accepted Git"
+    );
+
+    // Retrying the exact request after cleanup must not publish a second commit.
+    let retry: Value = serde_json::from_str(&commands.run(&submit, &submit_args, None)).unwrap();
+    assert_eq!(retry["status"], "current");
+    assert_eq!(
+        commands.git(&store, &["rev-parse", "refs/heads/main"]),
+        accepted
+    );
+
+    commands.git(
+        &store,
+        &[
+            "checkout",
+            &format!("{deletion}^"),
+            "--",
+            &format!("nodes/{}/", id(2)),
+            &format!("nodes/{}/children.order", id(1)),
+            &format!("nodes/{}/children/{}", id(1), id(2)),
+        ],
+    );
+    commands.git(&store, &["add", "nodes"]);
+    commands.git(&store, &["commit", "-qm", "fixture: restore child"]);
+    commands.git(&store, &["branch", "-f", "main", "HEAD"]);
+    let restored = commands.observe(json!({"op":"index", "store":store, "mode":"incremental"}));
+    assert_eq!(restored["status"], "current");
+    assert!(
+        restored["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == id(2))
+    );
+    assert_eq!(
+        restored["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id(1))
+            .unwrap()["children"],
+        json!([id(2)])
+    );
+    let restored_source = directory(&store, 2).join("node.md");
+    let restored_bytes = fs::read(&restored_source).unwrap();
+    fs::write(
+        &restored_source,
+        restored_bytes
+            .iter()
+            .copied()
+            .chain(b"Post-restore edit.\n".iter().copied())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    commands.git(&store, &["add", "nodes"]);
+    commands.git(&store, &["commit", "-qm", "fixture: edit restored child"]);
+    commands.git(&store, &["branch", "-f", "main", "HEAD"]);
+    let after_restore_edit =
+        commands.observe(json!({"op":"index", "store":store, "mode":"incremental"}));
+    assert_eq!(after_restore_edit["status"], "current");
+    assert!(
+        after_restore_edit["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == id(2))
+    );
 }
 
 /// Live-process controls retained from the capture-residue runner: a real refresh must refuse
@@ -352,17 +554,32 @@ fn observe(request: &Value, bin: &Path, evidence: &Path, label: &str) -> std::pr
             child.env_remove(key);
         }
     }
-    child.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    child
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut process = child.spawn().unwrap();
-    process.stdin.take().unwrap().write_all(&serde_json::to_vec(request).unwrap()).unwrap();
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(request).unwrap())
+        .unwrap();
     let output = process.wait_with_output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let receipt = json!({"request": request, "exit": output.status.code(), "signal": output.status.signal(),
         "elapsed_ms": timer.elapsed().as_secs_f64() * 1000.0,
         "native_rss_bytes": if timed.exists() { Value::from(native_resources::native_rss(&stderr)) } else { Value::Null },
         "stdout": String::from_utf8_lossy(&output.stdout).into_owned(), "stderr": stderr});
-    fs::write(evidence.join(format!("{label}.json")), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
-    assert!(!output.stdout.is_empty() || !output.stderr.is_empty(), "{label}: silent native attempt");
+    fs::write(
+        evidence.join(format!("{label}.json")),
+        serde_json::to_vec_pretty(&receipt).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !output.stdout.is_empty() || !output.stderr.is_empty(),
+        "{label}: silent native attempt"
+    );
     output
 }
 
@@ -388,13 +605,27 @@ impl Barrier {
                 child.env_remove(key);
             }
         }
-        child.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        child
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         let mut process = child.spawn().unwrap();
-        process.stdin.take().unwrap().write_all(&serde_json::to_vec(&request).unwrap()).unwrap();
+        process
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(&serde_json::to_vec(&request).unwrap())
+            .unwrap();
         let timer = std::time::Instant::now();
         while !ready.exists() {
-            assert!(timer.elapsed() < std::time::Duration::from_secs(9), "{label}: native barrier never reached");
-            assert!(process.try_wait().unwrap().is_none(), "{label}: refresh exited before the barrier: {request}");
+            assert!(
+                timer.elapsed() < std::time::Duration::from_secs(9),
+                "{label}: native barrier never reached"
+            );
+            assert!(
+                process.try_wait().unwrap().is_none(),
+                "{label}: refresh exited before the barrier: {request}"
+            );
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         // Sampled while parked: the operation holds a real native process tree at the barrier.
@@ -421,7 +652,11 @@ impl Barrier {
             "signal": output.status.signal(),
             "stdout": String::from_utf8_lossy(&output.stdout).into_owned(),
             "stderr": String::from_utf8_lossy(&output.stderr).into_owned()});
-        fs::write(self.evidence.join(format!("{}.json", self.label)), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+        fs::write(
+            self.evidence.join(format!("{}.json", self.label)),
+            serde_json::to_vec_pretty(&receipt).unwrap(),
+        )
+        .unwrap();
         output
     }
 }
@@ -439,21 +674,39 @@ fn live_refresh_refuses_barrier_replacement_and_survives_interruption_with_resid
     // A dedicated subdirectory keeps this case runnable beside the sibling test that
     // receives the same retained-evidence root.
     let root = match std::env::var_os("SIFTTEXT_TEST_EVIDENCE") {
-        Some(path) => { let path = PathBuf::from(path); assert!(path.is_absolute()); fs::create_dir_all(&path).unwrap(); path }
+        Some(path) => {
+            let path = PathBuf::from(path);
+            assert!(path.is_absolute());
+            fs::create_dir_all(&path).unwrap();
+            path
+        }
         None => temporary.path().into(),
     };
     let evidence = root.join("live-process");
     fs::create_dir(&evidence).unwrap();
     let bin = std::env::var_os("SIFTTEXT_TEST_NATIVE_BIN_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_BIN_EXE_core-observe")).parent().unwrap().into());
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_BIN_EXE_core-observe"))
+                .parent()
+                .unwrap()
+                .into()
+        });
     assert!(bin.is_absolute());
     let observer = bin.join("core-observe");
-    let mut commands = Commands { evidence: evidence.clone(), bin: bin.clone(), sequence: 0 };
+    let mut commands = Commands {
+        evidence: evidence.clone(),
+        bin: bin.clone(),
+        sequence: 0,
+    };
     let store = evidence.join("live-residue");
     fs::create_dir_all(store.join("trees")).unwrap();
     node(&store, 1, None);
-    fs::write(store.join(".gitignore"), ".sifttext/\n*.lean\n*.meta.json\nnode.meta.lock\n").unwrap();
+    fs::write(
+        store.join(".gitignore"),
+        ".sifttext/\n*.lean\n*.meta.json\nnode.meta.lock\n",
+    )
+    .unwrap();
     commands.git(&store, &["init", "-q", "-b", "main"]);
     commands.git(&store, &["add", "."]);
     commands.git(&store, &["commit", "-qm", "fixture: baseline"]);
@@ -461,11 +714,19 @@ fn live_refresh_refuses_barrier_replacement_and_survives_interruption_with_resid
     let rebuild = json!({"op": "index", "store": store, "mode": "full"});
     let baseline = commands.observe(rebuild.clone());
     assert_eq!(baseline["status"], "current");
-    assert_eq!(commands.observe(json!({"op": "outline_inspect", "store": store}))["status"], "current");
+    assert_eq!(
+        commands.observe(json!({"op": "outline_inspect", "store": store}))["status"],
+        "current"
+    );
     node(&store, 2, None);
     commands.git(&store, &["add", "nodes", "trees"]);
     commands.git(&store, &["commit", "-qm", "fixture: creation"]);
-    assert_eq!(commands.observe(json!({"op": "token_refresh", "path": directory(&store, 2).join("node.md")}))["status"], "current");
+    assert_eq!(
+        commands
+            .observe(json!({"op": "token_refresh", "path": directory(&store, 2).join("node.md")}))
+            ["status"],
+        "current"
+    );
     commands.observe(refresh.clone());
     commands.git(&store, &["revert", "--no-edit", "HEAD"]);
     let accepted_ref = commands.git(&store, &["rev-parse", "refs/heads/main"]);
@@ -474,14 +735,20 @@ fn live_refresh_refuses_barrier_replacement_and_survives_interruption_with_resid
     assert!(!directory(&store, 2).join("node.md").exists());
     let retained = residue(&store, 2);
     for name in ["node.meta.json", "outline.lean", "outline.full.lean"] {
-        assert!(retained.contains_key(Path::new(name)), "control requires generated residue {name}");
+        assert!(
+            retained.contains_key(Path::new(name)),
+            "control requires generated residue {name}"
+        );
     }
 
     // An orphan inside the residue directory is refused by the real process and preserved.
     let unknown = directory(&store, 2).join("protected.txt");
     fs::write(&unknown, "protected resource").unwrap();
     let refused = observe(&rebuild, &observer, &evidence, "orphan-residue");
-    assert!(!refused.status.success(), "live capture accepted an unknown orphan residue");
+    assert!(
+        !refused.status.success(),
+        "live capture accepted an unknown orphan residue"
+    );
     assert_eq!(fs::read(&unknown).unwrap(), b"protected resource");
     fs::remove_file(&unknown).unwrap();
 
@@ -489,29 +756,69 @@ fn live_refresh_refuses_barrier_replacement_and_survives_interruption_with_resid
     let outline = directory(&store, 2).join("outline.lean");
     let saved = fs::read(&outline).unwrap();
     fs::write(&outline, "forged content").unwrap();
-    assert!(!observe(&rebuild, &observer, &evidence, "forged-residue").status.success(), "live capture accepted forged residue bytes");
+    assert!(
+        !observe(&rebuild, &observer, &evidence, "forged-residue")
+            .status
+            .success(),
+        "live capture accepted forged residue bytes"
+    );
     fs::write(&outline, &saved).unwrap();
 
     let mut refused_at_barrier = 0;
-    for (label, path, bytes) in [("residue-replacement", &outline, &saved), ("source-replacement", &source, &authored)] {
+    for (label, path, bytes) in [
+        ("residue-replacement", &outline, &saved),
+        ("source-replacement", &source, &authored),
+    ] {
         let barrier = Barrier::start(&observer, &evidence, label, refresh.clone());
         replace(path, bytes);
-        assert!(!barrier.finish(false).status.success(), "{label}: refresh accepted a same-byte replacement at its barrier");
+        assert!(
+            !barrier.finish(false).status.success(),
+            "{label}: refresh accepted a same-byte replacement at its barrier"
+        );
         refused_at_barrier += 1;
-        assert_eq!(commands.observe(refresh.clone()), baseline, "{label}: recovery");
+        assert_eq!(
+            commands.observe(refresh.clone()),
+            baseline,
+            "{label}: recovery"
+        );
     }
 
     // SIGKILL at the same barrier must emit no view and leave every retained surface intact.
-    let killed = Barrier::start(&observer, &evidence, "interrupted-refresh", refresh.clone()).finish(true);
-    assert_eq!(killed.status.signal(), Some(9), "interrupted refresh did not die by SIGKILL");
-    assert!(killed.stdout.is_empty(), "interrupted refresh published a view");
+    let killed =
+        Barrier::start(&observer, &evidence, "interrupted-refresh", refresh.clone()).finish(true);
+    assert_eq!(
+        killed.status.signal(),
+        Some(9),
+        "interrupted refresh did not die by SIGKILL"
+    );
+    assert!(
+        killed.stdout.is_empty(),
+        "interrupted refresh published a view"
+    );
     refused_at_barrier += 1;
     assert_eq!(commands.observe(refresh.clone()), baseline);
-    assert_eq!(commands.observe(json!({"op": "outline_inspect", "store": store}))["status"], "current");
-    assert_eq!(commands.git(&store, &["rev-parse", "refs/heads/main"]), accepted_ref);
+    assert_eq!(
+        commands.observe(json!({"op": "outline_inspect", "store": store}))["status"],
+        "current"
+    );
+    assert_eq!(
+        commands.git(&store, &["rev-parse", "refs/heads/main"]),
+        accepted_ref
+    );
     assert_eq!(fs::read(&source).unwrap(), authored);
-    assert_eq!(residue(&store, 2), retained, "residue bytes were disturbed");
-    assert_eq!(commands.observe(rebuild), baseline, "cache rebuild after interruption");
+    assert!(
+        residue(&store, 2).is_empty(),
+        "successful retry retires recognized residue"
+    );
+    assert!(
+        !directory(&store, 2).exists(),
+        "successful retry removes empty residue owner"
+    );
+    assert_eq!(
+        commands.observe(rebuild),
+        baseline,
+        "cache rebuild after interruption"
+    );
     fs::write(evidence.join("live-process-result.json"), serde_json::to_vec_pretty(&json!({
         "baselineVersion": baseline["version"], "acceptedRef": accepted_ref,
         "refusedOrAttempts": refused_at_barrier,

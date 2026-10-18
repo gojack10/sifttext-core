@@ -240,6 +240,7 @@ pub(crate) fn from_inventory(
 pub(crate) struct Residues {
     owners: BTreeSet<String>,
     receipts: Vec<crate::outlines::RecognizedResidue>,
+    files: Vec<PathBuf>,
     physical: BTreeMap<PathBuf, Identity>,
     history: Option<(PathBuf, Vec<u8>)>,
 }
@@ -263,6 +264,62 @@ impl Residues {
                 (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()) == *expected,
                 "changed residue identity",
             )?;
+        }
+        Ok(())
+    }
+    fn cleanup(&self) -> Result<()> {
+        if self.owners.is_empty() {
+            return Ok(());
+        }
+        self.unchanged()?;
+        let root = &self.history.as_ref().ok_or("missing residue history")?.0;
+        for owner in &self.owners {
+            let dir = root.join("nodes").join(owner);
+            let before = self
+                .physical
+                .get(&dir)
+                .ok_or("missing residue directory identity")?;
+            let metadata = fs::symlink_metadata(&dir)?;
+            require(
+                metadata.is_dir()
+                    && (
+                        metadata.dev(),
+                        metadata.ino(),
+                        metadata.ctime(),
+                        metadata.ctime_nsec(),
+                    ) == *before,
+                "changed residue directory before cleanup",
+            )?;
+            let files: Vec<_> = self
+                .files
+                .iter()
+                .filter(|path| path.parent() == Some(dir.as_path()))
+                .collect();
+            require(
+                crate::entries(&dir)?.len() == files.len(),
+                "unknown residue resource",
+            )?;
+            for path in files {
+                // Remove only captured generated paths; never rename the owner
+                // directory, where a late unknown file could be swept along.
+                let metadata = fs::symlink_metadata(path)?;
+                let expected = self.physical.get(path).ok_or("missing residue identity")?;
+                require(
+                    metadata.is_file()
+                        && metadata.nlink() == 1
+                        && (
+                            metadata.dev(),
+                            metadata.ino(),
+                            metadata.ctime(),
+                            metadata.ctime_nsec(),
+                        ) == *expected,
+                    "changed residue before cleanup",
+                )?;
+                fs::remove_file(path)?;
+            }
+            // rmdir is atomic with respect to emptiness: late unknown entries
+            // remain in place and make cleanup fail instead of being relocated.
+            fs::remove_dir(&dir)?;
         }
         Ok(())
     }
@@ -293,6 +350,7 @@ pub(crate) fn residues(path: &Path) -> Result<Residues> {
                 )?;
                 let m = fs::symlink_metadata(p)?;
                 require(m.is_file() && m.nlink() == 1, "unsafe residue resource")?;
+                result.files.push(p.clone());
                 result
                     .physical
                     .insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
@@ -316,28 +374,42 @@ pub(crate) fn residues(path: &Path) -> Result<Residues> {
     let head = history_git(path, &["rev-parse", "--verify", "HEAD^{commit}"])?;
     result.history = Some((path.to_owned(), head.clone()));
     let head = std::str::from_utf8(&head)?.trim();
-    let parent = history_git(path, &["rev-parse", "--verify", &format!("{head}^1")])?;
-    let parent = std::str::from_utf8(&parent)?.trim();
-    // Only the immediate committed parent is considered; no arbitrary history
-    // scan or editable-cache provenance. Partial current checkouts stay invalid.
+    let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR")))?;
     for id in &result.owners {
         require(
             history_git(path, &["ls-tree", head, "--", &format!("nodes/{id}")])?.is_empty(),
             "residue owner still belongs to current Git source",
         )?;
-    }
-    let historical = tempfile::tempdir()?;
-    reconstruct(path, parent, historical.path())?;
-    let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR")))?;
-    let view = crate::index::refresh(
-        &policy,
-        historical.path(),
-        None,
-        crate::index::Mode::Full,
-        None,
-    )?;
-    require(view.status == "current", "invalid historical source")?;
-    for id in &result.owners {
+        // Select the nearest first-parent deletion of this exact owner. The output is
+        // one commit, and history_git bounds execution time and output; never scan all
+        // history or trust editable cache metadata. Partial current checkouts stay invalid.
+        let deleted = history_git(
+            path,
+            &[
+                "log",
+                "-1",
+                "--first-parent",
+                "--format=%H",
+                "--diff-filter=D",
+                "HEAD",
+                "--",
+                &format!("nodes/{id}"),
+            ],
+        )?;
+        let deleted = std::str::from_utf8(&deleted)?.trim();
+        require(!deleted.is_empty(), "missing prior node deletion")?;
+        let parent = history_git(path, &["rev-parse", "--verify", &format!("{deleted}^1")])?;
+        let parent = std::str::from_utf8(&parent)?.trim();
+        let historical = tempfile::tempdir()?;
+        reconstruct(path, parent, historical.path())?;
+        let view = crate::index::refresh(
+            &policy,
+            historical.path(),
+            None,
+            crate::index::Mode::Full,
+            None,
+        )?;
+        require(view.status == "current", "invalid historical source")?;
         let proof = crate::outlines::ResidueProof::capture(&policy, historical.path(), None, id)?;
         let source = historical.path().join("nodes").join(id).join("node.md");
         let measurement = crate::token_metadata::Refresher::default()
@@ -957,6 +1029,18 @@ impl Capture {
             self.current()? == self.store.inventory,
             "changed store bytes",
         )
+    }
+    pub(crate) fn cleanup_residues(&mut self) -> Result<()> {
+        self.residues.cleanup()?;
+        for owner in &self.residues.owners {
+            let dir = self.store.path.join("nodes").join(owner);
+            self.physical.remove(&dir);
+        }
+        for path in &self.residues.files {
+            self.physical.remove(path);
+        }
+        self.residues = Residues::default();
+        Ok(())
     }
 }
 

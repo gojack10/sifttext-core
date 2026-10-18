@@ -694,7 +694,7 @@ fn with_query_prepared<T>(
     // Inventory also checks generated entries, including temporary outline files.
     // Capture under the publisher lock, not while another writer moves/removes them.
     retrieval_phase("capture");
-    let captured = match Snapshot::read(&store_path, base) {
+    let mut captured = match Snapshot::read(&store_path, base) {
         Ok(s) => s,
         Err(error) => {
             return Ok((
@@ -919,6 +919,9 @@ fn with_query_prepared<T>(
     let sqlite_changes = tx.total_changes() - initial_changes;
     reuse.sqlite_changes = sqlite_changes;
     reuse.changed_rows = changed.len();
+    // Keep the SQLite writer lock until residue cleanup completes so concurrent
+    // Core refreshes cannot race cleanup of the same captured artifacts.
+    captured.cleanup_residues()?;
     tx.commit()?;
     let lock_held_us = lock_held.elapsed().as_micros();
     // A late edit after the last validation is stale, not silently current.
