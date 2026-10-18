@@ -65,7 +65,7 @@ sifttext check STORE [BEFORE [EXPLICIT_UUID ...]]
 sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...]
                                           Apply native status activation/reopening only
 sifttext index STORE                       Refresh derived SQLite and LEAN outlines
-sifttext outline STORE UUID [full]         Refresh, verify, then print shallow/full LEAN
+sifttext outline STORE UUID [full] [-y]  Refresh, verify, then print shallow/full LEAN
 sifttext search STORE QUERY [UNDER_UUID]    Ranked lexical search, at most 20 hits
 sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version query; -y allows >15000 tokens
 sifttext -h                               This reference
@@ -82,11 +82,6 @@ fn run() -> Result<()> {
     macro_rules! println {
         ($($arg:tt)*) => {
             writeln!(std::io::stdout().lock(), $($arg)*)?;
-        };
-    }
-    macro_rules! print {
-        ($($arg:tt)*) => {
-            write!(std::io::stdout().lock(), $($arg)*)?;
         };
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -303,16 +298,16 @@ fn run() -> Result<()> {
             );
             return Ok(());
         }
-        [cmd, path, id, rest @ ..] if cmd == "outline" && (rest.is_empty() || rest == ["full"]) => {
-            print!(
-                "{}",
-                sifttext_file_graph::index::outline(
-                    &policy,
-                    Path::new(path),
-                    id,
-                    !rest.is_empty(),
-                )?
-            );
+        [cmd, path, id, rest @ ..] if cmd == "outline" => {
+            let (full, force) = match rest {
+                [] => (false, false),
+                [flag] if flag == "full" => (true, false),
+                [flag] if flag == "-y" => (false, true),
+                [full, force] if full == "full" && force == "-y" => (true, true),
+                _ => return Err("usage: sifttext outline STORE UUID [full] [-y]".into()),
+            };
+            let output = sifttext_file_graph::index::outline(&policy, Path::new(path), id, full)?;
+            print_large_return(&output, force)?;
             return Ok(());
         }
         [cmd, path, query, rest @ ..] if cmd == "search" && rest.len() <= 1 => {
@@ -349,16 +344,7 @@ fn run() -> Result<()> {
         [cmd, path, sql, rest @ ..] if cmd == "sql" && (rest.is_empty() || rest == ["-y"]) => {
             let output = local::sql(&policy, Path::new(path), sql)?;
             let rendered = format!("{}\n", serde_json::to_string_pretty(&output)?);
-            if rest.is_empty() {
-                let tokens = tiktoken_rs::o200k_base_singleton()
-                    .lock()
-                    .encode_ordinary(&rendered)
-                    .len();
-                if tokens > 15_000 {
-                    return Err(Box::new(LargeReturnSuppressed(tokens)));
-                }
-            }
-            print!("{rendered}");
+            print_large_return(&rendered, !rest.is_empty())?;
             return Ok(());
         }
         _ => return Err("unknown command or arguments; run sifttext -h".into()),
@@ -388,16 +374,18 @@ fn run() -> Result<()> {
 }
 
 fn print_read(output: &str, force: bool) -> Result<()> {
-    let tokens = if force {
-        0
-    } else {
-        tiktoken_rs::o200k_base_singleton()
+    print_large_return(output, force)
+}
+
+fn print_large_return(output: &str, force: bool) -> Result<()> {
+    if !force {
+        let tokens = tiktoken_rs::o200k_base_singleton()
             .lock()
             .encode_ordinary(output)
-            .len()
-    };
-    if tokens > LARGE_RETURN_LIMIT {
-        return Err(LargeReturnSuppressed(tokens).into());
+            .len();
+        if tokens > LARGE_RETURN_LIMIT {
+            return Err(LargeReturnSuppressed(tokens).into());
+        }
     }
     std::io::stdout().lock().write_all(output.as_bytes())?;
     Ok(())
