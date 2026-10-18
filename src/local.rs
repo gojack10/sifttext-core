@@ -1182,7 +1182,10 @@ fn advance_checked(
         let view = index::refresh(policy, home, None, index::Mode::Incremental, pause)?;
         require(
             view.status == "current" && view.version.as_deref() == Some(version),
-            "reader refresh stale/unavailable; retry",
+            &format!(
+                "reader refresh stale/unavailable; retry (status: {}, version: {:?}, expected: {version}, refusal: {:?})",
+                view.status, view.version, view.refusal
+            ),
         )?;
         let navigation = crate::outlines::inspect(policy, home, None)?;
         require(

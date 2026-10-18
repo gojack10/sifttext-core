@@ -1181,18 +1181,47 @@ pub fn update_with_receipt_preflight(
         persist(&root.join("state.json"), &state)?;
         return Ok(json!({"status":"repair_attached","repair_node":id,"path":path}));
     }
+    // Status must remain store-free even when recovery cannot validate a
+    // candidate or refresh its reader. Inspection is not permission to activate.
+    if mode == "--status" {
+        let mut status = serde_json::to_value(&state)?;
+        status["activation_pending"] = json!(root.join("activation.json").exists());
+        return Ok(status);
+    }
     let recovering = root.join("activation.json").exists();
     if recovering {
         let activation: Value = load(&root.join("activation.json"))?;
         let app: PathBuf = serde_json::from_value(activation["application"].clone())?;
         let policy = checked_runtime(&root.join(&app))?;
         if let Some(publication) = activation.get("publication") {
-            let request = serde_json::from_value(publication.clone())?;
-            let receipt = local::submit(&policy, &request)?;
+            let request: crate::checked_publication::Request =
+                serde_json::from_value(publication.clone())?;
             require(
-                receipt["status"] == "current",
-                "rollback publication remains pending; preserve the draft",
+                request.repo == state.home && request.accepted_ref == "refs/heads/main",
+                "rollback publication does not name the installed knowledge home",
             )?;
+            // A submit may publish successfully and then fail while refreshing the
+            // reader. Its draft/base are no longer a fresh submission: re-submitting
+            // them can refuse forever. Retain the accepted commit and finish only
+            // the checked activation; never reset or re-publish user knowledge.
+            let already_published = request.commit.as_ref().is_some_and(|commit| {
+                git(
+                    &request.repo,
+                    &["merge-base", "--is-ancestor", commit, "refs/heads/main"],
+                )
+                .is_ok()
+            });
+            if already_published {
+                // Finish the clean ff-only reader/derived refresh even if the
+                // original submission stopped immediately after accepting main.
+                local::advance(&policy, &state.home)?;
+            } else {
+                let receipt = local::submit(&policy, &request)?;
+                require(
+                    receipt["status"] == "current",
+                    "rollback publication remains pending; preserve the draft",
+                )?;
+            }
         }
         local::check(&policy, &state.home, None, BTreeSet::new())?;
         activate(root, &root.join(&app))?;
@@ -1233,9 +1262,6 @@ pub fn update_with_receipt_preflight(
             return resume(root, &mut state, &mut preflight);
         }
         return Ok(json!({"status":"recovered"}));
-    }
-    if mode == "--status" {
-        return Ok(serde_json::to_value(&state)?);
     }
     if mode == "--rebuild" {
         return rebuild_active(root, &mut state);
@@ -2162,6 +2188,99 @@ mod tests {
         );
         assert!(fs::read_to_string(&b).unwrap().contains("Base paragraph."));
     }
+    #[test]
+    fn recovery_activates_after_rollback_publication_already_landed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (policy, mut state, customer, node, _) = fixture(&root);
+        let customer_before = fs::read(&customer).unwrap();
+        copy_tree(&root.join("releases/v1"), &root.join("releases/v2")).unwrap();
+        activate(&root, &root.join("releases/v2")).unwrap();
+        state.application = "releases/v2".into();
+        persist(&root.join("state.json"), &state).unwrap();
+        let allocation = local::worktree(&policy, &state.home).unwrap();
+        let draft = PathBuf::from(allocation["worktree"].as_str().unwrap());
+        let file = draft.join(node.strip_prefix(&state.home).unwrap());
+        let mut contents = fs::read_to_string(&file).unwrap();
+        contents.push_str("\nRollback change.\n");
+        fs::write(&file, contents).unwrap();
+        crate::status::normalize(&policy, &state.home, &draft, &BTreeSet::new(), None).unwrap();
+        git(&draft, &["add", "nodes"]).unwrap();
+        git(&draft, &["commit", "-qm", "knowledge: rollback fixture"]).unwrap();
+        let commit = git(&draft, &["rev-parse", "HEAD"]).unwrap();
+        let request = crate::checked_publication::Request {
+            repo: state.home.clone(),
+            accepted_ref: "refs/heads/main".into(),
+            draft: Some(draft.clone()),
+            commit: Some(commit.clone()),
+            base: Some(allocation["base"].as_str().unwrap().into()),
+            explicit: BTreeSet::new(),
+            pause_before_publish: None,
+            pause_after_publish: None,
+        };
+        let receipt = local::submit(&policy, &request).unwrap();
+        assert_eq!(receipt["status"], "current", "{receipt}");
+        assert!(!draft.exists(), "published draft must already be removed");
+        let activation = json!({
+            "application":"releases/v1",
+            "application_sha256":state.application_sha256,
+            "knowledge":state.knowledge,
+            "baseline":state.baseline,
+            "previous":null,
+            "publication":{
+                "repo":request.repo,
+                "accepted_ref":request.accepted_ref,
+                "draft":request.draft,
+                "commit":request.commit,
+                "base":request.base,
+                "explicit":request.explicit,
+                "pause_before_publish":null,
+                "pause_after_publish":null,
+            },
+        });
+        persist(&root.join("activation.json"), &activation).unwrap();
+        let result = update(&root, "--resume").unwrap();
+        assert_eq!(result["status"], "recovered");
+        assert_eq!(git(&state.home, &["rev-parse", "HEAD"]).unwrap(), commit);
+        assert_eq!(fs::read(&customer).unwrap(), customer_before);
+        assert_eq!(fs::read_link(root.join("current")).unwrap(), root.join("releases/v1"));
+        assert!(!root.join("activation.json").exists());
+        assert_eq!(update(&root, "--status").unwrap()["application"], "releases/v1");
+        assert_eq!(local::advance(&policy, &state.home).unwrap()["status"], "current");
+    }
+
+    #[test]
+    fn recovery_refuses_unpublished_missing_candidate_without_changing_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (_, state, customer, _, _) = fixture(&root);
+        let before = git(&state.home, &["rev-parse", "HEAD"]).unwrap();
+        let customer_before = fs::read(&customer).unwrap();
+        let active_before = fs::read_link(root.join("current")).unwrap();
+        let state_before = fs::read(root.join("state.json")).unwrap();
+        persist(&root.join("activation.json"), &json!({
+            "application":"releases/v1",
+            "application_sha256":state.application_sha256,
+            "knowledge":state.knowledge,
+            "baseline":state.baseline,
+            "previous":null,
+            "publication":{
+                "repo":state.home,"accepted_ref":"refs/heads/main",
+                "draft":root.join("missing-draft"),"commit":"f".repeat(40),
+                "base":before,"explicit":[]
+            }
+        })).unwrap();
+        assert!(update(&root, "--resume").is_err());
+        let status = update(&root, "--status").unwrap();
+        assert_eq!(status["activation_pending"], true);
+        assert_eq!(status["application"], "releases/v1");
+        assert_eq!(git(&state.home, &["rev-parse", "HEAD"]).unwrap(), before);
+        assert_eq!(fs::read(&customer).unwrap(), customer_before);
+        assert_eq!(fs::read_link(root.join("current")).unwrap(), active_before);
+        assert_eq!(fs::read(root.join("state.json")).unwrap(), state_before);
+        assert!(root.join("activation.json").exists());
+    }
+
     #[test]
     fn update_receipt_preflight_refuses_before_publication_and_retry_returns_same_receipt() {
         let dir = tempfile::tempdir().unwrap();
