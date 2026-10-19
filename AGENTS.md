@@ -26,7 +26,7 @@ Keep native credentials outside Git.
 
 Offline knowledge work and release updates need no payment or cloud login.
 
-After installation, run the installed command's `instructions` operation with the knowledge-home path and read the entry file it returns. Those local instructions govern project knowledge work for that installed version. Return to the user's task after the reads, or ask what they would like to work on if no task is established.
+After installation, run the installed command's `instructions` operation with the knowledge-home path and read the entry file it returns. Those local instructions govern project knowledge work for that installed version. During authorized setup, follow its Maintain Memory Continuity route to establish the selected harness's persistent entrance before reporting that handoff complete. Preserve existing instructions and report any missing permission or unsupported mechanism without blocking independent work. Return to the user's task after setup, or ask what they would like to work on if no task is established.
 
 For work using this source checkout, read these files with ordinary file tools before running commands:
 

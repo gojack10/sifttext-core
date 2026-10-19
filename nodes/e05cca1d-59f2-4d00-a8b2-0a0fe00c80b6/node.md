@@ -7,6 +7,14 @@ see_also: []
 scope: "What an external agent needs to work with local Core, and how browser-only clients differ."
 warnings: "No remote connector grants access to local knowledge. Model and harness setup are separate from installing Core."
 ---
+## Current execution
+
+Read the child named Maintain Memory Continuity through this node's `children.order` and `children/` directory. Use its complete local access, setup, migration and return procedure, reusing unchanged reads. Its actions depend on the actual setup/migration trigger and permission; reading this entry alone does not authorize client configuration or source replacement.
+
+## Preserved earlier procedure
+
+The complete earlier body below remains available for investigation, not as additional operative guidance.
+
 Input: your chosen external harness, the exact verified Core command path, an authorized knowledge home and a bounded task. The harness must be able to read local files; executable work also needs command execution and permission. If these capabilities or paths are missing, stop affected work and ask for them rather than configuring an unrelated hosted service.
 
 Start the agent in the knowledge home and ask it to read AGENTS.md and the Local Core Agent Entrypoint using ordinary file tools. The entrypoint requires SiftText Read before interpreting stored knowledge and selects other instructions only when relevant; before authorized knowledge writes it requires SiftText Commit and the existing Worktree Publication checks. In a worktree or clone without the generated pointer, use the verified command's `instructions` operation to get the checked entrypoint path. Reuse unchanged reads already loaded. Those instructions own retrieval, private editing, fixed baselines, checks and publication; do not invent a second workflow here.

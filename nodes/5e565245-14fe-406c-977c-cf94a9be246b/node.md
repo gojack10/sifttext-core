@@ -3,11 +3,13 @@ id: "5e565245-14fe-406c-977c-cf94a9be246b"
 name: "Local Core Agent Entrypoint"
 micro_summary: "Owns the selection of child skill reads and stop boundaries for agents using offline Local Core."
 status: "in_progress"
-see_also: []
+see_also: [{"target":"0dfce959-9e09-42c8-b8a1-1595c7b01e5f","reason":"Required continuity instructions at entry; setup and migration actions remain conditional on their trigger and authority."}]
 scope: "Bootstrap an agent from this file into the local Core instruction pipeline without hosted access or prior SQL knowledge."
 warnings: ""
 ---
 Read this file first. Before interpreting stored knowledge, read the bundled SiftText Read procedure at `nodes/5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d/node.md`; use it to recover the user's actual question, relevant evidence, current understanding and uncertainty without requiring a fixed navigation sequence or exhaustive history. Read only the other direct-child instructions needed for the task, following their order in `children.order` and paths under `children/`: CLI Operations for command use, Knowledge Layout for source orientation, and Outline Navigation, Leviathan Search or SQLite Queries when their conditions apply. Ordinary file reads suffice; no database lookup is required to start. Reuse already-loaded unchanged instructions.
+
+On entry, read `nodes/0dfce959-9e09-42c8-b8a1-1595c7b01e5f/node.md` (Maintain Memory Continuity), reusing an unchanged read. During authorized setup it establishes the selected harness's persistent entrance; later actions apply only to missing or changed setup, a connected project, or encountered memory within permission. Return to the user's task without restarting onboarding. Do not configure unrelated harnesses or folders.
 
 When a consequential choice still lacks enough understanding, follow SiftText Read's conditional Develop Understanding Through Interaction route. Reuse unchanged reads and return promptly to the original undertaking; do not require an interview when the purpose and grounds are sufficient.
 

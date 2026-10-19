@@ -162,7 +162,7 @@ sifttext instructions
 
 `instructions` defaults to `~/sifttext`. For a custom home, run `sifttext instructions /absolute/knowledge-home`. If PATH is not yet refreshed, use the actual application launcher's absolute path.
 
-Read the returned entry file and follow its task-specific instructions to continue the user's task. If no task is established, ask what they would like to work on. When that work produces knowledge to retain, publish it through the local worktree procedure and retrieve the saved result to verify it.
+Read the returned entry file and follow its task-specific instructions. During authorized setup, follow its Maintain Memory Continuity route to establish the selected harness's persistent entrance while preserving existing instructions. Report a missing permission or unsupported mechanism as an unfinished handoff and continue independent work. Then return to the user's task, or ask what they would like to work on if none is established. When that work produces knowledge to retain, publish it through the local worktree procedure and retrieve the saved result to verify it.
 
 If a required instruction file is missing or unreadable, report its exact path and preserve the installation for repair. Resume at that file after an authorized repair so the remaining project work uses the installed version's guidance.
 

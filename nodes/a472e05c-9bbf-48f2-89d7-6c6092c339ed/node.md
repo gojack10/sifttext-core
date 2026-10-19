@@ -135,7 +135,7 @@ In a clone or private draft without the pointer, `instructions` remains the supp
 "$BIN" instructions "$home"
 ```
 
-Read the entry file it returns and follow its task-specific instruction reads. Stop at an unreadable required file and report its exact path for repair. After successful reads, return to the user's task or ask what they want to work on.
+Read the entry file it returns and follow its task-specific instruction reads. During authorized setup, complete its Maintain Memory Continuity handoff before reporting persistent harness entry established. Preserve existing instructions; identify missing permission or an unsupported mechanism without stopping independent work. Stop dependent reads at an unreadable required file and report its exact path for repair. Return to the user's task after setup or ask what they want to work on.
 
 Before a knowledge write, follow Worktree Publication to allocate a private draft and fixed baseline. Its checked `submit` refreshes the normal home and retrieval and removes the completed draft. Read from that home before allocating the next draft.
 
