@@ -7,6 +7,14 @@ see_also: []
 scope: "Recover meaningful changes and prepare an exact local tree delta under the current approval or standing-write boundary."
 warnings: "Do not use the write gate as a checkbox. After reading this child, reconsider the planned write and inspect any earlier refusal before retrying.\n  Do not collapse distinct rejected attempts into prose blobs. Native metadata has no `ruled_out`; meaningful rejected paths become discarded nodes with reasons.\n  Do not render an entire subtree as if it is new. Show only affected areas plus enough existing context, with operation marker left and status marker right.\na plausible giant delta is not informed approval; scanning or rubber-stamp impulse means the response failed.\na grouped operation inventory or schematic is not a canonical SiftText tree delta."
 ---
+## Current execution
+
+Read the child named Draft From Originating Conditions and follow its complete local drafting and presentation procedure. Locate it through this node's `children.order` and `children/` directory. Reuse unchanged reads. Native-chat deltas, approval and the standing-grant boundary remain part of that selected route.
+
+## Preserved earlier procedure
+
+The complete earlier body below remains available for investigation, not as additional operative guidance.
+
 ## Applies to Any Tree Write
 
 This child is part of the mandatory pre-write pull. Its discipline applies to any ideation write, not only end-of-session commits. For a targeted point fix, the tree delta may be tiny, but the agent still must reconstruct what it intends to change before writing and inspect any earlier refusal before an authorized retry.

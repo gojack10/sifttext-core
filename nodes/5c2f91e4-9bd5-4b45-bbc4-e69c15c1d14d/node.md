@@ -22,6 +22,8 @@ Treat stored conclusions as judgments for their stated question and conditions, 
 
 Give the smallest complete useful answer: the relevant origin, current understanding and status, why it matters, and any consequential uncertainty. Restore context without reintroducing the whole project or unexplained internal method names. Expand when a material context gap or human-owned choice requires it.
 
+When a consequential choice still lacks enough understanding, read the child named Develop Understanding Through Interaction through this node's `children.order` and `children/` directory. Use a question, example or small reversible attempt as appropriate and return to this undertaking under the same authority. Reuse it if already loaded; if the purpose and relevant grounds are sufficient, proceed without an interview.
+
 If the user wants action, continue the original authorized task without a redundant briefing. Select the next useful contribution from the current goal, evidence, dependencies and permissions—not merely depth, recency or open status. Missing evidence calls for investigation; an implementation or failing check calls for authorized repair; a necessary action beyond the grant calls for the specific human decision. Continue independent permitted work while a separate branch is blocked.
 
 When knowledge changes materially, update its existing owner or expose a distinct development, preserving meaningful prior grounds. Before an authorized knowledge write, follow SiftText Commit and the established project write boundary. This Read procedure adds no write permission.

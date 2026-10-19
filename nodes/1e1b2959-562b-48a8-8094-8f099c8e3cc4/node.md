@@ -6,6 +6,14 @@ status: "in_progress"
 scope: "Simplify agent-authored text while preserving material source meaning, attribution, evidence and the action the reader needs."
 see_also: []
 ---
+## Current execution
+
+Read the child named Write for the Reader and use its complete local wording method. Locate it through this node's `children.order` and `children/` directory; reuse unchanged reads. Return to the invoking author without restarting an unchanged Canopy review.
+
+## Preserved earlier procedure
+
+The complete earlier body below remains available for investigation, not as additional operative guidance.
+
 ## Current purpose
 Produce minimum viable human-readable text that preserves the meaning needed for the reader's decision. Apply to authored instructions and knowledge text. [[Canopy|957aa569-75be-4871-b376-6b1943cc4db4]] governs instruction design; this pass governs expression.
 

@@ -1,5 +1,10 @@
 // These bounded checks cover localized authoring and surface contracts, not all bundle claims.
 const LOCAL_AUTHORING: &[&str] = &[
+    "10f2d4ab-3318-45d8-9486-f26a817c829e",
+    "31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8",
+    "6c1273a2-59f3-4037-af16-d884c9d7ac23",
+    "ab82fdf1-6a71-4e09-bffe-ed6446eadc9a",
+    "d96c84a8-ce99-4474-94ef-7ae1d1db4a1b",
     "072ccc69-a259-4eeb-b0bc-bf0a7630ad1a",
     "5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d",
     "82ed8baa-ed21-48ab-b233-3e775e29d446",
@@ -145,6 +150,49 @@ fn selected_commit_route_defers_capture_and_requires_native_chat_presentation() 
     let entrypoint = node("5e565245-14fe-406c-977c-cf94a9be246b");
     assert!(!entrypoint.contains("rough time estimate"));
     assert!(!entrypoint.contains("at most three questions"));
+}
+
+#[test]
+fn reconciled_methods_are_selected_and_structurally_readable() {
+    let file = |path: &str| super::FILES.iter().find(|(p, _)| *p == path).unwrap().1;
+    for (parent, child, name) in [
+        ("d00ab6fd-b475-49ef-b37a-812807879308", "d96c84a8-ce99-4474-94ef-7ae1d1db4a1b", "Draft From Originating Conditions"),
+        ("da24ff95-9d07-4e15-9571-9313d6b90f94", "ab82fdf1-6a71-4e09-bffe-ed6446eadc9a", "Review Origin and Response Coverage"),
+        ("957aa569-75be-4871-b376-6b1943cc4db4", "6c1273a2-59f3-4037-af16-d884c9d7ac23", "Author Navigable Procedures"),
+        ("1e1b2959-562b-48a8-8094-8f099c8e3cc4", "10f2d4ab-3318-45d8-9486-f26a817c829e", "Write for the Reader"),
+    ] {
+        let entry = file(&format!("nodes/{parent}/node.md"));
+        let (current, prior) = entry.split_once("## Preserved earlier procedure").unwrap();
+        assert!(current.contains(name));
+        assert!(!prior.trim().is_empty());
+        assert!(file(&format!("nodes/{parent}/children.order")).lines().any(|id| id == child));
+        assert!(super::LINKS.iter().any(|(path, target)| {
+            *path == format!("nodes/{parent}/children/{child}") && *target == format!("../../{child}")
+        }));
+        let body = file(&format!("nodes/{child}/node.md"));
+        assert!(body.contains("## Observed conditions"));
+        assert!(body.contains("## Inference and response"));
+    }
+    let draft = file("nodes/d96c84a8-ce99-4474-94ef-7ae1d1db4a1b/node.md");
+    assert!(draft.contains("A tool-origin finding needs its actual observation"));
+    assert!(draft.contains("Do not use harness question, decision, or approval widgets"));
+    let review = file("nodes/ab82fdf1-6a71-4e09-bffe-ed6446eadc9a/node.md");
+    assert!(review.contains("Review each affected node in both directions"));
+    assert!(review.contains("Useful findings beneath a discarded approach retain their own evidential standing"));
+    for id in ["82ed8baa-ed21-48ab-b233-3e775e29d446", "c32661f6-6baf-4812-92df-5aae17e49e73"] {
+        let text = file(&format!("nodes/{id}/node.md"));
+        let (current, _) = text.split_once("## Preserved earlier guidance").unwrap();
+        assert!(!current.contains("Keep useful discoveries outside discarded ancestry"));
+        assert!(!current.contains("Keep reusable measurements under a non-discarded owner"));
+    }
+    let read = "5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d";
+    let interaction = "31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8";
+    assert!(file(&format!("nodes/{read}/node.md")).contains("read the child named Develop Understanding Through Interaction"));
+    assert!(file(&format!("nodes/{read}/children.order")).lines().any(|id| id == interaction));
+    assert!(super::LINKS.iter().any(|(path, target)| {
+        *path == format!("nodes/{read}/children/{interaction}") && *target == format!("../../{interaction}")
+    }));
+    assert!(file(&format!("nodes/{interaction}/node.md")).contains("Do not infer refusal from silence"));
 }
 
 #[test]

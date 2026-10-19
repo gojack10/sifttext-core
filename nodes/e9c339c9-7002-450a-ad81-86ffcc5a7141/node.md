@@ -49,6 +49,7 @@ does not grant permission. Proposal-only work ends at review.
 ### Form the changed understanding
 
 Treat the chat as one unit for end-of-chat capture.
+This sets capture timing, not node identity; do not require one node per chat or treat every assistant turn as chat completion. A separately requested actionable setup or migration task is not an ordinary remember request postponed by this default.
 For that capture, carry ordinary mid-chat requests to remember or save something without interrupting the ongoing task for save approval or asking “now or later?”
 An explicit instruction to commit now overrides this end-of-chat timing.
 Otherwise, when the human indicates the chat is ending, or its conclusion is otherwise clear, prepare the delta and follow the existing approval or standing-grant boundary.

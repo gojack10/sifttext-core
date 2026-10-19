@@ -7,6 +7,14 @@ see_also: []
 scope: "Author or revise any agent-facing instruction artifact — a chat prompt, system prompt, skill, or a procedure spread across SiftText nodes. Aliases: prompt improvement, prompt repair, instruction and skill/pipeline authoring, general versus incident-specific correction. Make the default role, reading and execution pipeline explicit and human-moldable, so readers do not invent missing transitions. Applies to any agent prompt or packaged skill, wherever it is stored, and not to ordinary knowledge or evidence nodes. SiftText Commit review is one consumer of this standard, not its owner."
 warnings: "No evals behind this. It is Jack's unquantified posture, merged from his problem-solving and agentic-LLM-use epistemics — enforced as a working standard, not as a measured effect. Do not cite it as benchmark evidence. Saved instructions are never behavioral proof: fresh-agent verification is separate evidence and is not recorded here."
 ---
+## Current execution
+
+Read the child named Author Navigable Procedures and use its complete local authoring method. Locate it through this node's `children.order` and `children/` directory; reuse unchanged reads. The other child Decision-Model Workflows remains conditional on authoring an actually selected decision-model integration, not an ordinary prompt prerequisite.
+
+## Preserved earlier procedure
+
+The complete earlier body below remains available for investigation, not as additional operative guidance.
+
 ## Applicability
 
 Apply when creating or changing any agent-facing instruction artifact — a chat or system prompt, a packaged skill, or a node that tells agents how to perform a workflow, including one spread across nodes. Ordinary knowledge, evidence and historical records do not need an invented workflow. This node owns the authoring standard; applicable SiftText Commit review makes compliance required, not optional because it is stored in Skill Library.

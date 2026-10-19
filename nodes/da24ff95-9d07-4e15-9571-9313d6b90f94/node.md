@@ -7,6 +7,14 @@ see_also: []
 scope: "Mandatory pre-write child for SiftText Commit. Applies to any ideation write: before writing, repair the intended tree delta for DRY violations, collapsed probes, wrong placement, structural-link mistakes, and unclear diff semantics. If an edit survives the pass, the agent must be able to defend why."
 warnings: "Do not treat this as optional review. If an intended edit has collapsed probes, DRY duplication, one-hop links, wrong placement, or unclear diff semantics, repair it before writing.\n  A blocked write grants no retry authority. Inspect its failure and any landed result; reuse previous arguments only when they remain appropriate and authorized.\nNo proposal or persistence before the affected current design-to-work frontier and outline-first continuation are demonstrated; tidy topology and self-reported coverage are insufficient."
 ---
+## Current execution
+
+Read the child named Review Origin and Response Coverage and follow its complete local review procedure. Locate it through this node's `children.order` and `children/` directory. Reuse unchanged reads. The selected review retains native checks and corrects the earlier blanket exclusion of useful findings from discarded ancestry; the integrated finishing contract remains in Commit Usable Understanding.
+
+## Preserved earlier procedure
+
+The complete earlier body below remains available for investigation, not as additional operative guidance.
+
 ## Applies to Any Tree Write
 
 This child is part of the mandatory pre-write pull. Its discipline applies to any ideation write, not only full end-of-session commits. Before retrying a blocked write, inspect its failure and whether it already landed. Review any changed delta, source or affected dependency; an unchanged reviewed delta needs no repeated full pass. Reuse previous arguments only when they remain appropriate and authorized, following Persistence's uncertain-operation and original-request recovery path.
