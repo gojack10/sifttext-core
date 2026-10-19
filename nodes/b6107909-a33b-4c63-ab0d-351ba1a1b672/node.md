@@ -16,6 +16,7 @@ HOME/
   nodes/UUID/node.md           authored metadata and Markdown body
   nodes/UUID/children.order    full child UUIDs, one per line
   nodes/UUID/children/UUID     symlink -> ../../UUID
+  nodes/UUID/artifacts/NAME    files the node owns; Git-tracked, each within 1 MiB
   trees/ROOT_UUID              symlink -> ../nodes/ROOT_UUID
   .sifttext/index.sqlite       derived, ignored, per working copy
 ```
@@ -31,6 +32,10 @@ Empty directories use empty `.keep` files. UUIDs, not names, are identity. Local
 A micro-summary describes stable responsibility and helps readers choose a node; it is not a progress report. Keep independently meaningful questions visible as nodes. Keep mechanical steps for one task together. Do not duplicate an answer in ancestors or add redundant parent/child references. Explain meaningful rejected attempts rather than erase their evidence.
 
 States: `not_examined`, `in_progress`, `resolved`, `stuck`, `deferred`, `discarded`. Stuck needs `blocker`; deferred needs `deferred_reason` with a resume condition; discarded needs `discard_reason`. Resolved needs a nonblank body and no active direct child. Evidence must prove the node's own claim. Worktree Publication owns activation/reopening and explicit status requests.
+
+## Node artifacts
+
+A file made for a task, such as a spreadsheet, report, draft or export, belongs to the deepest node whose question it answers, at `nodes/UUID/artifacts/NAME`. During the chat, keep working copies in the client's workspace. In the end-of-chat delta, list each file under its owner as `Add artifact: NAME`; Persistence copies it in with the other approved changes. When the human asks where a file will live, give that target path; do not offer to move the client's workspace instead. Each artifact must be a regular file within 1 MiB. A larger file stays outside the home, and the owner's body records where it is. `artifacts/chats/` is reserved for session links and is not tracked. Name a file in the owner's body only when a reader needs it to act; the folder is the inventory.
 
 ## Derived state and limits
 
