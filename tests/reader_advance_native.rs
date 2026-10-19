@@ -226,7 +226,7 @@ fn reader_cli_preserves_history_and_recovers_after_post_ff_sigkill() {
     }
     let sql = n.cli(&["sql", text(&home), "SELECT count(*) FROM nodes"]);
     assert_eq!(sql["version"], advanced["version"]);
-    assert_eq!(sql["result"]["rows"][0][0], 3);
+    assert_eq!(sql["rows"][0]["c0"], "3");
     for full in [false, true] {
         let mut args = vec!["outline", text(&home), root["id"].as_str().unwrap()];
         if full {
@@ -347,8 +347,8 @@ fn reader_cli_preserves_history_and_recovers_after_post_ff_sigkill() {
     assert_eq!(repaired["advanced"], false);
     assert_eq!(repaired["version"], published3["version"]);
     assert_eq!(
-        n.cli(&["sql", text(&home), "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        4
+        n.cli(&["sql", text(&home), "SELECT count(*) FROM nodes"])["rows"][0]["c0"],
+        "4"
     );
     assert_eq!(
         n.cli(&["search", text(&home), "Advanceinterrupt"])["total_matches"],

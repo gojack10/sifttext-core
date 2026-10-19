@@ -171,6 +171,7 @@ fn permission_precedes_offset_and_invalid_input_never_reuses_old_hits() {
     let bad = run(p, "login", None, &readable);
     assert_eq!(bad.status, "error");
     assert!(bad.hits.is_empty());
+    assert!(bad.rows.is_empty());
     assert!(bad.version.is_none());
     fs::write(&f, text).unwrap();
     assert_eq!(run(p, "login", None, &readable).status, "current");
@@ -191,4 +192,134 @@ fn permission_precedes_offset_and_invalid_input_never_reuses_old_hits() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn chains_preserve_roots_gaps_ranking_and_current_reparenting() {
+    let d = fixture();
+    let p = d.path();
+    let readable = (1..=4).map(id).collect();
+    let out = run(p, "login", Some(&id(4)), &readable);
+    assert_eq!(out.total_matches, 1);
+    assert_eq!(
+        out.rows
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![id(1), id(2), id(4)]
+    );
+    for (depth, row) in out.rows.iter().enumerate() {
+        assert_eq!(row["depth"], depth);
+        assert_eq!(row["hit"], 1);
+        assert_eq!(row["micro_summary"], "Reset guidance");
+        assert_eq!(row["warnings"], "Exact warning\nΩ");
+        assert_eq!(row.get("match").is_some(), depth == 2);
+    }
+    let root = run(p, "\"Login 1\"", None, &readable);
+    assert_eq!(root.rows.len(), 1);
+    assert_eq!(root.rows[0]["depth"], 0);
+    assert_eq!(root.rows[0]["match"], true);
+    let all = run(p, "login", None, &readable);
+    let matched: Vec<_> = all.rows.iter().filter(|r| r["match"] == true).collect();
+    assert_eq!(matched.len(), all.hits.len());
+    for (rank, (row, hit)) in matched.iter().zip(&all.hits).enumerate() {
+        assert_eq!(row["hit"], rank + 1);
+        assert_eq!(row["id"], hit.id);
+        assert_eq!(row["matching_excerpt"], json!(hit.matching_excerpt));
+    }
+    for n in 1..=2 {
+        let file = p.join("nodes").join(id(n)).join("node.md");
+        let source = fs::read_to_string(&file).unwrap();
+        fs::write(
+            file,
+            source
+                .replace("Reset guidance", &format!("Private summary {n}"))
+                .replace("Exact warning", &format!("Private warning {n}")),
+        )
+        .unwrap();
+    }
+    let partial = run(p, "login", Some(&id(4)), &BTreeSet::from([id(1), id(4)]));
+    assert_eq!(partial.rows[0]["id"], id(1));
+    assert_eq!(
+        partial.rows[1],
+        json!({"hit":1,"depth":1,"unavailable":true})
+    );
+    assert_eq!(partial.rows[2]["id"], id(4));
+    let hidden = run(p, "login", None, &BTreeSet::from([id(4)]));
+    assert_eq!(hidden.rows.len(), 3);
+    let text = serde_json::to_string(&hidden.rows).unwrap();
+    for n in 1..=3 {
+        assert!(!text.contains(&id(n)));
+        assert!(!text.contains(&format!("Login {n}")));
+        assert!(!text.contains(&format!("Private summary {n}")));
+        assert!(!text.contains(&format!("Private warning {n}")));
+    }
+    // Move the leaf without changing its text; context and version must follow the new graph.
+    fs::remove_file(p.join("nodes").join(id(2)).join("children").join(id(4))).unwrap();
+    fs::write(p.join("nodes").join(id(2)).join("children.order"), "").unwrap();
+    std::os::unix::fs::symlink(
+        format!("../../{}", id(4)),
+        p.join("nodes").join(id(3)).join("children").join(id(4)),
+    )
+    .unwrap();
+    fs::write(
+        p.join("nodes").join(id(3)).join("children.order"),
+        id(4) + "\n",
+    )
+    .unwrap();
+    let changed = run(p, "login", Some(&id(4)), &readable);
+    assert_ne!(changed.version, out.version);
+    assert_eq!(changed.rows[1]["id"], id(3));
+    assert_eq!(changed.rows[1]["active_reason"], "Exact reason Ω");
+    let page = search::search(
+        &policy(),
+        &Request {
+            store: p,
+            base_store: None,
+            query: "login",
+            under_node_id: None,
+            readable_ids: &readable,
+            limit: 1,
+            offset: 1,
+            ranking: &Ranking::default(),
+            pause_before_accept: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(page.total_matches, 4);
+    assert_eq!(page.hits.len(), 1);
+    assert!(page.rows.iter().all(|r| r["hit"] == 2));
+    assert_eq!(page.rows.last().unwrap()["id"], page.hits[0].id);
+}
+
+#[test]
+fn deep_chain_is_complete_not_an_immediate_parent_projection() {
+    let d = fixture();
+    let p = d.path();
+    for n in 5..=100 {
+        let node = p.join("nodes").join(id(n));
+        fs::create_dir_all(node.join("children")).unwrap();
+        fs::write(node.join("children.order"), "").unwrap();
+        fs::write(node.join("node.md"), format!(
+            "---\nid: \"{}\"\nname: \"Depth context\"\nmicro_summary: \"Synthetic context.\"\nstatus: \"in_progress\"\nsee_also: []\n---\nDeepneedle.\n", id(n))).unwrap();
+        let parent = p.join("nodes").join(id(n - 1));
+        fs::write(parent.join("children.order"), id(n) + "\n").unwrap();
+        std::os::unix::fs::symlink(
+            format!("../../{}", id(n)),
+            parent.join("children").join(id(n)),
+        )
+        .unwrap();
+    }
+    let readable = (1..=100).map(id).collect();
+    let out = run(p, "deepneedle", Some(&id(100)), &readable);
+    assert_eq!(out.status, "current");
+    assert_eq!(out.total_matches, 1);
+    let expected: Vec<_> = [1, 2].into_iter().chain(4..=100).map(id).collect();
+    assert_eq!(out.rows.len(), expected.len());
+    for (depth, (row, id)) in out.rows.iter().zip(expected).enumerate() {
+        assert_eq!(row["id"], id);
+        assert_eq!(row["depth"], depth);
+        assert_eq!(row["hit"], 1);
+        assert_eq!(row.get("match").is_some(), depth == 98);
+    }
 }

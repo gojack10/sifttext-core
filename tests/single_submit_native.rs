@@ -165,8 +165,8 @@ impl Native {
         let sql = self.cli(&["sql", text(home), "SELECT id FROM nodes ORDER BY id"]);
         assert_eq!(sql["version"], receipt["version"]);
         assert_eq!(
-            sql["result"]["rows"],
-            json!(ids.iter().map(|id| vec![id]).collect::<Vec<_>>())
+            sql["rows"],
+            json!(ids.iter().map(|id| json!({"c0":id})).collect::<Vec<_>>())
         );
         for id in &ids {
             let relative = PathBuf::from(format!("nodes/{id}/node.md"));
@@ -293,7 +293,8 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
         let search = n.cli(&["search", text(&home), &name]);
         assert_eq!(search["version"], second_receipt["version"]);
         assert_eq!(search["total_matches"], 1);
-        assert_eq!(search["hits"][0]["id"], node["id"]);
+        let hit = search["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap();
+        assert_eq!(hit["id"], node["id"]);
     }
     // Complete shallow/full rows for the two-level root, not merely file existence.
     for full in [false, true] {

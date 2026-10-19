@@ -38,7 +38,7 @@ sifttext source-code                      Check out matching Core source and mai
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
 sifttext update                            Check and apply compatible official product updates
 sifttext update [-y]                       Allow a large update receipt
-sifttext update --status                    Show installed identities and pending update state
+sifttext update --status                    Force a release check and show status without installing
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext update --rebuild                   Rebuild the selected local source and retain its pin
@@ -75,8 +75,8 @@ sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]
 sifttext index STORE                       Refresh derived SQLite and LEAN outlines
 sifttext outline STORE UUID [full] [-y]  Refresh, verify, then print shallow/full LEAN
 sifttext search STORE QUERY [UNDER_UUID] [-y]
-                                          Ranked lexical search; -y allows >15000 output tokens
-sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version query; -y allows >15000 tokens
+                                          Ranked hits + ancestors in LEAN; -y allows >15000 tokens
+sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version LEAN; -y allows >15000 tokens
 sifttext -h                               This reference
 
 Read node.md with ordinary file tools. Edit only your private worktree.
@@ -423,16 +423,15 @@ fn run() -> Result<()> {
                     })
                     .into());
             }
-            let output = json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"hits":result.hits});
-            print_large_return(
-                &format!("{}\n", serde_json::to_string_pretty(&output)?),
-                force,
-            )?;
+            let output = json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"rows":result.rows});
+            let rendered = sifttext_file_graph::lean_render::render(&output)
+                .map_err(std::io::Error::other)?
+                + "\n";
+            print_large_return(&rendered, force)?;
             return Ok(());
         }
         [cmd, path, sql, rest @ ..] if cmd == "sql" && (rest.is_empty() || rest == ["-y"]) => {
-            let output = local::sql(&policy, Path::new(path), sql)?;
-            let rendered = format!("{}\n", serde_json::to_string_pretty(&output)?);
+            let rendered = local::sql_lean(&policy, Path::new(path), sql)?;
             print_large_return(&rendered, !rest.is_empty())?;
             return Ok(());
         }
@@ -556,19 +555,23 @@ fn clone_source_at(repository: &str, revision: &str) -> Result<PathBuf> {
     Ok(checkout.keep())
 }
 
-fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String> {
-    if mode.is_empty() && output["status"] == "current" {
-        let summary = json!({"application":output["application"],"status":"current"});
-        Ok(sifttext_file_graph::lean_render::render(&summary).map_err(std::io::Error::other)?)
-    } else if mode == "--config"
-        || ["--grant=", "--mode=", "--pin="]
-            .iter()
-            .any(|prefix| mode.starts_with(prefix))
-    {
-        Ok(sifttext_file_graph::lean_render::render(output).map_err(std::io::Error::other)?)
-    } else {
-        Ok(serde_json::to_string_pretty(output)?)
+fn render_update_output(_mode: &str, output: &serde_json::Value) -> Result<String> {
+    let object = output
+        .as_object()
+        .ok_or("update output must be an object")?;
+    let mut lean = serde_json::Map::new();
+    for (key, value) in object {
+        let value = if value.is_array() || value.is_object() {
+            serde_json::Value::String(serde_json::to_string(value)?)
+        } else {
+            value.clone()
+        };
+        lean.insert(key.clone(), value);
     }
+    Ok(
+        sifttext_file_graph::lean_render::render(&serde_json::Value::Object(lean))
+            .map_err(std::io::Error::other)?,
+    )
 }
 
 fn render_update_error(error: &dyn std::fmt::Display) -> Result<String> {
@@ -705,22 +708,28 @@ mod tests {
             assert!(rendered.contains("permission:ask"), "{mode}: {rendered}");
         }
 
-        let receipt = json!({"status":"current", "application":"v1", "knowledge":"rev"});
-        assert_eq!(
-            render_update_output("--status", &receipt).unwrap(),
-            serde_json::to_string_pretty(&receipt).unwrap()
-        );
-        let current = render_update_output("", &receipt).unwrap();
-        assert!(current.contains("application:v1"), "{current}");
-        assert!(current.contains("status:current"), "{current}");
-        assert!(!current.contains("knowledge"), "{current}");
+        let receipt = json!({
+            "status":"update_available",
+            "application":"v0.3.3",
+            "pending":{"worktree":"/tmp/draft"},
+            "paths":["one", "two"]
+        });
+        let rendered = render_update_output("--status", &receipt).unwrap();
+        assert!(!rendered.starts_with('{'), "{rendered}");
+        assert!(rendered.contains("status:update_available"), "{rendered}");
+        assert!(rendered.contains("application:v0.3.3"), "{rendered}");
+        assert!(rendered.contains("pending:"), "{rendered}");
+        assert!(rendered.contains("paths:"), "{rendered}");
     }
 
     #[test]
     fn update_errors_use_friendly_lean() {
         let error = render_update_error(&"Could not download the official release. Check your internet connection, then retry `sifttext update`. Your current installation and local work remain available.").unwrap();
         assert!(error.contains("status:error"), "{error}");
-        assert!(error.contains("Could not download the official release"), "{error}");
+        assert!(
+            error.contains("Could not download the official release"),
+            "{error}"
+        );
         assert!(error.contains("Check your internet connection"), "{error}");
         assert!(!error.starts_with("rejected:"), "{error}");
     }

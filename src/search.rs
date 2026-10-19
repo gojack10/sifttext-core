@@ -62,6 +62,8 @@ pub struct Outcome {
     pub version: Option<String>,
     pub total_matches: i64,
     pub hits: Vec<Hit>,
+    /// Ranked root-to-hit chains from the same capture, with unreadable positions redacted.
+    pub rows: Vec<Value>,
     /// Upstream fields for differential comparison; contains no protected hits.
     pub cards: Vec<leviathan_search::Card>,
 }
@@ -183,34 +185,72 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
                 request.offset,
                 request.ranking.title_weight,
             )?;
-            let hits = cards
+            let records: BTreeMap<_, _> = view
+                .nodes
                 .iter()
-                .map(|card| {
-                    let r = view.nodes.iter().find(|r| r["id"] == card.text.id).unwrap();
-                    let status = r["status"].as_str().unwrap();
-                    let key = match status {
-                        "stuck" => "blocker",
-                        "deferred" => "deferred_reason",
-                        "discarded" => "discard_reason",
-                        _ => "",
-                    };
-                    let text = |key| r[key].as_str().map(str::to_owned);
-                    Hit {
-                        id: card.text.id.clone(),
-                        name: text("name").unwrap(),
-                        micro_summary: text("micro_summary").unwrap(),
-                        matching_excerpt: card.text.snippet.clone(),
-                        path: store.path.join("nodes").join(&card.text.id).join("node.md"),
-                        status: status.to_owned(),
-                        active_reason: text(key),
-                        warnings: text("warnings").filter(|s| !s.trim().is_empty()),
-                    }
-                })
+                .map(|r| (r["id"].as_str().unwrap(), r))
                 .collect();
-            Ok((total, cards, hits))
+            let make_hit = |id: &str, matching_excerpt: Option<String>| {
+                let r = records[id];
+                let status = r["status"].as_str().unwrap();
+                let key = match status {
+                    "stuck" => "blocker",
+                    "deferred" => "deferred_reason",
+                    "discarded" => "discard_reason",
+                    _ => "",
+                };
+                let text = |key| r[key].as_str().map(str::to_owned);
+                Hit {
+                    id: id.to_owned(),
+                    name: text("name").unwrap(),
+                    micro_summary: text("micro_summary").unwrap(),
+                    matching_excerpt,
+                    path: store.path.join("nodes").join(id).join("node.md"),
+                    status: status.to_owned(),
+                    active_reason: text(key),
+                    warnings: text("warnings").filter(|s| !s.trim().is_empty()),
+                }
+            };
+            let hits: Vec<Hit> = cards
+                .iter()
+                .map(|card| make_hit(&card.text.id, card.text.snippet.clone()))
+                .collect();
+            let relationships = crate::coherent_capture::Relationships::new(store);
+            let mut rows = Vec::new();
+            for (rank, hit) in hits.iter().enumerate() {
+                let mut chain = vec![hit.id.as_str()];
+                while let Some(parent) = relationships.parents.get(chain.last().unwrap()) {
+                    chain.push(parent);
+                }
+                chain.reverse();
+                for (depth, id) in chain.into_iter().enumerate() {
+                    let mut row = if id == hit.id {
+                        let mut row = serde_json::to_value(hit)?.as_object().unwrap().clone();
+                        row.insert("match".into(), Value::Bool(true));
+                        row
+                    } else if local || request.readable_ids.contains(id) {
+                        let mut row = serde_json::to_value(make_hit(id, None))?
+                            .as_object()
+                            .unwrap()
+                            .clone();
+                        row.remove("path");
+                        row
+                    } else {
+                        // Keep the gap explicit: visible nodes on either side are not adjacent.
+                        serde_json::json!({"unavailable":true})
+                            .as_object()
+                            .unwrap()
+                            .clone()
+                    };
+                    row.insert("hit".into(), (request.offset + rank + 1).into());
+                    row.insert("depth".into(), depth.into());
+                    rows.push(Value::Object(row));
+                }
+            }
+            Ok((total, cards, hits, rows))
         },
     )?;
-    let (total_matches, cards, hits) = found.unwrap_or((0, vec![], vec![]));
+    let (total_matches, cards, hits, rows) = found.unwrap_or((0, vec![], vec![], vec![]));
     Ok(Outcome {
         refusal: view.refusal,
         status: view.status,
@@ -218,6 +258,7 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
         total_matches,
         cards,
         hits,
+        rows,
     })
 }
 

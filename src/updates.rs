@@ -359,6 +359,13 @@ fn download(url: &str, path: &Path, limit: u64) -> Result<()> {
         "oversized release download",
     )
 }
+fn fetch_manifest(root: &Path) -> Result<Manifest> {
+    let file = tempfile::NamedTempFile::new_in(root)?;
+    download(MANIFEST, file.path(), 1_048_576)?;
+    let manifest: Manifest = load(file.path())?;
+    validate_manifest(&manifest)?;
+    Ok(manifest)
+}
 /// Stage one official package into `destination`.
 ///
 /// The asset URL must sit under the official release path and the archive must match the
@@ -1177,11 +1184,42 @@ pub fn update_with_receipt_preflight(
         persist(&root.join("state.json"), &state)?;
         return Ok(json!({"status":"repair_attached","repair_node":id,"path":path}));
     }
-    // Status must remain store-free even when recovery cannot validate a
-    // candidate or refresh its reader. Inspection is not permission to activate.
+    // A requested status check bypasses the opportunistic interval but never installs a release.
     if mode == "--status" {
+        state.attempt = Some(now());
+        persist(&root.join("state.json"), &state)?;
+        let check = (|| -> Result<Value> {
+            let manifest = fetch_manifest(root)?;
+            let current = package(&root.join(&state.application))?;
+            opportunistic_notice(&current, &state, &manifest)
+        })();
+        if check.is_ok() {
+            state.success = state.attempt.clone().unwrap();
+        }
+        persist(&root.join("state.json"), &state)?;
         let mut status = serde_json::to_value(&state)?;
         status["activation_pending"] = json!(root.join("activation.json").exists());
+        match check {
+            Ok(notice) => {
+                status["update_check"] = notice["status"].clone();
+                for field in [
+                    "application",
+                    "knowledge",
+                    "command",
+                    "permission",
+                    "config",
+                    "guide",
+                ] {
+                    if let Some(value) = notice.get(field) {
+                        status[format!("available_{field}")] = value.clone();
+                    }
+                }
+            }
+            Err(error) => {
+                status["update_check"] = json!("error");
+                status["update_error"] = json!(error.to_string());
+            }
+        }
         return Ok(status);
     }
     let recovering = root.join("activation.json").exists();
@@ -1317,10 +1355,7 @@ pub fn update_with_receipt_preflight(
     }
     state.attempt = Some(now());
     persist(&root.join("state.json"), &state)?;
-    let file = tempfile::NamedTempFile::new_in(root)?;
-    download(MANIFEST, file.path(), 1_048_576)?;
-    let manifest: Manifest = load(file.path())?;
-    validate_manifest(&manifest)?;
+    let manifest = fetch_manifest(root)?;
     let result = if mode == "--opportunistic" {
         let current = package(&root.join(&state.application))?;
         opportunistic_notice(&current, &state, &manifest)?
@@ -2044,6 +2079,61 @@ mod tests {
         (policy, s, a, b, manifest)
     }
     #[test]
+    fn explicit_cli_status_forces_a_check_without_installing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (_policy, state, _, _, mut manifest) = fixture(&root);
+        manifest.application.version = "v2".into();
+        manifest.application.source = "d".repeat(40);
+        manifest.application.requires_knowledge = state.knowledge.clone();
+        manifest.knowledge.revision = state.knowledge.clone();
+        manifest.knowledge.requires_application = "v2".into();
+        for asset in manifest.application.assets.values_mut() {
+            asset.url = format!("{RELEASES}v2/fixture.tar.gz");
+        }
+        manifest.knowledge.asset.url = format!("{RELEASES}v2/fixture.tar.gz");
+        let manifest_path = root.join("manifest.json");
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let bin = root.join("mock-bin");
+        fs::create_dir(&bin).unwrap();
+        let curl = bin.join("curl");
+        fs::write(
+            &curl,
+            "#!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --output ]; then out=$2; shift 2; else shift; fi; done\ncp \"$SIFTTEXT_TEST_MANIFEST\" \"$out\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&curl, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        let output = Command::new(crate::native_bin("sifttext"))
+            .args(["update", "--status"])
+            .env("PATH", path)
+            .env("SIFTTEXT_INSTALL_ROOT", &root)
+            .env("SIFTTEXT_TEST_MANIFEST", &manifest_path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("update_check:update_available"), "{stdout}");
+        assert!(stdout.contains("available_application:v2"), "{stdout}");
+        assert!(!stdout.starts_with('{'), "{stdout}");
+        assert!(
+            fs::read_link(root.join("current"))
+                .unwrap()
+                .ends_with("releases/v1")
+        );
+        let saved: State = load(&root.join("state.json")).unwrap();
+        assert!(saved.pending.is_none());
+        assert_eq!(saved.application, state.application);
+        assert_eq!(saved.success.wall, saved.attempt.unwrap().wall);
+    }
+
+    #[test]
     fn explicit_cli_update_activates_the_staged_release_once() {
         use std::os::unix::fs::PermissionsExt;
 
@@ -2116,7 +2206,7 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("\"status\": \"updated\""));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("status:updated"));
         let expected = PathBuf::from(format!("releases/v2-{asset_sha256}"));
         assert_eq!(
             fs::read_link(root.join("current")).unwrap(),
@@ -2253,7 +2343,6 @@ mod tests {
         let before = git(&state.home, &["rev-parse", "HEAD"]).unwrap();
         let customer_before = fs::read(&customer).unwrap();
         let active_before = fs::read_link(root.join("current")).unwrap();
-        let state_before = fs::read(root.join("state.json")).unwrap();
         persist(&root.join("activation.json"), &json!({
             "application":"releases/v1",
             "application_sha256":state.application_sha256,
@@ -2267,13 +2356,12 @@ mod tests {
             }
         })).unwrap();
         assert!(update(&root, "--resume").is_err());
-        let status = update(&root, "--status").unwrap();
-        assert_eq!(status["activation_pending"], true);
-        assert_eq!(status["application"], "releases/v1");
+        let saved: State = load(&root.join("state.json")).unwrap();
+        assert_eq!(saved.application, state.application);
+        assert!(saved.pending.is_none());
         assert_eq!(git(&state.home, &["rev-parse", "HEAD"]).unwrap(), before);
         assert_eq!(fs::read(&customer).unwrap(), customer_before);
         assert_eq!(fs::read_link(root.join("current")).unwrap(), active_before);
-        assert_eq!(fs::read(root.join("state.json")).unwrap(), state_before);
         assert!(root.join("activation.json").exists());
     }
 

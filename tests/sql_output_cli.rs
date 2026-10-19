@@ -25,7 +25,7 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
     let home = home.to_str().unwrap();
     let initialized = cli(&["init", home, "--empty"]);
     assert!(initialized.status.success(), "{initialized:?}");
-    // Each appended " x" is one ordinary token; measure the complete JSON wrapper too.
+    // Each appended " x" is one ordinary token; measure the complete LEAN wrapper too.
     let mut repeats = 15_000;
     let mut query = format!("SELECT '{}' AS payload", " x".repeat(repeats));
     let measured = cli(&["sql", home, &query, "-y"]);
@@ -38,8 +38,11 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
         assert!(full.status.success(), "{full:?}");
         assert!(full.stderr.is_empty(), "{full:?}");
         assert_eq!(tokens(&full.stdout), target);
-        let value: serde_json::Value = serde_json::from_slice(&full.stdout).unwrap();
-        assert_eq!(value["result"]["rows"][0][0], " x".repeat(repeats));
+        let value =
+            sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&full.stdout).unwrap())
+                .unwrap();
+        assert_eq!(value["column_0"], "payload");
+        assert_eq!(value["rows"][0]["c0"], " x".repeat(repeats));
         let guarded = cli(&["sql", home, &query]);
         assert!(guarded.stderr.is_empty(), "{guarded:?}");
         if target == 15_000 {
@@ -59,8 +62,10 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
     let query = format!("SELECT '{text}' AS payload");
     let full = cli(&["sql", home, &query, "-y"]);
     assert!(full.status.success(), "{full:?}");
-    let value: serde_json::Value = serde_json::from_slice(&full.stdout).unwrap();
-    assert_eq!(value["result"]["rows"][0][0], text);
+    let value =
+        sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&full.stdout).unwrap())
+            .unwrap();
+    assert_eq!(value["rows"][0]["c0"], text);
     let count = tokens(&full.stdout);
     assert!(count > 15_000);
     let guarded = cli(&["sql", home, &query]);
@@ -81,4 +86,93 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
         Store::read(std::path::Path::new(home)).unwrap().inventory,
         authored
     );
+}
+
+#[test]
+fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().canonicalize().unwrap().join("home");
+    let home = home.to_str().unwrap();
+    assert!(cli(&["init", home, "--empty"]).status.success());
+    let query = "SELECT 9223372036854775807 AS \"same\", -9223372036854775808 AS \"same\", \
+        1.0 AS \"\", -0.0 AS \"a.b\", 1e999 AS \"Ω\nkey\", NULL AS \"~\", \
+        '001' AS \"a:b\", 'Ω\t界\ncarriage\rreturn\\\"' AS \"two words\"";
+    let run = |query: &str| {
+        let out = cli(&["sql", home, query, "-y"]);
+        assert!(out.status.success(), "{out:?}");
+        assert!(out.stderr.is_empty());
+        sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&out.stdout).unwrap())
+            .unwrap()
+    };
+    let value = run(query);
+    assert_eq!(value["column_count"], 8);
+    for (i, name) in ["same", "same", "", "a.b", "Ω\nkey", "~", "a:b", "two words"]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(value[format!("column_{i}")], *name);
+    }
+    let row = &value["rows"][0];
+    assert_eq!(
+        row["c0"].as_str().unwrap().parse::<i64>().unwrap(),
+        i64::MAX
+    );
+    assert_eq!(
+        row["c1"].as_str().unwrap().parse::<i64>().unwrap(),
+        i64::MIN
+    );
+    assert_eq!(row["c0_type"], "integer");
+    assert_eq!(row["c1_type"], "integer");
+    assert_eq!(row["c2_type"], "real");
+    assert_eq!(row["c2"].as_str().unwrap().parse::<f64>().unwrap(), 1.0);
+    assert_eq!(
+        row["c3"]
+            .as_str()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap()
+            .to_bits(),
+        (-0.0f64).to_bits()
+    );
+    assert_eq!(
+        row["c4"].as_str().unwrap().parse::<f64>().unwrap(),
+        f64::INFINITY
+    );
+    assert!(row["c5"].is_null());
+    assert_eq!(row["c6"], "001");
+    assert!(row.get("c6_type").is_none());
+    assert_eq!(row["c7"], "Ω\t界\ncarriage\rreturn\\\"");
+    let empty = run(&(query.to_owned() + " WHERE 0"));
+    assert_eq!(empty["rows"], serde_json::json!([]));
+    for i in 0..8 {
+        assert_eq!(empty[format!("column_{i}")], value[format!("column_{i}")]);
+    }
+    let mixed =
+        run("SELECT 1 AS x UNION ALL SELECT '1' UNION ALL SELECT NULL UNION ALL SELECT 1.0");
+    assert_eq!(
+        mixed["rows"],
+        serde_json::json!([
+            {"c0":"1","c0_type":"integer"}, {"c0":"1"}, {"c0":null}, {"c0":"1","c0_type":"real"}
+        ])
+    );
+    let thousand = format!(
+        "SELECT value FROM json_each('{}')",
+        serde_json::to_string(&vec![1; 1000]).unwrap()
+    );
+    assert_eq!(run(&thousand)["rows"].as_array().unwrap().len(), 1000);
+    for query in [
+        "SELECT 1; SELECT 2".to_owned(),
+        "SELECT 1; DELETE FROM nodes".to_owned(),
+        "DELETE FROM nodes".to_owned(),
+        "PRAGMA user_version".to_owned(),
+        "SELECT x'ff'".to_owned(),
+        format!(
+            "SELECT value FROM json_each('{}')",
+            serde_json::to_string(&vec![1; 1001]).unwrap()
+        ),
+    ] {
+        let out = cli(&["sql", home, &query, "-y"]);
+        assert!(!out.status.success(), "{query}: {out:?}");
+        assert!(out.stdout.is_empty(), "{query}: {out:?}");
+    }
 }

@@ -2325,8 +2325,14 @@ pub fn refresh(policy: &Policy, path: &Path) -> Result<index::View> {
     Ok(view)
 }
 
+struct SqlResult {
+    version: Option<String>,
+    columns: Vec<String>,
+    rows: Vec<Vec<rusqlite::types::Value>>,
+}
+
 /// Run one readonly statement inside the existing same-version transaction.
-pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
+fn query_sql(policy: &Policy, path: &Path, sql: &str) -> Result<SqlResult> {
     let (view, result) = index::with_query(
         policy,
         path,
@@ -2353,22 +2359,68 @@ pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
                 let mut values = Vec::new();
                 for i in 0..columns.len() {
                     use rusqlite::types::ValueRef;
-                    values.push(match row.get_ref(i)? {
-                        ValueRef::Null => Value::Null,
-                        ValueRef::Integer(n) => json!(n),
-                        ValueRef::Real(n) => json!(n),
-                        ValueRef::Text(s) => json!(std::str::from_utf8(s)?),
-                        ValueRef::Blob(_) => return Err("blob results unsupported".into()),
-                    });
+                    let value = row.get_ref(i)?;
+                    require(!matches!(value, ValueRef::Blob(_)), "blob results unsupported")?;
+                    // Preserve SQLite's numeric storage class until the presentation boundary.
+                    values.push(value.try_into()?);
                 }
                 out.push(values);
             }
-            Ok(json!({"columns":columns,"rows":out}))
+            Ok((columns, out))
         },
     )?;
     if view.status != "current" {
         return Err(view.refusal
             .ok_or("SQL source changed; retry from current authored files")?.into());
     }
-    Ok(json!({"status":view.status,"version":view.version,"version_scope":"authored_store","result":result}))
+    let (columns, rows) = result.ok_or("missing SQL result")?;
+    Ok(SqlResult { version: view.version, columns, rows })
+}
+
+/// Internal JSON diagnostics retain their existing columns/positional-rows contract.
+pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
+    let result = query_sql(policy, path, sql)?;
+    let rows: Vec<Vec<Value>> = result.rows.into_iter().map(|row| row.into_iter().map(|value| {
+        use rusqlite::types::Value as Sql;
+        match value {
+            Sql::Null => Value::Null,
+            Sql::Integer(n) => json!(n),
+            Sql::Real(n) => json!(n),
+            Sql::Text(s) => json!(s),
+            Sql::Blob(_) => unreachable!(),
+        }
+    }).collect()).collect();
+    Ok(json!({"status":"current","version":result.version,"version_scope":"authored_store",
+        "result":{"columns":result.columns,"rows":rows}}))
+}
+
+/// Public SQL LEAN uses positional keys so duplicate/arbitrary names remain lossless.
+/// Decimal strings with storage-class tags also survive IEEE-754-only LEAN decoders.
+pub fn sql_lean(policy: &Policy, path: &Path, sql: &str) -> Result<String> {
+    let result = query_sql(policy, path, sql)?;
+    let mut document = json!({"status":"current","version":result.version,
+        "version_scope":"authored_store","column_count":result.columns.len()});
+    for (i, name) in result.columns.into_iter().enumerate() {
+        document[format!("column_{i}")] = json!(name);
+    }
+    let rows: Vec<Value> = result.rows.into_iter().map(|values| {
+        let mut row = serde_json::Map::new();
+        for (i, value) in values.into_iter().enumerate() {
+            use rusqlite::types::Value as Sql;
+            let (value, kind) = match value {
+                Sql::Null => (Value::Null, None),
+                Sql::Text(s) => (json!(s), None),
+                Sql::Integer(n) => (json!(n.to_string()), Some("integer")),
+                Sql::Real(n) => (json!(n.to_string()), Some("real")),
+                Sql::Blob(_) => unreachable!(),
+            };
+            row.insert(format!("c{i}"), value);
+            if let Some(kind) = kind {
+                row.insert(format!("c{i}_type"), json!(kind));
+            }
+        }
+        Value::Object(row)
+    }).collect();
+    document["rows"] = json!(rows);
+    Ok(crate::lean_render::render(&document)? + "\n")
 }

@@ -101,7 +101,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
             .contains("coverage:full")
     );
     let sql = json(bin, tools, &["sql", home, "SELECT count(*) FROM nodes"]);
-    assert_eq!(sql["result"]["rows"][0][0], count);
+    assert_eq!(sql["rows"][0]["c0"], count.to_string());
     assert_eq!(sql["version"], index["version"]);
 
     // Recognition must not reseed even an unfinished, invalid user edit.
@@ -244,8 +244,8 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
             bin,
             tools,
             &["sql", recovered, "SELECT count(*) FROM nodes"]
-        )["result"]["rows"][0][0],
-        count
+        )["rows"][0]["c0"],
+        count.to_string()
     );
     cli(bin, tools, &["outline", recovered, entry, "full"]);
     assert_eq!(fs::read(&node).unwrap(), original);

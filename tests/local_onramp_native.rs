@@ -244,8 +244,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     let search = n.json(&["search", text(&home), query]);
     assert_eq!(search["version"], indexed["version"]);
     assert_eq!(search["version_scope"], "authored_store");
-    assert!(!search["hits"].as_array().unwrap().is_empty());
-    for hit in search["hits"].as_array().unwrap() {
+    assert!(!search["rows"].as_array().unwrap().is_empty());
+    for hit in search["rows"].as_array().unwrap().iter().filter(|r| r["match"] == true) {
         assert_eq!(
             hit["path"],
             text(
@@ -259,7 +259,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     let sql = n.json(&["sql", text(&home), "SELECT count(*) FROM nodes"]);
     assert_eq!(sql["version"], indexed["version"]);
     assert_eq!(sql["version_scope"], "authored_store");
-    assert_eq!(sql["result"]["rows"][0][0], count);
+    assert_eq!(sql["rows"][0]["c0"], count.to_string());
+    assert_eq!(sql["rows"][0]["c0_type"], "integer");
     for q in [
         "DELETE FROM nodes",
         "PRAGMA user_version=1",
@@ -309,8 +310,9 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     n.cli(&["check", text(&draft), text(&home)]);
     let found = n.json(&["search", text(&draft), name]);
     assert_eq!(found["total_matches"], 1);
-    assert_eq!(found["hits"][0]["id"], created["id"]);
-    assert_eq!(found["hits"][0]["path"], created["path"]);
+    let hit = found["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap();
+    assert_eq!(hit["id"], created["id"]);
+    assert_eq!(hit["path"], created["path"]);
     n.git(&draft, &["add", "--", "nodes", "trees"]);
     n.git(
         &draft,
@@ -360,8 +362,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         edited
     );
     assert_eq!(
-        n.json(&["sql", text(&view), "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        count + 1
+        n.json(&["sql", text(&view), "SELECT count(*) FROM nodes"])["rows"][0]["c0"],
+        (count + 1).to_string()
     );
     assert_eq!(n.json(&["search", text(&view), name])["total_matches"], 1);
     n.cli(&["outline", text(&view), ENTRY, "full"]);
@@ -412,9 +414,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         0
     );
     assert_eq!(
-        n.json(&["sql", text(&restored_view), "SELECT count(*) FROM nodes"])["result"]["rows"][0]
-            [0],
-        count
+        n.json(&["sql", text(&restored_view), "SELECT count(*) FROM nodes"])["rows"][0]["c0"],
+        count.to_string()
     );
     n.cli(&["outline", text(&restored_view), ENTRY, "full"]);
     assert_eq!(authored(&bundle), original);
@@ -484,13 +485,13 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     fs::copy(env!("CARGO_BIN_EXE_sifttext"), prefix.join("sifttext")).unwrap();
     let bin = prefix.join("sifttext");
     n.run(text(&bin), &["check", text(&restored_view)], true);
-    let s: Value = serde_json::from_str(&n.run(
+    let s = sifttext_file_graph::outlines::decode_lean(&n.run(
         text(&bin),
         &["sql", text(&restored_view), "SELECT count(*) FROM nodes"],
         true,
     ))
     .unwrap();
-    assert_eq!(s["result"]["rows"][0][0], count);
+    assert_eq!(s["rows"][0]["c0"], count.to_string());
     assert_eq!(
         n.run(text(&bin), &["read", text(&restored_view), ENTRY], true)
             .as_bytes(),

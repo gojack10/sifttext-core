@@ -233,16 +233,16 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
             > 0
     );
     assert_eq!(
-        n.json(&["sql", h, "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        source_nodes
+        n.json(&["sql", h, "SELECT count(*) FROM nodes"])["rows"][0]["c0"],
+        source_nodes.to_string()
     );
     assert_eq!(
         n.json(&[
             "sql",
             h,
             "SELECT count(*) FROM nodes WHERE name = 'Skill Library'"
-        ])["result"]["rows"][0][0],
-        1
+        ])["rows"][0]["c0"],
+        "1"
     );
     for query in [
         "DELETE FROM nodes",
@@ -425,7 +425,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     .unwrap();
     n.cli(&["check", d, o], true);
     assert_eq!(
-        n.json(&["search", d, "Defaultbundlescratchtrial"])["hits"][0]["id"],
+        n.json(&["search", d, "Defaultbundlescratchtrial"])["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap()["id"],
         created["id"]
     );
     n.git(&draft, &["add", "--", "nodes", "trees"]);
@@ -456,14 +456,14 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
             "sql",
             receipt["view"].as_str().unwrap(),
             "SELECT count(*) FROM nodes"
-        ])["result"]["rows"][0][0],
-        source_nodes + 1
+        ])["rows"][0]["c0"],
+        (source_nodes + 1).to_string()
     );
     let advanced = n.json(&["advance", o]);
     assert_eq!(advanced["accepted"], receipt["candidate"]);
     assert_eq!(advanced["advanced"], false);
     assert_eq!(
-        n.json(&["search", o, "Defaultbundlescratchtrial"])["hits"][0]["id"],
+        n.json(&["search", o, "Defaultbundlescratchtrial"])["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap()["id"],
         created["id"]
     );
     let recovery = n.json(&["worktree", o]);
@@ -481,8 +481,8 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     assert_eq!(restored["published"], true);
     n.json(&["advance", o]);
     assert_eq!(
-        n.json(&["sql", o, "SELECT count(*) FROM nodes"])["result"]["rows"][0][0],
-        source_nodes
+        n.json(&["sql", o, "SELECT count(*) FROM nodes"])["rows"][0]["c0"],
+        source_nodes.to_string()
     );
     assert_eq!(
         n.json(&["search", o, "Defaultbundlescratchtrial"])["total_matches"],
