@@ -9,18 +9,18 @@ The tree lives in Markdown files with Git history, allowing agents to use it acr
 ## Plans
 
 - Core is free for agents with file and terminal access.
-- Plus costs $20 USD/month for MCP access to synced trees.
-- Pro costs $50 USD/month for Plus with browser tooling and automated checks.
-
-Local knowledge work and official release updates need no payment or cloud login.
-
-Signing in leaves local trees on disk, with hosted features supplied separately from Core.
+- Plus costs $20 USD/month for MCP access to synced cloud trees.
+- Pro costs $50 USD/month and includes Plus, with these tools on local or cloud MCP:
+  - Cloud browser environment for agents.
+  - Writing checks for AI-sounding prose.
+  - Automatic tree organization checks.
 
 ## Product links
 
 - [Website](https://sifttext.com/) for examples and current plans.
 - [Platform](https://app.sifttext.com/) to sign in or manage a subscription.
 - [Source repository](https://github.com/gojack10/sifttext-core) to inspect Core.
+- [README.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/README.md) for a product overview and development guidance.
 
 ## Installation
 
@@ -34,7 +34,6 @@ After setup, follow the installed instruction entry to resume the user's task.
 
 ## Release evidence
 
-- [v0.3.0 release](https://github.com/gojack10/sifttext-core/releases/tag/v0.3.0) publishes packages and SHA256SUMS with source revision `0d926f084daceedf8d96b11d52684a0a95ed38ad`.
 - [Latest release](https://github.com/gojack10/sifttext-core/releases/latest) to check for a newer version.
 
 Use SHA256SUMS to verify agreement with published release bytes and separate build-provenance evidence to identify which build produced a package.
@@ -44,9 +43,3 @@ Use SHA256SUMS to verify agreement with published release bytes and separate bui
 - [Session-retention guide](https://raw.githubusercontent.com/gojack10/sifttext-core/main/integrations/pi/README.md) for private retention, which is off by default. Enable retention or backup only at the user's request.
 - [AGENTS.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/AGENTS.md) for authorized development and repair.
 - [PolyForm Perimeter license](https://raw.githubusercontent.com/gojack10/sifttext-core/main/LICENSE) permits source access while restricting competing products.
-
-Keep credentials outside Git and the knowledge home.
-
-Keep private session archives outside the knowledge home, excluding transcripts from knowledge submissions.
-
-Preserve customer knowledge and session traces during repair, and obtain permission before publishing a contribution that excludes private data.
