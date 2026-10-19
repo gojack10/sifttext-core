@@ -7,6 +7,18 @@ see_also: [{"target":"da24ff95-9d07-4e15-9571-9313d6b90f94","reason":"Canonical 
 scope: "Phase 5 of SiftText Commit. Compare saved fields, structure, references and effective statuses with the authorized delta, verify affected continuation, and report complete or partial results with actual evidence."
 warnings: "Verify all promised operations; neither a tool receipt nor a shallow check proves completion. Repair concrete defects without presuming a violation or repeating unchanged full searches without evidence. Keep author walkthroughs separate from fresh-agent trials."
 ---
+## Current execution
+
+Use “Save and finish the affected understanding” in the parent's child
+named Commit Usable Understanding. Read that complete selected procedure
+if it is not already loaded unchanged. This return does not restart
+completed drafting or approval.
+
+## Preserved earlier procedure
+
+The complete earlier body below is retained for investigation, not as
+additional operative guidance.
+
 Phase 5 of SiftText Commit checks the actual result after Persistence and Reconciliation. The earlier instruction presumed a violation and demanded repeated full searches even without evidence. This successor requires explicit landed-state and continuation checks, with renewed review when findings or repairs warrant it.
 
 ## Check every promised operation

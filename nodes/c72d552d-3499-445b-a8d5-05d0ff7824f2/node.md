@@ -7,6 +7,17 @@ see_also: [{"target":"5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d","reason":"Read-side 
 scope: "Govern local knowledge writes, including small edits and end-of-session capture, without hosted tools or private project prerequisites."
 warnings: "Read this hub and its three pre-write children before writing. Approval permits the stated delta, not invented work; a Git commit is not checked publication or evidence of correctness."
 ---
+## Current execution
+
+Read the child named Commit Usable Understanding and use its complete
+route. Reconciliation and verification are included in that procedure.
+A saved addition alone does not complete Commit. Reuse unchanged reads.
+
+## Preserved earlier procedure
+
+The complete earlier body below is retained for investigation, not as
+additional operative guidance.
+
 ## Entry and actors
 
 For a local knowledge write, read this hub, then the children named Dialogue, Forcing Pass and Persistence, in that order. Find their UUIDs in this directory's `children.order` and read each `children/UUID/node.md` using ordinary file tools. Reuse unchanged reads already loaded in this session; reload after context loss, notice of a relevant revision or a concrete conflict. Read applicable instructions in the assigned local project; do not require an external project tree or hosted service.

@@ -11,6 +11,7 @@ const LOCAL_AUTHORING: &[&str] = &[
     "d00ab6fd-b475-49ef-b37a-812807879308",
     "da56a037-af73-469c-a941-a2b7c5f290b7",
     "da24ff95-9d07-4e15-9571-9313d6b90f94",
+    "e9c339c9-7002-450a-ad81-86ffcc5a7141",
     "f2310937-f481-48e4-9aad-8b2486cafc3d",
     "fb1e0c9f-8c04-4baf-91e6-4688856a14af",
     "fe634065-36f1-4214-a131-7d36a587fba2",
@@ -66,6 +67,44 @@ fn embedded_authoring_instructions_need_no_private_or_hosted_method() {
         .1;
     assert!(publication.contains("changing an existing resolved leaf"));
     assert!(publication.contains("requires its explicit UUID"));
+}
+
+#[test]
+fn commit_entries_deliver_one_complete_finishing_contract_and_preserve_history() {
+    let file = |path: &str| super::FILES.iter().find(|(name, _)| *name == path).unwrap().1;
+    let successor = "e9c339c9-7002-450a-ad81-86ffcc5a7141";
+    for id in [
+        "c72d552d-3499-445b-a8d5-05d0ff7824f2",
+        "f2310937-f481-48e4-9aad-8b2486cafc3d",
+        "ba139839-28a3-43fe-9cff-b5925eff371e",
+    ] {
+        let body = file(&format!("nodes/{id}/node.md"));
+        let (current, preserved) = body.split_once("## Preserved earlier procedure\n").unwrap();
+        assert!(current.contains("## Current execution"));
+        assert!(current.contains("Commit Usable Understanding"));
+        assert!(preserved.contains("not as\nadditional operative guidance"));
+    }
+    assert!(file("nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/children.order")
+        .lines().any(|id| id == successor));
+    assert!(super::LINKS.iter().any(|(path, target)| {
+        *path == format!("nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/children/{successor}")
+            && *target == format!("../../{successor}")
+    }));
+    let body = file(&format!("nodes/{successor}/node.md"));
+    for required in [
+        "## Observed conditions",
+        "## Inference and response",
+        "### Save and finish the affected understanding",
+        "Before candidate handoff or checked publication",
+        "including affected unchanged wording",
+        "obsolete instructions do not still compete as current guidance",
+        "preserve the complete earlier procedure",
+        "Proposal-only work ends at review",
+        "Native checks establish their declared structural and\nstorage properties, not semantic correctness",
+        "Improved behavior\nby a fresh agent requires separate evidence",
+    ] {
+        assert!(body.contains(required), "missing contract: {required}");
+    }
 }
 
 #[test]
