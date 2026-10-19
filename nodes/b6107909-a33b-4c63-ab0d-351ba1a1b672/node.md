@@ -16,7 +16,7 @@ HOME/
   nodes/UUID/node.md           authored metadata and Markdown body
   nodes/UUID/children.order    full child UUIDs, one per line
   nodes/UUID/children/UUID     symlink -> ../../UUID
-  nodes/UUID/artifacts/NAME    files the node owns; Git-tracked, each within 1 MiB
+  nodes/UUID/artifacts/NAME    files the node owns; kept outside Git until this build accepts them
   trees/ROOT_UUID              symlink -> ../nodes/ROOT_UUID
   .sifttext/index.sqlite       derived, ignored, per working copy
 ```
@@ -35,7 +35,7 @@ States: `not_examined`, `in_progress`, `resolved`, `stuck`, `deferred`, `discard
 
 ## Node artifacts
 
-A file made for a task, such as a spreadsheet, report, draft or export, belongs to the deepest node whose question it answers, at `nodes/UUID/artifacts/NAME`. During the chat, keep working copies in the client's workspace. In the end-of-chat delta, list each file under its owner as `Add artifact: NAME`; Persistence copies it in with the other approved changes. When the human asks where a file will live, give that target path; do not offer to move the client's workspace instead. Each artifact must be a regular file within 1 MiB. A larger file stays outside the home, and the owner's body records where it is. `artifacts/chats/` is reserved for session links and is not tracked. Name a file in the owner's body only when a reader needs it to act; the folder is the inventory.
+A file made for a task, such as a spreadsheet, report, draft or export, belongs to the deepest node whose question it answers. The current build's `submit` refuses any commit that tracks a file under `nodes/UUID/artifacts/` (`authored_tree` allows only the authored node files and relationship links), while `check` accepts the same tree, so only submission catches it. Until Core accepts tracked artifacts, keep the file outside the home, in the client's workspace or a shared drive, and record its location in the owner's body. Do not list it as an `Add artifact` operation. `artifacts/chats/` is reserved for session links and is not tracked.
 
 ## Derived state and limits
 
