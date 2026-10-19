@@ -829,6 +829,8 @@ fn authored_tree(repo: &Path, revision: &str) -> Result<()> {
             }
             ["nodes", id, "children", ".keep"] => regular && crate::uuid(id),
             ["nodes", id, "children", child] => link && crate::uuid(id) && crate::uuid(child),
+            // Task files the node owns. Regular files only; the 1 MiB limit applies in inventory.
+            ["nodes", id, "artifacts", name] => regular && crate::uuid(id) && *name != "chats",
             _ => false,
         };
         require(allowed, "unsafe or tracked non-authored Git entry")?;
