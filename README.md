@@ -10,22 +10,23 @@ curl -fsSL https://sifttext.com/install | sh
 
 Open a new shell if `sifttext` is not yet on PATH.
 
-Sign up or sign in at [SiftText Platform](https://app.sifttext.com) for Founding SiftText onboarding and ongoing service.
+Tell your agent to run `sifttext instructions` and read the returned entry file before continuing your project.
 
-New subscribers complete a separate $50 USD/month checkout. If you already have an active $20 subscription, keep that plan and skip checkout.
+## Plans
 
-After Platform confirms paid status, run `sifttext login`. It opens browser authorization and prints a copyable URL. `Authentication successful.` means the server confirmed `paid:true`.
+The [website](https://sifttext.com/#plans) offers these plans:
 
-Tell your agent to run `sifttext instructions` and read the entry file it returns before continuing your project.
-
-You can also use local knowledge commands and release updates without payment or cloud login.
+| Plan | Price (USD) | Included offering |
+| --- | --- | --- |
+| Core | Free | Local Markdown files with Git history for agents with file and terminal access. |
+| [Plus](https://app.sifttext.com/subscribe?plan=plus) | $20/month | Core, hosted MCP access, and cloud sync. |
+| [Pro](https://app.sifttext.com/subscribe?plan=pro) | $50/month | Plus, an interactive browser through MCP, writing checks, and automatic tree organization checks. |
 
 For setup details or an inspect-before-run option, follow [INSTALL.md](INSTALL.md).
 
 ![Build an understanding that people and agents can keep developing.](docs/readme/tree-dark.svg)
 
-<details>
-<summary>Read the example as text</summary>
+### Example as text
 
 - **Choose a dependable supplier** (in progress)
   Customer orders need a supplier we can rely on, so compare quotes and check performance on real orders.
@@ -46,13 +47,11 @@ For setup details or an inspect-before-run option, follow [INSTALL.md](INSTALL.m
       No trial results yet.
       Check delivery dates and quality before giving B more orders.
 
-</details>
-
 ## Running agents across a team?
 
 Bring your team’s work into one place for people and agents.
 
-[Book a demo](mailto:jack@sifttext.com?subject=SiftText%20demo)
+[Book a demo](https://cal.com/jack-ten-bosch/30min)
 
 ## How it works
 

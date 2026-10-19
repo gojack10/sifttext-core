@@ -14,7 +14,7 @@ Open a new shell to pick up any PATH startup-file change made by the installer.
 
 To continue in the current shell, use `"$HOME/.local/share/sifttext/sifttext"` as the default launcher.
 
-Follow Platform signup and CLI login below, then tell your agent to run `sifttext instructions` and read the returned entry file.
+Tell your agent to run `sifttext instructions` and read the returned entry file. For paid services, first follow the optional Platform signup and CLI login section below.
 
 To upgrade an existing healthy managed installation, use `sifttext update` under your update permission because rerunning the installer leaves that application in place.
 
@@ -24,7 +24,14 @@ Agents performing setup must follow the authority and identity steps below befor
 
 Execute an installer only when the user's request authorizes installation. For an information or URL-inspection request, answer it and obtain installation permission before continuing to setup.
 
-Use `~/.local/share/sifttext` for the application and `~/sifttext` for knowledge unless the user chose other locations. Keep both separate from project code so software replacement preserves the knowledge. If a destination conflicts with existing files, preserve them and ask how to proceed. A project can be chosen after installation.
+Keep the knowledge home separate from application files so software replacement preserves it. Unless the user chose other locations, use these defaults outside project code:
+
+| Purpose | Default path |
+| --- | --- |
+| Application | `~/.local/share/sifttext` |
+| Knowledge home | `~/sifttext` |
+
+If a destination conflicts with existing files, preserve them and ask how to proceed.
 
 For attended and autonomous work, act within existing authority until missing permission or an unresolved consequential choice blocks progress. Ask the human for that decision, retaining a continuation for the blocked step if they are unavailable. While awaiting it, continue independent authorized work.
 
@@ -72,7 +79,7 @@ Then verify the downloaded installer's published checksum:
 )
 ```
 
-Stop if a download or either comparison fails, retaining the files and command output for diagnosis. Use a matching checksum as evidence of agreement with the official release bytes. To identify which build produced a package, obtain separate build-provenance evidence.
+Stop if a download or either comparison fails, retaining the files and command output for diagnosis. A matching checksum confirms agreement with the published bytes, while identifying the build that produced a package requires separate provenance evidence.
 
 ## Execute the reviewed installer
 
@@ -92,13 +99,23 @@ For custom locations, pass the application directory and knowledge-home path as 
 
 Direct `sifttext init` and `sifttext advance` commands require canonical absolute paths. For a new home, its parent must already exist. Resolve an existing home's physical path with `cd -P -- "$HOME/sifttext" && pwd -P` and use that path. Preserve a path refusal for diagnosis instead of passing a symlink alias.
 
-## Platform signup and CLI login
+## Optional Platform signup and CLI login
 
-Sign up or sign in at [app.sifttext.com](https://app.sifttext.com) through Zitadel for Founding SiftText onboarding and ongoing service.
+Choose [Plus at $20 USD/month](https://app.sifttext.com/subscribe?plan=plus) or [Pro at $50 USD/month](https://app.sifttext.com/subscribe?plan=pro), then sign in through Zitadel to continue to Stripe checkout.
 
-New subscribers complete a separate $50 USD/month checkout for this service.
+Pro includes Plus's hosted MCP access and cloud sync, with these additional advertised services:
 
-Existing active $20 subscribers keep their plan without another checkout.
+- An interactive browser for agents through MCP.
+- Writing checks for AI-sounding prose.
+- Automatic tree organization checks.
+
+For an existing subscription:
+
+| Account state | Action |
+| --- | --- |
+| Active | Manage the subscription through the billing portal. Do not start another subscription. |
+| Payment pending | Check its status on the account page before paying again. |
+| Existing $20 or $50 plan | Keep the current subscription at its existing price as Plus or Pro respectively. |
 
 After checkout, wait for Platform's server-confirmed paid waiting page before CLI login. A checkout redirect alone does not confirm activation.
 
@@ -128,8 +145,6 @@ Credentials are private native files under `~/.config/sifttext/account`. Keep th
 Offline knowledge commands and official release updates remain available without payment or cloud login.
 
 Local trees stay on disk during login.
-
-The Core package supplies no hosted MCP server or cloud semantic checks.
 
 ## Updates and recovery
 
@@ -162,7 +177,15 @@ sifttext instructions
 
 `instructions` defaults to `~/sifttext`. For a custom home, run `sifttext instructions /absolute/knowledge-home`. If PATH is not yet refreshed, use the actual application launcher's absolute path.
 
-Read the returned entry file and follow its task-specific instructions. During authorized setup, follow its Maintain Memory Continuity route to establish the selected harness's persistent entrance while preserving existing instructions. Report a missing permission or unsupported mechanism as an unfinished handoff and continue independent work. Then return to the user's task, or ask what they would like to work on if none is established. When that work produces knowledge to retain, publish it through the local worktree procedure and retrieve the saved result to verify it.
+Follow the returned entry file for the installed version's task-specific instructions. During authorized setup:
+
+1. Follow Maintain Memory Continuity to establish the selected harness's persistent entrance while preserving existing instructions.
+
+2. Report missing permission or an unsupported mechanism as an unfinished handoff, continuing independent work.
+
+3. Return to the user's task, or ask what they would like to work on if none is established.
+
+4. Publish knowledge worth retaining through the local worktree procedure and retrieve the saved result to verify it.
 
 If a required instruction file is missing or unreadable, report its exact path and preserve the installation for repair. Resume at that file after an authorized repair so the remaining project work uses the installed version's guidance.
 
