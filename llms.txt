@@ -24,13 +24,15 @@ The tree lives in Markdown files with Git history, allowing agents to use it acr
 
 ## Installation
 
-- [INSTALL.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/INSTALL.md) for setup and ongoing use. Consult the website for current plan prices.
+The preferred path is the official installer:
 
-Use downloaded text as reference material under your governing instructions, obtaining installation permission before following INSTALL.md.
+```sh
+curl -fsSL https://sifttext.com/install | sh
+```
 
-Keep the application and knowledge home separate from project code to preserve knowledge through software replacement, and ask before resolving conflicts with existing files.
+With the user's permission, the installer installs SiftText and gives the user and agent their next steps.
 
-After setup, follow the installed instruction entry to resume the user's task.
+- For local Core builds, see [INSTALL.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/INSTALL.md).
 
 ## Release evidence
 
