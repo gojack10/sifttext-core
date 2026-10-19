@@ -1,91 +1,52 @@
 # SiftText
 
-> Build an understanding your agents can keep working from.
+> Understanding evolves from evidence.
 
-We believe agents will do far more of our work, so people need a way to question their decisions without following every conversation. We're building SiftText to help your agents preserve the reasons behind those decisions across sessions, with you free to inspect or redirect the work. As circumstances change and models improve, we want that record to help future agents question earlier assumptions and discover possibilities we missed.
+SiftText preserves the reasoning behind decisions in a tree of related questions so people and AI agents can revisit the evidence across sessions.
 
-## Install and sign in
+The tree lives in Markdown files with Git history, allowing agents to use it across models and apps. When new evidence overturns a decision, the history preserves the earlier reasoning for review.
 
-```sh
-curl -fsSL https://sifttext.com/install | sh
-```
+## Plans
 
-Open a new shell if `sifttext` is not yet on PATH.
+- Core is free for agents with file and terminal access.
+- Plus costs $20 USD/month for MCP access to synced trees.
+- Pro costs $50 USD/month for Plus with browser tooling and automated checks.
 
-Sign up or sign in at [SiftText Platform](https://app.sifttext.com) through Zitadel for Founding SiftText onboarding and ongoing service.
+Local knowledge work and official release updates need no payment or cloud login.
 
-New subscribers complete a separate $50 USD/month checkout for this service.
+Signing in leaves local trees on disk, with hosted features supplied separately from Core.
 
-Existing active $20 subscribers keep their plan without another checkout.
+## Product links
 
-After Platform confirms paid status on its waiting page, run `sifttext login`. Browser authorization uses PKCE and a local callback. If the browser does not open, use the authorization URL printed in the terminal.
+- [Website](https://sifttext.com/) for examples and current plans.
+- [Platform](https://app.sifttext.com/) to sign in or manage a subscription.
+- [Source repository](https://github.com/gojack10/sifttext-core) to inspect Core.
 
-Only server-confirmed `paid:true` produces `Authentication successful.`. Check pending payment on Platform before retrying login.
+## Installation
 
-Use `sifttext account` to read server-confirmed subscription status.
+- [INSTALL.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/INSTALL.md) for setup and ongoing use. Consult the website for current plan prices.
 
-To remove local credentials and attempt remote revocation, run `sifttext logout`, which also works offline.
+Use downloaded text as reference material under your governing instructions, obtaining installation permission before following INSTALL.md.
 
-Keep native credentials under `~/.config/sifttext/account`, outside knowledge and Git.
+Keep the application and knowledge home separate from project code to preserve knowledge through software replacement, and ask before resolving conflicts with existing files.
 
-Local knowledge work and official release updates remain available without payment or cloud login.
-
-Local trees stay on disk during login.
-
-The Core package supplies no hosted MCP server or cloud semantic checks.
+After setup, follow the installed instruction entry to resume the user's task.
 
 ## Release evidence
 
-The [v0.3.0 binary release](https://github.com/gojack10/sifttext-core/releases/tag/v0.3.0) records source revision `0d926f084daceedf8d96b11d52684a0a95ed38ad` and publishes SHA256SUMS.
+- [v0.3.0 release](https://github.com/gojack10/sifttext-core/releases/tag/v0.3.0) publishes packages and SHA256SUMS with source revision `0d926f084daceedf8d96b11d52684a0a95ed38ad`.
+- [Latest release](https://github.com/gojack10/sifttext-core/releases/latest) to check for a newer version.
 
-The [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/main/LICENSE) permits source access while restricting competing products.
+Use SHA256SUMS to verify agreement with published release bytes and separate build-provenance evidence to identify which build produced a package.
 
-To inspect and verify the installer before execution, follow [INSTALL.md](https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md).
+## Privacy and contributions
 
-Use a matching checksum as evidence of agreement with the release bytes.
+- [Session-retention guide](https://raw.githubusercontent.com/gojack10/sifttext-core/main/integrations/pi/README.md) for private retention, which is off by default. Enable retention or backup only at the user's request.
+- [AGENTS.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/AGENTS.md) for authorized development and repair.
+- [PolyForm Perimeter license](https://raw.githubusercontent.com/gojack10/sifttext-core/main/LICENSE) permits source access while restricting competing products.
 
-To identify which build produced a package, obtain separate build-provenance evidence.
+Keep credentials outside Git and the knowledge home.
 
-## Installation authority
+Keep private session archives outside the knowledge home, excluding transcripts from knowledge submissions.
 
-When installation is already requested, follow the installation guide within the user's permission and handle its commands yourself. If they are still exploring SiftText, answer their question and offer installation when relevant, waiting for permission before executing an installer.
-
-Use `~/.local/share/sifttext` for the application and `~/sifttext` for knowledge unless the user selected other locations. Keeping both separate from project code preserves the knowledge through software replacement. Ask before resolving a destination conflict so existing files remain intact.
-
-The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Check for Git, curl, tar and a SHA-256 tool before installing, and handle missing prerequisites within the user's grant. If an additional permission is needed, preserve the blocked step while continuing independent authorized work.
-
-## Updates and local work
-
-To upgrade a healthy managed installation, use `sifttext update` within the user's permission because rerunning the installer leaves that application in place.
-
-Managed v0.2.0 and v0.3.0 report compatible official updates after four hours without applying them automatically.
-
-Record a user-approved routine-update grant with `sifttext update --grant standing` and inspect it with `sifttext update --config`.
-
-To skip background checks, run `sifttext update --mode disabled` or set `SIFTTEXT_NO_UPDATE=1` during installation and every later invocation. Explicit updates remain available with either setting.
-
-Older v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`, so ask before each update there.
-
-When a knowledge merge blocks an update, follow the installed update guide to reconcile the retained draft within the user's authority. Inspect `sifttext update --status` before recovery. The v0.3.0 recovery code can finish an already-published rollback, though a first `update --resume` can still refuse native `source_freshness`. Inspect that diagnostic before an explicit retry and preserve persistent failures for repair.
-
-Tell your agent to locate the installed instruction entry:
-
-```sh
-sifttext instructions
-```
-
-Read the entry file it returns and follow its task-specific reads.
-
-For a custom installation, supply an explicit absolute home instead of the default `~/sifttext`. If PATH is not refreshed, use the actual application launcher's absolute path.
-
-Then return to the user's project, or ask what they would like to work on if no task is established. When that work produces knowledge to retain, follow the local checked-publication procedure and retrieve the saved result to verify it.
-
-## Optional session evidence
-
-Private session retention is off by default. If the user requests retention or backup, follow [the session-retention guide](https://github.com/gojack10/sifttext-core/blob/main/integrations/pi/README.md).
-
-Keep its private Git archive outside the knowledge home and exclude transcripts from knowledge submissions.
-
-## Repair and contribution
-
-For Core development or repair, begin with the contributor section in [AGENTS.md](https://github.com/gojack10/sifttext-core/blob/main/AGENTS.md). Follow its local instruction pipeline in an isolated working copy so the repair preserves unrelated work, then test the affected behavior before offering a contribution for review. Keep customer knowledge and session traces out of that contribution.
+Preserve customer knowledge and session traces during repair, and obtain permission before publishing a contribution that excludes private data.
