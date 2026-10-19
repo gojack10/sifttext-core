@@ -364,6 +364,7 @@ fn fetch_manifest(root: &Path) -> Result<Manifest> {
     download(MANIFEST, file.path(), 1_048_576)?;
     let manifest: Manifest = load(file.path())?;
     validate_manifest(&manifest)?;
+    persist(&root.join("last_manifest.json"), &manifest)?;
     Ok(manifest)
 }
 /// Stage one official package into `destination`.
@@ -1333,6 +1334,21 @@ pub fn update_with_receipt_preflight(
     }
     if mode == "--opportunistic" {
         if !due(&state, &now()) {
+            // The interval throttles network checks, not repeat notices for the cached release.
+            let cached = root.join("last_manifest.json");
+            if cached.exists() {
+                if let Ok(config) = update_config(&state.home) {
+                    if config["mode"] == "disabled" {
+                        return Ok(json!({"status":"update_disabled"}));
+                    }
+                    if let Ok(manifest) = load::<Manifest>(&cached) {
+                        if validate_manifest(&manifest).is_ok() {
+                            let current = package(&root.join(&state.application))?;
+                            return opportunistic_notice(&current, &state, &manifest);
+                        }
+                    }
+                }
+            }
             return Ok(json!({"status":"not_due"}));
         }
         let config = match update_config(&state.home) {
@@ -1741,6 +1757,24 @@ mod tests {
                 .to_string()
                 .contains("updates.mode")
         );
+    }
+
+    #[test]
+    fn repeats_cached_update_notice_without_another_network_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let (_policy, mut state, _, _, manifest) = fixture(&root);
+        state.success = now();
+        state.attempt = Some(state.success.clone());
+        persist(&root.join("state.json"), &state).unwrap();
+        persist(&root.join("last_manifest.json"), &manifest).unwrap();
+
+        for _ in 0..2 {
+            assert_eq!(
+                update(&root, "--opportunistic").unwrap()["status"],
+                "update_available"
+            );
+        }
     }
 
     #[test]
