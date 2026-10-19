@@ -39,27 +39,38 @@ For delegation, use only the harness's supported capabilities within the user's 
 
 ## Check prerequisites and identity
 
-The release supports macOS 15+ and Linux with glibc 2.35+ on arm64 or x86_64. Before downloading it, check for Git, curl, tar and either shasum or sha256sum. Handle missing prerequisites within existing permissions, obtaining approval before any additional system or privileged changes.
+Check the [latest release](https://github.com/gojack10/sifttext-core/releases/latest) for supported platforms and operating-system requirements. Before downloading it, check for Git, curl, tar and either shasum or sha256sum. Handle missing prerequisites within existing permissions, obtaining approval before any additional system or privileged changes.
 
 Reuse the Git name and email already selected for this knowledge home. If none is available, ask which identity to use, offering `SiftText Agent <agent@sifttext.com>` if the user needs a default. After they choose, use `git config --file` to put the identity in a private temporary config and set `GIT_CONFIG_GLOBAL` to that file for the installer invocation. Initialization copies the selection into the new repository's local config while leaving global Git configuration unchanged.
 
-## Optional: inspect release v0.3.0 before running
+## Optional: inspect the latest release before running
 
-The [v0.3.0 release record](https://github.com/gojack10/sifttext-core/releases/tag/v0.3.0) provides precompiled platform packages and SHA256SUMS with source revision `0d926f084daceedf8d96b11d52684a0a95ed38ad`. Use that revision to inspect [install.sh](https://github.com/gojack10/sifttext-core/blob/0d926f084daceedf8d96b11d52684a0a95ed38ad/install.sh) under the [PolyForm Perimeter license](https://github.com/gojack10/sifttext-core/blob/0d926f084daceedf8d96b11d52684a0a95ed38ad/LICENSE).
+The [latest official release](https://github.com/gojack10/sifttext-core/releases/latest) provides precompiled packages and SHA256SUMS. Its checksum header records the release tag and source revision. Resolve that identity once so inspection and installation use the same release even if a newer one appears.
 
-Download the installer and checksum file without executing them:
+Download the checksum file and use its recorded tag to obtain the installer without executing it:
 
 ```sh
 review=$(mktemp -d)
-base=https://github.com/gojack10/sifttext-core/releases/download/v0.3.0
-curl -fsSL --proto '=https' --proto-redir '=https' "$base/install.sh" -o "$review/install.sh"
-curl -fsSL --proto '=https' --proto-redir '=https' "$base/SHA256SUMS" -o "$review/SHA256SUMS"
+releases=https://github.com/gojack10/sifttext-core/releases
+curl -fsSL --proto '=https' --proto-redir '=https' "$releases/latest/download/SHA256SUMS" -o "$review/SHA256SUMS" || exit 1
+awk 'NR == 1 {
+  if (NF != 6 || $1 != "#" || $2 != "SiftText" || $3 != "release" ||
+      $4 !~ /^v[0-9][a-zA-Z0-9._-]*$/ || $5 != "source" ||
+      length($6) != 40 || $6 ~ /[^a-f0-9]/) exit 1
+  valid = 1
+} END { if (!valid) exit 1 }' "$review/SHA256SUMS" || {
+  echo 'Invalid release checksum header.' >&2
+  exit 1
+}
+read -r marker product kind release label revision < "$review/SHA256SUMS"
+base="$releases/download/$release"
+curl -fsSL --proto '=https' --proto-redir '=https' "$base/install.sh" -o "$review/install.sh" || exit 1
 ```
 
 Read the downloaded `install.sh` completely before running it. To compare its exact bytes with the source at the recorded revision:
 
 ```sh
-source=https://raw.githubusercontent.com/gojack10/sifttext-core/0d926f084daceedf8d96b11d52684a0a95ed38ad
+source="https://raw.githubusercontent.com/gojack10/sifttext-core/$revision"
 curl -fsSL --proto '=https' --proto-redir '=https' "$source/install.sh" -o "$review/source-install.sh"
 cmp "$review/install.sh" "$review/source-install.sh"
 ```
@@ -92,7 +103,7 @@ If installation fails, preserve any created knowledge and use the failing comman
 After inspection and verification succeed, execute the same downloaded file within the user's installation permission:
 
 ```sh
-SIFTTEXT_RELEASE=v0.3.0 sh "$review/install.sh"
+SIFTTEXT_RELEASE="$release" sh "$review/install.sh"
 ```
 
 For custom locations, pass the application directory and knowledge-home path as the two arguments. Ensure their parent directories exist before invoking the installer so path validation can complete. The installer resolves existing parents to physical paths before setting up the home.
@@ -148,17 +159,17 @@ Local trees stay on disk during login.
 
 ## Updates and recovery
 
-Managed v0.2.0 and v0.3.0 installations report compatible official updates after four hours without applying them automatically. Explain this before setup so the user can choose whether to disable background checks.
+Managed installations can report compatible official updates without applying them automatically. Check the selected release's update policy before setup so the user can choose whether to disable background checks.
 
 Run `sifttext update` with the user's update permission. When they authorize routine updates, record that grant with `sifttext update --grant standing`. This changes only the `updates` object of the knowledge home's `.sifttext/config.json`. Inspect the setting with `sifttext update --config`.
 
 To skip background checks, run `sifttext update --mode disabled`. Alternatively set `SIFTTEXT_NO_UPDATE=1` during installation and every subsequent invocation. Explicit updates remain available with either setting.
 
-Older v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`. Ask before each update there rather than trying unsupported grant flags.
+For older installations, consult their installed command help and update guide before using settings flags. If standing grants are unsupported, ask before each update.
 
 For a blocked update, read the installed Managed Releases and Updates guide and inspect `sifttext update --status`. Reconcile any conflicting knowledge draft under that guide, then check and commit the resolution before `sifttext update --resume`.
 
-To restore the retained previous release, use `sifttext update --rollback`. This also prepares any required checked knowledge reversal. The v0.3.0 recovery code can finish activation when that reversal was already accepted.
+To restore the retained previous release, use `sifttext update --rollback` under the installed recovery guide. Preserve any required checked knowledge reversal and follow that version's instructions to finish activation.
 
 If the first resume reports native `source_freshness`, inspect the diagnostic and status before an explicit retry. Preserve a persistent refusal and its journal for repair. Never reset accepted history or delete caches to bypass it.
 

@@ -243,6 +243,53 @@ esac
 }
 
 #[test]
+fn installation_guide_pins_latest_and_refuses_invalid_release_headers() {
+    let guide = include_str!("../INSTALL.md");
+    let snippet = guide.split_once("```sh\nreview=").unwrap().1
+        .split_once("\n```").unwrap().0;
+    let root = tempfile::tempdir().unwrap();
+    let commands = root.path().join("commands");
+    fs::create_dir(&commands).unwrap();
+    script(&commands.join("curl"), r#"#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out=$2; shift 2 ;;
+    https://*) url=$1; shift ;;
+    *) shift ;;
+  esac
+done
+case "$url" in
+  */releases/latest/download/SHA256SUMS) cp "$FIXTURE/header" "$out" ;;
+  */releases/download/v9.8.7/install.sh) touch "$FIXTURE/downloaded" "$out" ;;
+  *) exit 1 ;;
+esac
+"#);
+    let revision = "a".repeat(40);
+    for (header, valid) in [
+        (format!("# SiftText release v9.8.7 source {revision}\n"), true),
+        (String::new(), false),
+        (format!("# Other release v9.8.7 source {revision}\n"), false),
+        (format!("# SiftText release ../../escape source {revision}\n"), false),
+        ("# SiftText release v9.8.7 source short\n".into(), false),
+        (format!("# SiftText release v9.8.7 source {}\n", "g".repeat(40)), false),
+    ] {
+        fs::write(root.path().join("header"), header).unwrap();
+        let _ = fs::remove_file(root.path().join("downloaded"));
+        let output = Command::new("sh").args(["-eu", "-c"])
+            .arg(format!("review={snippet}\n[ \"$release\" = v9.8.7 ]\n[ \"$revision\" = {revision} ]"))
+            .env("PATH", format!("{}:/usr/bin:/bin", commands.display()))
+            .env("FIXTURE", root.path())
+            .env("TMPDIR", root.path())
+            .output().unwrap();
+        assert_eq!(output.status.success(), valid, "{}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(root.path().join("downloaded").exists(), valid);
+    }
+    assert!(guide.contains("SIFTTEXT_RELEASE=\"$release\" sh \"$review/install.sh\""));
+    assert!(guide.contains("sifttext-core/$revision\""));
+}
+
+#[test]
 fn banner_colors_only_commands_on_a_terminal_and_respects_no_color() {
     let root = tempfile::tempdir().unwrap();
     let installer = include_str!("../install.sh");

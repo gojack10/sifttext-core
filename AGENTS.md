@@ -12,7 +12,7 @@ When the user requests installation, follow [INSTALL.md](INSTALL.md) to inspect 
 
 For information requests, you can use `curl -fsSL https://sifttext.com/llms.txt` to read product context and follow its release links to the source revision and checksum evidence. Inspect relevant code in the [source repository](https://github.com/gojack10/sifttext-core) when the question needs it.
 
-The public installation command is `curl -fsSL https://sifttext.com/install | sh`. For inspect-before-run setup, follow [INSTALL.md](INSTALL.md) to compare the installer with the pinned v0.3.0 source before verifying its release checksum. A matching checksum confirms agreement with published bytes, while identifying the build requires separate provenance evidence.
+The public installation command is `curl -fsSL https://sifttext.com/install | sh`. For inspect-before-run setup, follow [INSTALL.md](INSTALL.md) to compare the installer with the source revision recorded by the selected release before verifying its checksum. A matching checksum confirms agreement with published bytes, while identifying the build requires separate provenance evidence.
 
 Installation defaults to `~/.local/share/sifttext` for the application and `~/sifttext` for knowledge. Keep the knowledge home separate from the application and project code to preserve it through software replacement.
 
