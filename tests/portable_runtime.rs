@@ -33,13 +33,10 @@ fn cli(bin: &Path, tools: &Path, args: &[&str]) -> Output {
 
 fn json(bin: &Path, tools: &Path, args: &[&str]) -> serde_json::Value {
     let output = cli(bin, tools, args).stdout;
-    // Mirror the CLI dispatch in src/bin/sifttext.rs: search and sql print their own pretty
-    // JSON large-return receipts, and only nested-schema receipts bypass the LEAN renderer.
+    // Nested-schema receipts use JSON; search and sql use LEAN like other ordinary results.
     if matches!(
         args.first(),
-        Some(&"sql")
-            | Some(&"search")
-            | Some(&"normalize")
+        Some(&"normalize")
             | Some(&"submit")
             | Some(&"accepted")
             | Some(&"session-capture")
