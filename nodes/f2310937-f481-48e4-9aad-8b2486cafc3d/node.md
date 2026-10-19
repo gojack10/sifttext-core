@@ -7,6 +7,18 @@ see_also: []
 scope: "Phase 4 of SiftText Commit. Inspect meaning, connectivity and expected status effects after authorized Persistence; repair supported inconsistencies within the grant, or return a justified no-change result to Verify."
 warnings: ""
 ---
+## Current execution
+
+Use “Save and finish the affected understanding” in the parent's child
+named Commit Usable Understanding. Read that complete selected procedure
+if it is not already loaded unchanged. This return does not restart
+completed drafting or approval.
+
+## Preserved earlier procedure
+
+The complete earlier body below is retained for investigation, not as
+additional operative guidance.
+
 ## Purpose and input
 
 After Persistence creates, edits, moves, links or deletes knowledge, inspect the affected current view before Verify. Required inspection does not imply a required mutation: a new child can add useful evidence without making its parent's existing text stale.
