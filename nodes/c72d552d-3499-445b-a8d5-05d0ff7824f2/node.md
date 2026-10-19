@@ -23,6 +23,8 @@ A completed investigation is not proof its tested approach works. Keep untested 
 
 ## Default route
 
+Treat the chat as one unit and commit once, at its end. A mid-chat request to save something means: include it in the end-of-chat commit. Don't ask whether to save now or later. Infer the end of the chat, or take it from the human saying they're done. A context handoff before the end follows the Read procedure's handoff section.
+
 1. Dialogue reconstructs an inspectable affected tree delta and exact changed instruction text.
 2. Forcing Pass repairs supported ownership, dependency, field, status and continuation defects before presentation.
 3. In approval mode, present the exact delta and obtain explicit permission. Under an explicit standing write grant, retain the same inspectable delta and proceed within its scope. Stay in dialogue for objections, unclear overrides or a new human-owned choice.

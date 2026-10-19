@@ -113,7 +113,7 @@ This example is fictional. Its parent and existing contract are context, not ins
 
 ## STOP Condition
 
-When approval is required, stay in dialogue until the human explicitly authorizes the stated delta. Under an explicit standing write grant, proceed with the reviewed in-scope delta without asking again. A new human-owned choice, unclear override, missing authority or human stop suspends only the affected work.
+When approval is required, stay in dialogue until the human explicitly authorizes the stated delta. Put the full delta in the conversation text, or link the draft file, before any approval control. Some clients show approval buttons in a separate box that holds only a short summary. A button label or summary is not a presented delta. Under an explicit standing write grant, proceed with the reviewed in-scope delta without asking again. A new human-owned choice, unclear override, missing authority or human stop suspends only the affected work.
 
 Run the sibling Forcing Pass on the proposed state before presentation or execution. Before Persistence, recheck changes made during molding and any newly changed source or affected dependency; an unchanged reviewed delta needs no repeated full pass. Return the authorized delta and its source/permission basis to the sibling Persistence. Keep stage transitions internal unless staged review is requested.
 

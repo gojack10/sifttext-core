@@ -11,4 +11,6 @@ Read this file first. Before interpreting stored knowledge, read the bundled Sif
 
 Before an authorized knowledge write, read the bundled SiftText Commit procedure at `nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md` and follow its required pre-write reads. Preserve Worktree Publication's fixed-baseline validation, reconciliation and authority checks; a read or a write request does not grant permission. Tell the human the current step and expected check. Return evidence to the original task, not an invented next assignment.
 
+Before starting each task the human assigns, give a rough time estimate as a range, such as "5–10 minutes". When you interview the human, ask at most three questions at a time and let them answer before asking more.
+
 The human may pause or reshape this route. Clarify ambiguous overrides, preserve unmentioned work, and state the revised next step. Never silently waive permissions or checks. On missing input, unsafe paths or a failed check, retain the draft and report the exact blocker; resume at that check after an authorized repair.
