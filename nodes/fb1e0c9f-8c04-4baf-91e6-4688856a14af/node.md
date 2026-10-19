@@ -26,7 +26,7 @@ git -C "$home" rev-parse HEAD
 sifttext worktree "$home"
 ```
 
-Use the returned `worktree` as `wt`, its `branch` as `branch`, and its `base` as `base_sha`; do not edit accepted home. Preserve a detached baseline of that exact commit for transition checks:
+Use the returned `worktree` as `wt`, its `branch` as `branch`, and its `base` as `base_sha`; do not edit accepted authored knowledge in the home. The returned `artifact_home` names the durable home for node-owned task files; read Knowledge Layout's Node artifacts section before placing them. Artifact contents are local user work, not authored knowledge or disposable caches. Preserve a detached baseline of that exact commit for transition checks:
 
 ```sh
 base=$(mktemp -d "${TMPDIR:-/tmp}/sifttext-base.XXXXXXXX")
@@ -86,7 +86,7 @@ Do not keep editing the old `wt`; allocate a new draft for the next edit. Remove
 
 ### Refusal and interrupted recovery
 
-A file conflict remains in the submitted draft for repair. Inspect its Git conflict and the affected nodes; resolve within the approved intent, or ask the owner when meanings conflict. Finish the draft's Git merge, run fixed-baseline normalization/checks and commit any resulting changes, then submit its actual clean HEAD. Invalid combined knowledge, changed source/ref identities, dirty or unregistered drafts, unrelated baselines and unsafe paths also refuse. Preserve unaccepted work and inspect the receipt before choosing repair; never force, reset accepted history or bypass native checks.
+A file conflict remains in the submitted draft for repair. Inspect its Git conflict and the affected nodes; resolve within the approved intent, or ask the owner when meanings conflict. Finish the draft's Git merge, run fixed-baseline normalization/checks and commit any resulting changes, then submit its actual clean HEAD. Non-chat artifacts in a private draft also refuse before publication or cleanup; preserve them and follow Knowledge Layout's deliberate durable-home placement procedure, not a force-add or deletion. Invalid combined knowledge, changed source/ref identities, dirty or unregistered drafts, unrelated baselines and unsafe paths also refuse. Preserve unaccepted work and inspect the receipt before choosing repair; never force, reset accepted history or bypass native checks.
 
 An interruption can leave a prepared combined draft before acceptance, or accepted history with home refresh/cleanup unfinished. Preserve the original submit arguments and Core's pending-operation records in the home's Git directory. Retry that exact `submit` so Core can recheck recorded preparation or finish accepted home/derived recovery and cleanup. An already-accepted revision is recovered without another publication. Until completion returns, report the accepted revision and unfinished home/cleanup separately. Preserve a dirty or unexpectedly changed home/draft and return its refusal to the owner.
 

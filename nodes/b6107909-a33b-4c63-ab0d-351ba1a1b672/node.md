@@ -16,11 +16,26 @@ HOME/
   nodes/UUID/node.md           authored metadata and Markdown body
   nodes/UUID/children.order    full child UUIDs, one per line
   nodes/UUID/children/UUID     symlink -> ../../UUID
+  nodes/UUID/artifacts/NAME    local task files/projects; ignored, not knowledge Git
   trees/ROOT_UUID              symlink -> ../nodes/ROOT_UUID
   .sifttext/index.sqlite       derived, ignored, per working copy
 ```
 
 Empty directories use empty `.keep` files. UUIDs, not names, are identity. Local tree roots are node UUIDs, not hosted tree-container IDs. Parentage comes from child symlinks; order comes from `children.order`. Every node belongs to one rooted tree. Read `nodes/UUID/node.md` directly or follow the tree shortcut. Do not physically nest node directories to express depth.
+
+## Node artifacts
+
+Task files such as spreadsheets, PDFs, reports and code projects belong under `nodes/UUID/artifacts/` of the deepest node owning that work, in the durable knowledge home, not an expendable client workspace or editing worktree. A user-selected external location remains valid; retain its relationship in the owning node rather than silently moving it.
+
+Run `sifttext worktree HOME` before placing files in an older or cloned home. Its `artifact_home` is the canonical durable home; `worktree` is the disposable knowledge draft. Initialization installs the artifact exclusion, and worktree allocation, save and reader advancement reapply it locally without changing the home's recognized `.gitignore`. For a new owner, publish the knowledge node first, then place its files in that accepted home's node directory. Verify the owning node and real `artifacts/` directory before writing; create the directory if absent, never replace an existing path or make the container itself a symlink. Use recognizable file names. A nested project can keep its own independent Git repository.
+
+In the private knowledge draft, record a meaningful home-relative artifact path in the owner's body, and the external destination relationship for any aliases. Knowledge validation does not open, recursively scan, hash, tokenize or copy artifact contents. Knowledge Git must not track them; do not force-add them, use Git LFS, or treat dependencies/build caches as knowledge. `artifacts/chats/` remains reserved for the separate optional session-evidence workflow; its archive and tracked association metadata retain that workflow's rules.
+
+A symlink inside `artifacts/` is an alias, not a snapshot or backup. Inspect and obtain appropriate scope before modifying or traversing its external target. Editing through the link edits that target. A missing target stays unresolved: report it and reconnect deliberately, never guess from a similar filename. No local artifact files, directories or aliases are transported by knowledge Git, clones, release updates or session restore; keep a separately authorized backup if needed.
+
+After a save, verify the actual task file at its durable path, not only the knowledge receipt. Check that `git -C HOME check-ignore -- nodes/UUID/artifacts/NAME` names the file and `git -C HOME ls-files -- nodes/UUID/artifacts` is empty. The normal home's artifacts survive knowledge save, reader advance, draft cleanup and exact-request recovery because those operations do not relocate or delete them. Before removing or reverting away their owning node, deliberately rehome the files and update their references, or retain the owner; a source-less artifact directory is not valid knowledge and is not disposable residue.
+
+Submission refuses non-chat artifacts in a private draft before publication or cleanup and preserves them. On that refusal, retain the files, verify the intended durable destination, and move them deliberately within the user's permission; never delete them to obtain a clean check. If their owner is new, preserve the files outside the disposable draft until the knowledge-only owner is accepted, then place them under that owner's home `artifacts/` and verify the bytes. Retry the normal knowledge publication procedure. This is local custody, not automatic artifact migration, backup, synchronization or cross-machine recovery.
 
 ## Authored grammar
 

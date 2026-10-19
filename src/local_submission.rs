@@ -90,6 +90,9 @@ fn submit_inner(
     reader_state(home)?; // Fail before publication if the normal home has user edits.
     let draft = request.draft.as_ref().ok_or("missing draft")?;
     require(draft.is_absolute(), "draft must be absolute")?;
+    if fs::symlink_metadata(draft).is_ok_and(|metadata| metadata.is_dir()) {
+        checked_publication::protect_local_artifacts(draft)?;
+    }
     let commit = request.commit.as_ref().ok_or("missing submitted commit")?;
     let base = request.base.as_ref().ok_or("missing submitted base")?;
     let root = home.join(".git/sifttext-saves");
