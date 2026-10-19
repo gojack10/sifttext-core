@@ -329,7 +329,7 @@ fn validate_manifest(manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 fn download(url: &str, path: &Path, limit: u64) -> Result<()> {
-    let status = Command::new("curl")
+    let output = Command::new("curl")
         .args([
             "--fail",
             "--location",
@@ -349,10 +349,10 @@ fn download(url: &str, path: &Path, limit: u64) -> Result<()> {
         ])
         .arg(path)
         .arg(url)
-        .status()?;
+        .output()?;
     require(
-        status.success(),
-        "release download failed; local work remains available",
+        output.status.success(),
+        "Could not download the official release. Check your internet connection, then retry `sifttext update`. Your current installation and local work remain available.",
     )?;
     require(
         fs::metadata(path)?.len() <= limit,
@@ -802,9 +802,7 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
         )?;
     }
     if !app_changed && state.knowledge == manifest.knowledge.revision {
-        return Ok(
-            json!({"status":"current","application":current.version,"knowledge":state.knowledge}),
-        );
+        return Ok(json!({"status":"current","application":current.version}));
     }
     let mut notice = json!({
         "status":"update_available",
@@ -847,9 +845,7 @@ fn apply(
     }
     let kb_changed = state.knowledge != manifest.knowledge.revision;
     if !app_changed && !kb_changed {
-        return Ok(
-            json!({"status":"current","application":current.version,"knowledge":state.knowledge}),
-        );
+        return Ok(json!({"status":"current","application":current.version}));
     }
     let app = if app_changed {
         // A customer who pinned their own build keeps it: the candidate is reported, never staged
@@ -1548,10 +1544,10 @@ mod tests {
         );
 
         manifest.knowledge.revision = state.knowledge.clone();
-        assert_eq!(
-            opportunistic_notice(&current, &state, &manifest).unwrap()["status"],
-            "current"
-        );
+        let current_notice = opportunistic_notice(&current, &state, &manifest).unwrap();
+        assert_eq!(current_notice["status"], "current");
+        assert_eq!(current_notice["application"], "v1");
+        assert!(current_notice.get("knowledge").is_none());
         manifest.application.version = "v2".into();
         assert_eq!(
             opportunistic_notice(&current, &state, &manifest).unwrap()["status"],

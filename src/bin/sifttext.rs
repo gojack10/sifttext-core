@@ -557,7 +557,10 @@ fn clone_source_at(repository: &str, revision: &str) -> Result<PathBuf> {
 }
 
 fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String> {
-    if mode == "--config"
+    if mode.is_empty() && output["status"] == "current" {
+        let summary = json!({"application":output["application"],"status":"current"});
+        Ok(sifttext_file_graph::lean_render::render(&summary).map_err(std::io::Error::other)?)
+    } else if mode == "--config"
         || ["--grant=", "--mode=", "--pin="]
             .iter()
             .any(|prefix| mode.starts_with(prefix))
@@ -566,6 +569,14 @@ fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String
     } else {
         Ok(serde_json::to_string_pretty(output)?)
     }
+}
+
+fn render_update_error(error: &dyn std::fmt::Display) -> Result<String> {
+    Ok(sifttext_file_graph::lean_render::render(&json!({
+        "status":"error",
+        "message":error.to_string(),
+    }))
+    .map_err(std::io::Error::other)?)
 }
 
 fn preflight_update_receipt(mode: &str, receipt: &serde_json::Value, force: bool) -> Result<()> {
@@ -699,6 +710,19 @@ mod tests {
             render_update_output("--status", &receipt).unwrap(),
             serde_json::to_string_pretty(&receipt).unwrap()
         );
+        let current = render_update_output("", &receipt).unwrap();
+        assert!(current.contains("application:v1"), "{current}");
+        assert!(current.contains("status:current"), "{current}");
+        assert!(!current.contains("knowledge"), "{current}");
+    }
+
+    #[test]
+    fn update_errors_use_friendly_lean() {
+        let error = render_update_error(&"Could not download the official release. Check your internet connection, then retry `sifttext update`. Your current installation and local work remain available.").unwrap();
+        assert!(error.contains("status:error"), "{error}");
+        assert!(error.contains("Could not download the official release"), "{error}");
+        assert!(error.contains("Check your internet connection"), "{error}");
+        assert!(!error.starts_with("rejected:"), "{error}");
     }
 }
 
@@ -721,7 +745,11 @@ fn main() {
         if let Some(suppressed) = error.downcast_ref::<LargeReturnSuppressed>() {
             let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
         } else {
-            let rendered = format!("rejected: {error}\n");
+            let rendered = if updating {
+                render_update_error(error.as_ref()).unwrap_or_else(|_| format!("rejected: {error}\n"))
+            } else {
+                format!("rejected: {error}\n")
+            };
             if checking && let Err(suppressed) = check_large_return(&rendered, force) {
                 let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
             } else {
