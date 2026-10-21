@@ -582,6 +582,11 @@ fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String
         }
         if let Some(pending) = output.get("pending").filter(|v| v.is_object()) {
             status["worktree"] = pending["draft"].clone();
+            if pending["plan"].get("Rollback").is_some() {
+                status["pending_operation"] = json!("rollback");
+            } else if pending["plan"].get("Release").is_some() {
+                status["pending_operation"] = json!("update");
+            }
             for field in ["commit", "repair_node"] {
                 if let Some(value) = pending.get(field).filter(|v| !v.is_null()) {
                     status[format!("pending_{field}")] = value.clone();
@@ -849,6 +854,11 @@ mod tests {
             assert_eq!(shown[field], output[field], "{field}");
         }
         assert_eq!(shown["worktree"], output["pending"]["draft"]);
+        assert_eq!(shown["pending_operation"], "update");
+        let mut rollback = output.clone();
+        rollback["pending"]["plan"] = json!({"Rollback":{}});
+        let rollback = render_update_output("--status", &rollback).unwrap();
+        assert!(rollback.contains("pending_operation:rollback"));
         assert_eq!(shown["pending_commit"], output["pending"]["commit"]);
         assert_eq!(shown["pending_repair_node"], output["pending"]["repair_node"]);
         assert_eq!(shown["resume"], "sifttext update --resume");

@@ -59,7 +59,7 @@ Inspect the installed identities and pending work before recovery:
 "$BIN" update --status
 ```
 
-Status reports recorded application and knowledge identities, home, activation-pending flag and release-check result. With activation pending, those records alone do not establish the current launcher or reader state; preserve the journal and use checked recovery. Unfinished work adds its retained worktree, resume command and any recorded commit or repair-node identity; rollback targets appear only when available. Recovery manifests, checksums and clocks remain in the installation's `state.json`, not the receipt. A failed release check does not mean the active installation or pending work disappeared.
+Status reports recorded application and knowledge identities, home, activation-pending flag and release-check result. With activation pending, those records alone do not establish the current launcher or reader state; preserve the journal and use checked recovery. Unfinished work adds its operation (update or rollback), retained worktree, resume command and any recorded commit or repair-node identity; rollback targets appear only when available. Recovery manifests, checksums and clocks remain in the installation's `state.json` and any `activation.json`, not the receipt. A failed release check does not mean the active installation or pending work disappeared.
 
 To check and apply the latest compatible release under the user's permission, run `"$BIN" update`.
 
