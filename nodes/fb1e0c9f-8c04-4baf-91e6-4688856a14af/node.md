@@ -17,7 +17,7 @@ Read the local SiftText Commit hub and its required children with ordinary file 
 
 ## Private draft and fixed baseline
 
-Set `home` to the accepted knowledge repository. Inspect status, worktrees, current branch and HEAD. Preserve any unknown/dirty work. Confirm who may publish; never assume another agent's ownership has expired.
+Set `home` to the accepted knowledge repository. Inspect status, worktrees, current branch and HEAD. Preserve any unknown/dirty work. Confirm who may publish; never assume another agent's ownership has expired. Continue an existing owned draft for the same undertaking; allocate only when a new draft is needed. After an uncertain allocation, inspect registered worktrees and establish ownership before retrying; preserve incomplete or unknown drafts.
 
 ```sh
 git -C "$home" status --short
@@ -26,7 +26,7 @@ git -C "$home" rev-parse HEAD
 sifttext worktree "$home"
 ```
 
-Use the returned `worktree` as `wt`, its `branch` as `branch`, and its `base` as `base_sha`; do not edit accepted home. Preserve a detached baseline of that exact commit for transition checks:
+Use the returned `worktree` as `wt` and its `base` as `base_sha`; do not edit accepted home. Preserve a detached baseline of that exact commit for transition checks:
 
 ```sh
 base=$(mktemp -d "${TMPDIR:-/tmp}/sifttext-base.XXXXXXXX")

@@ -846,6 +846,14 @@ fn initialization_git_preserves_bytes_without_ambient_configuration() {
 }
 
 pub fn worktree(policy: &Policy, home: &Path) -> Result<Value> {
+    worktree_inner(policy, home, |_| Ok(()))
+}
+
+fn worktree_inner(
+    policy: &Policy,
+    home: &Path,
+    after_create: impl FnOnce(&Path) -> Result<()>,
+) -> Result<Value> {
     check(policy, home, None, BTreeSet::new())?;
     require(
         git(home, &["status", "--porcelain"])?.is_empty(),
@@ -863,24 +871,83 @@ pub fn worktree(policy: &Policy, home: &Path) -> Result<Value> {
         git(&home, &["rev-parse", "HEAD"])? == base,
         "reader is behind accepted main; use sifttext advance HOME for a clean home, or sifttext accepted HOME for a separate view",
     )?;
+    let setup = (|| -> Result<()> {
+        git(
+            &home,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &branch,
+                path.to_str().ok_or("non-UTF-8 path")?,
+                &base,
+            ],
+        )?;
+        after_create(&path)?;
+        // Git cannot retain empty directories. Hydrate only this newly allocated draft.
+        for name in ["nodes", "trees"] {
+            if !path.join(name).try_exists()? {
+                fs::create_dir(path.join(name))?;
+            }
+        }
+        Ok(())
+    })();
+    setup.map_err(|error| {
+        format!(
+            "worktree allocation failed; possible draft: {}; base: {base}; inspect registered worktrees and preserve files before retrying: {error}",
+            path.display()
+        )
+    })?;
+    Ok(json!({"worktree":path,"base":base}))
+}
+
+#[cfg(test)]
+#[test]
+fn worktree_receipt_is_minimal_and_partial_setup_preserves_owned_drafts() {
+    let root = tempfile::tempdir().unwrap();
+    let home = fs::canonicalize(root.path()).unwrap().join("home");
+    fs::create_dir(&home).unwrap();
+    git(&home, &["init", "-q", "-b", "main"]).unwrap();
+    fs::write(home.join(".gitignore"), IGNORE).unwrap();
+    for name in ["nodes", "trees"] {
+        fs::create_dir(home.join(name)).unwrap();
+        fs::write(home.join(name).join(".keep"), "").unwrap();
+    }
+    git(&home, &["add", "."]).unwrap();
     git(
         &home,
         &[
-            "worktree",
-            "add",
-            "-b",
-            &branch,
-            path.to_str().ok_or("non-UTF-8 path")?,
-            &base,
+            "-c", "user.name=Synthetic Fixture",
+            "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "knowledge: initialize synthetic home",
         ],
-    )?;
-    // Git cannot retain empty directories. Hydrate only this newly allocated draft.
-    for name in ["nodes", "trees"] {
-        if !path.join(name).try_exists()? {
-            fs::create_dir(path.join(name))?;
-        }
+    ).unwrap();
+    git(&home, &["checkout", "--detach", "--quiet"]).unwrap();
+    let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    let base = git(&home, &["rev-parse", "HEAD"]).unwrap();
+    let receipt = worktree(&policy, &home).unwrap();
+    assert_eq!(receipt.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["base", "worktree"]);
+    assert_eq!(receipt["base"], base);
+    let existing = Path::new(receipt["worktree"].as_str().unwrap());
+    fs::write(existing.join("existing.txt"), "Keep existing work.").unwrap();
+    let mut partial = PathBuf::new();
+    let error = worktree_inner(&policy, &home, |path| {
+        partial = path.to_owned();
+        fs::write(path.join("unfinished.txt"), "Preserve this draft.")?;
+        Err(std::io::Error::other("synthetic setup failure").into())
+    }).unwrap_err().to_string();
+    assert!(error.contains(partial.to_str().unwrap()), "{error}");
+    assert!(error.contains(&base), "{error}");
+    assert!(error.contains("synthetic setup failure"), "{error}");
+    assert!(error.contains("inspect registered worktrees"), "{error}");
+    assert_eq!(fs::read(partial.join("unfinished.txt")).unwrap(), b"Preserve this draft.");
+    assert_eq!(fs::read(existing.join("existing.txt")).unwrap(), b"Keep existing work.");
+    for path in [existing, partial.as_path()] {
+        assert_eq!(git(path, &["rev-parse", "HEAD"]).unwrap(), base);
+        assert!(git(&home, &["worktree", "list", "--porcelain"]).unwrap().contains(path.to_str().unwrap()));
     }
-    Ok(json!({"worktree":path,"branch":branch,"base":base}))
+    assert_eq!(git(&home, &["rev-parse", "HEAD"]).unwrap(), base);
+    assert_eq!(git(&home, &["rev-parse", "main"]).unwrap(), base);
 }
 
 /// Explicitly advance only an initialized, independent, detached home reader.

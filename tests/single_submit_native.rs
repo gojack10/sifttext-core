@@ -121,6 +121,7 @@ impl Native {
         a: &Value,
         receipt: &Value,
         expected: &BTreeMap<PathBuf, Vec<u8>>,
+        branch: &str,
     ) {
         assert_eq!(receipt["status"], "current");
         assert_eq!(receipt["view"], text(home));
@@ -137,7 +138,7 @@ impl Native {
                 &[
                     "for-each-ref",
                     "--format=%(refname)",
-                    &format!("refs/heads/{}", a["branch"].as_str().unwrap())
+                    &format!("refs/heads/{branch}")
                 ]
             ),
             ""
@@ -204,9 +205,12 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let home = evidence.join("home");
     n.cli(&["init", text(&home), "--empty"]);
     let first = n.cli(&["worktree", text(&home)]);
+    assert_eq!(first.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["base", "worktree"]);
     let second = n.cli(&["worktree", text(&home)]);
     let first_path = PathBuf::from(first["worktree"].as_str().unwrap());
     let second_path = PathBuf::from(second["worktree"].as_str().unwrap());
+    let first_branch = n.git(&first_path, &["symbolic-ref", "--short", "HEAD"]);
+    let second_branch = n.git(&second_path, &["symbolic-ref", "--short", "HEAD"]);
     fs::write(first_path.join("nodes/.keep"), "").unwrap();
     let root = n.cli(&[
         "create",
@@ -237,7 +241,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
         first_receipt["candidate"], first_sha,
         "fast-forward must not manufacture history"
     );
-    n.finished(&home, &first, &first_receipt, &first_files);
+    n.finished(&home, &first, &first_receipt, &first_files, &first_branch);
     let accepted = n.cli(&["accepted", text(&home)]);
     assert_eq!(accepted["status"], "current");
     assert_eq!(fs::read(home.join("nodes/.keep")).unwrap(), b"");
@@ -268,7 +272,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let mut combined = first_files.clone();
     combined.extend(second_files);
     let second_receipt = n.submit(&home, &second, &second_sha, true);
-    n.finished(&home, &second, &second_receipt, &combined);
+    n.finished(&home, &second, &second_receipt, &combined, &second_branch);
     let merge = second_receipt["candidate"].as_str().unwrap();
     let mut parents: Vec<_> = n
         .git(&home, &["show", "-s", "--format=%P", merge])
@@ -344,11 +348,13 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     }
     let left_path = PathBuf::from(left["worktree"].as_str().unwrap());
     let right_path = PathBuf::from(right["worktree"].as_str().unwrap());
+    let left_branch = n.git(&left_path, &["symbolic-ref", "--short", "HEAD"]);
+    let right_branch = n.git(&right_path, &["symbolic-ref", "--short", "HEAD"]);
     let left_sha = n.commit(&left_path);
     let right_sha = n.commit(&right_path);
     let left_files = snapshot(&left_path);
     let left_receipt = n.submit(&home, &left, &left_sha, true);
-    n.finished(&home, &left, &left_receipt, &left_files);
+    n.finished(&home, &left, &left_receipt, &left_files, &left_branch);
     let refused = n.submit(&home, &right, &right_sha, false);
     assert_eq!(refused["check"], "git_file_conflict");
     assert_eq!(
@@ -371,7 +377,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let repair_sha = n.commit(&right_path);
     let repaired_files = snapshot(&right_path);
     let repair_receipt = n.submit(&home, &right, &repair_sha, true);
-    n.finished(&home, &right, &repair_receipt, &repaired_files);
+    n.finished(&home, &right, &repair_receipt, &repaired_files, &right_branch);
     assert_eq!(repair_receipt["candidate"], repair_sha);
     let next = n.cli(&["worktree", text(&home)]);
     assert_eq!(next["base"], repair_receipt["candidate"]);
