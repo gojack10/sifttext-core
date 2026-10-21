@@ -83,7 +83,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     );
     fs::write(&source, node(id)).unwrap();
 
-    for n in 2..=600 {
+    for n in 2..=904 {
         add(&store, &format!("00000000-0000-4000-8000-{n:012x}"));
     }
     let full = cli(&["check", path, "-y"]);
@@ -93,17 +93,25 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
         .lock()
         .encode_ordinary(std::str::from_utf8(&full.stdout).unwrap())
         .len();
-    assert!(tokens > 15_000, "fixture report too small: {tokens}");
+    eprintln!("OUTPUT_TOKENS check_success_904={tokens}");
+    assert!(tokens < 65, "successful report grew: {tokens}");
+    let decoded =
+        sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&full.stdout).unwrap())
+            .unwrap();
+    assert_eq!(decoded.as_object().unwrap().len(), 3);
+    assert_eq!(decoded["nodes"], 904);
+    assert_eq!(decoded["status"], "current");
+    assert_eq!(decoded["version"].as_str().unwrap().len(), 64);
     let guarded = cli(&["check", path]);
-    assert_eq!(guarded.status.code(), Some(1), "{guarded:?}");
+    assert_eq!(guarded.status.code(), Some(0), "{guarded:?}");
     assert!(guarded.stderr.is_empty(), "{guarded:?}");
-    assert_eq!(guarded.stdout, format!("[{tokens} tokens suppressed] Re-run this sifttext check command with -y to print them.\n").as_bytes());
+    assert_eq!(guarded.stdout, full.stdout);
     let retried = cli(&["check", path, "-y"]);
     assert_eq!(retried.status.code(), Some(0), "{retried:?}");
     assert_eq!(retried.stdout, full.stdout);
     assert!(retried.stderr.is_empty(), "{retried:?}");
-    // Rejection is still a complete report, not just the failing row. The same
-    // output boundary must cover stderr without making -y bypass validation.
+    // One problem remains small even in a large healthy forest. No successful
+    // rows, null-only columns, duplicate predicates or rule IDs ride along.
     fs::write(&source, &resolved).unwrap();
     let full_refusal = cli(&["check", path, prior, "-y"]);
     assert_eq!(full_refusal.status.code(), Some(1), "{full_refusal:?}");
@@ -115,15 +123,23 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
         .lock()
         .encode_ordinary(diagnostics)
         .len();
-    assert!(tokens > 15_000, "fixture refusal too small: {tokens}");
+    eprintln!("OUTPUT_TOKENS check_single_refusal_904={tokens}");
+    assert!(tokens < 300, "single refusal grew: {tokens}");
+    assert!(!diagnostics.contains("crystallization_tokens"));
+    assert!(!diagnostics.contains("source\t"));
+    assert!(!diagnostics.contains("rule"));
+    assert_eq!(
+        diagnostics.matches("status_transition_or_reason").count(),
+        1
+    );
     let guarded_refusal = cli(&["check", path, prior]);
     assert_eq!(
         guarded_refusal.status.code(),
         Some(1),
         "{guarded_refusal:?}"
     );
-    assert!(guarded_refusal.stderr.is_empty(), "{guarded_refusal:?}");
-    assert_eq!(guarded_refusal.stdout, format!("[{tokens} tokens suppressed] Re-run this sifttext check command with -y to print them.\n").as_bytes());
+    assert!(guarded_refusal.stdout.is_empty(), "{guarded_refusal:?}");
+    assert_eq!(guarded_refusal.stderr, full_refusal.stderr);
     let retried_refusal = cli(&["check", path, prior, "-y"]);
     assert_eq!(
         retried_refusal.status.code(),
@@ -135,7 +151,36 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     assert_eq!(fs::read_to_string(&source).unwrap(), resolved);
     fs::write(&source, node(id)).unwrap();
 
-    for n in 1..=600 {
+    // Actual independent problems still cross the output gate; no failures are
+    // silently dropped merely to keep a diagnostic small.
+    for n in 1..=904 {
+        let id = format!("00000000-0000-4000-8000-{n:012x}");
+        fs::write(
+            store.join("nodes").join(&id).join("node.md"),
+            node(&id).replace("see_also: []", "see_also: []\nruled_out: []"),
+        )
+        .unwrap();
+    }
+    let large = cli(&["check", path, "-y"]);
+    assert_eq!(large.status.code(), Some(1), "{large:?}");
+    let diagnostics = std::str::from_utf8(&large.stderr).unwrap();
+    assert!(diagnostics.contains("rows[904]"), "{diagnostics}");
+    let tokens = tiktoken_rs::o200k_base_singleton()
+        .lock()
+        .encode_ordinary(diagnostics)
+        .len();
+    eprintln!("OUTPUT_TOKENS check_904_independent_failures={tokens}");
+    assert!(tokens > 15_000, "fixture refusal too small: {tokens}");
+    let suppressed = cli(&["check", path]);
+    assert_eq!(suppressed.status.code(), Some(1));
+    assert!(suppressed.stderr.is_empty());
+    assert_eq!(suppressed.stdout, format!("[{tokens} tokens suppressed] Re-run this sifttext check command with -y to print them.\n").as_bytes());
+    for n in 1..=904 {
+        let id = format!("00000000-0000-4000-8000-{n:012x}");
+        fs::write(store.join("nodes").join(&id).join("node.md"), node(&id)).unwrap();
+    }
+
+    for n in 1..=904 {
         let id = format!("00000000-0000-4000-8000-{n:012x}");
         let dir = store.join("nodes").join(&id);
         assert_eq!(fs::read_to_string(dir.join("node.md")).unwrap(), node(&id));
