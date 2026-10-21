@@ -162,19 +162,17 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     );
     let commit = git(tools, Path::new(draft), &["rev-parse", "HEAD"]);
     let receipt = json(bin, tools, &["submit", home, draft, &commit, base]);
-    assert_eq!(receipt["published"], true);
-    assert_eq!(receipt["check"], "published_checked_candidate");
+    assert_eq!(receipt["status"], "saved");
     assert_eq!(
         git(tools, Path::new(home), &["rev-parse", "refs/heads/main"]),
-        receipt["candidate"].as_str().unwrap()
+        receipt["accepted"].as_str().unwrap()
     );
     assert_eq!(fs::read(&node).unwrap(), edited);
     assert_eq!(receipt["home"], home);
-    assert_eq!(receipt["view"], home);
     assert_eq!(receipt["worktree_removed"], true);
     assert!(!Path::new(draft).exists());
     assert_eq!(git(tools, Path::new(home), &["rev-parse", "HEAD"]), commit);
-    let view = receipt["view"].as_str().unwrap();
+    let view = receipt["home"].as_str().unwrap();
     assert_eq!(cli(bin, tools, &["read", view, entry]).stdout, edited);
     assert_eq!(
         json(bin, tools, &["search", view, "Portableworkflowuniqueterm"])["total_matches"],
@@ -197,7 +195,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
             recovery["base"].as_str().unwrap(),
         ],
     );
-    assert_eq!(restored["published"], true);
+    assert_eq!(restored["status"], "saved");
     assert_eq!(
         git(
             tools,
@@ -205,7 +203,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
             &[
                 "diff",
                 initial["commit"].as_str().unwrap(),
-                restored["candidate"].as_str().unwrap(),
+                restored["accepted"].as_str().unwrap(),
                 "--",
                 "nodes",
                 "trees"
@@ -215,8 +213,9 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
         "revert must recover every authored byte/link"
     );
     let accepted = json(bin, tools, &["accepted", home]);
-    assert_eq!(accepted["check"], "accepted_revision_recovered");
-    assert_eq!(accepted["candidate"], restored["candidate"]);
+    assert_eq!(accepted["status"], "ready");
+    assert_eq!(accepted["home_advanced"], false);
+    assert_eq!(accepted["accepted"], restored["accepted"]);
     let recovered = accepted["view"].as_str().unwrap();
     // Rebuild only this disposable fixture's derived cache, not authored files.
     fs::remove_dir_all(Path::new(recovered).join(".sifttext")).unwrap();
@@ -253,7 +252,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     assert_eq!(json(bin, tools, &["init", home])["created"], false);
     println!(
         "PORTABLE_WORKFLOW_CHECKED nodes={count} initial={} published={} restored={} version={}",
-        initial["commit"], receipt["candidate"], restored["candidate"], restored["version"]
+        initial["commit"], receipt["accepted"], restored["accepted"], restored["version"]
     );
 }
 
