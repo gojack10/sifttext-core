@@ -100,7 +100,7 @@ impl Native {
         if args.first().is_some_and(|cmd| {
             !matches!(
                 *cmd,
-                "sql" | "search" | "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
+                "submit" | "accepted" | "session-capture" | "session-attach" | "session-backup" | "session-restore"
             )
         }) {
             sifttext_file_graph::outlines::decode_lean(&output).unwrap()
@@ -425,7 +425,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     .unwrap();
     n.cli(&["check", d, o], true);
     assert_eq!(
-        n.json(&["search", d, "Defaultbundlescratchtrial"])["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap()["id"],
+        n.json(&["search", d, "Defaultbundlescratchtrial"])["rows"][0]["id"],
         created["id"]
     );
     n.git(&draft, &["add", "--", "nodes", "trees"]);
@@ -463,7 +463,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     assert_eq!(advanced["accepted"], receipt["candidate"]);
     assert_eq!(advanced["advanced"], false);
     assert_eq!(
-        n.json(&["search", o, "Defaultbundlescratchtrial"])["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap()["id"],
+        n.json(&["search", o, "Defaultbundlescratchtrial"])["rows"][0]["id"],
         created["id"]
     );
     let recovery = n.json(&["worktree", o]);

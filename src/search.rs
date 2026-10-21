@@ -61,6 +61,7 @@ pub struct Outcome {
     pub status: &'static str,
     pub version: Option<String>,
     pub total_matches: i64,
+    pub path_template: String,
     pub hits: Vec<Hit>,
     /// Ranked root-to-hit chains from the same capture, with unreadable positions redacted.
     pub rows: Vec<Value>,
@@ -247,19 +248,79 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
                     rows.push(Value::Object(row));
                 }
             }
-            Ok((total, cards, hits, rows))
+            let path_template = store.path.join("nodes/{id}/node.md");
+            let path_template = path_template.to_str().ok_or("non-UTF-8 store path")?.to_owned();
+            Ok((total, cards, hits, rows, path_template))
         },
     )?;
-    let (total_matches, cards, hits, rows) = found.unwrap_or((0, vec![], vec![], vec![]));
+    let (total_matches, cards, hits, rows, path_template) =
+        found.unwrap_or((0, vec![], vec![], vec![], String::new()));
     Ok(Outcome {
         refusal: view.refusal,
         status: view.status,
         version: view.version,
         total_matches,
+        path_template,
         cards,
         hits,
         rows,
     })
+}
+
+impl Outcome {
+    /// Discovery projection only. Rich same-capture chains remain available internally.
+    pub fn cli_value(&self) -> Value {
+        let path_template = &self.path_template;
+        let mut output = serde_json::json!({"status":self.status,"version":self.version,
+            "total_matches":self.total_matches,"path_template":path_template});
+        let mut warnings = BTreeMap::new();
+        let mut rows = Vec::new();
+        let mut chain = Vec::new();
+        for source in &self.rows {
+            if source["depth"] == 0 {
+                chain.clear();
+            }
+            chain.push(source);
+            if let (Some(id), Some(warning)) = (source["id"].as_str(), source["warnings"].as_str()) {
+                warnings.entry(id).or_insert(warning);
+            }
+            if source["match"] != true {
+                continue;
+            }
+            let mut row = source.as_object().unwrap().clone();
+            for key in ["hit", "depth", "match", "path", "active_reason", "warnings"] {
+                row.remove(key);
+            }
+            let context = |source: &Value| source["id"].as_str().unwrap_or("unavailable").to_owned();
+            if chain.len() > 1 {
+                row.insert("root".into(), context(chain[0]).into());
+                row.insert("parent".into(), context(chain[chain.len() - 2]).into());
+            }
+            // Upstream snippets are query-specific; don't repeat text already shown intact.
+            if let Some(excerpt) = row.get("matching_excerpt").and_then(Value::as_str) {
+                let flat = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+                let excerpt = flat(excerpt.trim_matches('…'));
+                if ["name", "micro_summary"].iter().any(|key| {
+                    flat(row[*key].as_str().unwrap()).contains(&excerpt)
+                }) {
+                    row.remove("matching_excerpt");
+                }
+            }
+            rows.push(Value::Object(row));
+        }
+        // Guardrails apply along every readable ancestor chain, once per source.
+        // Oversized guidance becomes an explicit mandatory source read, never a clipped warning.
+        for (id, warning) in warnings {
+            if tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(warning).len() > 512 {
+                output[format!("must_read_warnings_{id}")] =
+                    path_template.replace("{id}", id).into();
+            } else {
+                output[format!("warnings_{id}")] = warning.into();
+            }
+        }
+        output["rows"] = rows.into();
+        output
+    }
 }
 
 /// Thin native differential surface mandated by the maintained run contract.

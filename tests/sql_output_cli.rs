@@ -105,7 +105,8 @@ fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
             .unwrap()
     };
     let value = run(query);
-    assert_eq!(value["column_count"], 8);
+    assert!(value.get("column_count").is_none());
+    assert!(value.get("version_scope").is_none());
     for (i, name) in ["same", "same", "", "a.b", "Ω\nkey", "~", "a:b", "two words"]
         .iter()
         .enumerate()
@@ -121,9 +122,13 @@ fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
         row["c1"].as_str().unwrap().parse::<i64>().unwrap(),
         i64::MIN
     );
-    assert_eq!(row["c0_type"], "integer");
-    assert_eq!(row["c1_type"], "integer");
-    assert_eq!(row["c2_type"], "real");
+    assert_eq!(value["c0_type"], "integer");
+    assert_eq!(value["c1_type"], "integer");
+    assert_eq!(value["c2_type"], "real");
+    assert_eq!(value["c3_type"], "real");
+    assert_eq!(value["c4_type"], "real");
+    assert!(row.get("c0_type").is_none());
+    assert!(row.get("c2_type").is_none());
     assert_eq!(row["c2"].as_str().unwrap().parse::<f64>().unwrap(), 1.0);
     assert_eq!(
         row["c3"]
@@ -159,7 +164,35 @@ fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
         "SELECT value FROM json_each('{}')",
         serde_json::to_string(&vec![1; 1000]).unwrap()
     );
-    assert_eq!(run(&thousand)["rows"].as_array().unwrap().len(), 1000);
+    let homogeneous = run(&thousand);
+    assert_eq!(homogeneous["c0_type"], "integer");
+    assert_eq!(homogeneous["rows"].as_array().unwrap().len(), 1000);
+    let mut old = homogeneous.clone();
+    old["version_scope"] = serde_json::json!("authored_store");
+    old["column_count"] = serde_json::json!(1);
+    old.as_object_mut().unwrap().remove("c0_type");
+    for row in old["rows"].as_array_mut().unwrap() { row["c0_type"] = serde_json::json!("integer"); }
+    let old = sifttext_file_graph::lean_render::render(&old).unwrap() + "\n";
+    let new = sifttext_file_graph::lean_render::render(&homogeneous).unwrap() + "\n";
+    println!("sql homogeneous rows=1000 old_bytes={} old_tokens={} new_bytes={} new_tokens={}", old.len(), tokens(old.as_bytes()), new.len(), tokens(new.as_bytes()));
+    assert!(homogeneous["rows"].as_array().unwrap().iter().all(|row| row.get("c0_type").is_none()));
+    let nullable = run("SELECT -0.0 AS x UNION ALL SELECT NULL UNION ALL SELECT 1e-300");
+    assert_eq!(nullable["c0_type"], "real");
+    assert_eq!(nullable["rows"][1]["c0"], serde_json::Value::Null);
+    assert_eq!(nullable["rows"][0]["c0"].as_str().unwrap().parse::<f64>().unwrap().to_bits(), (-0.0f64).to_bits());
+    assert_eq!(nullable["rows"][2]["c0"].as_str().unwrap().parse::<f64>().unwrap(), 1e-300);
+    assert!(run("SELECT NULL AS x").get("c0_type").is_none());
+    assert!(empty.get("c0_type").is_none());
+    let index = cli(&["index", home]);
+    assert!(index.status.success(), "{index:?}");
+    let index = sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&index.stdout).unwrap()).unwrap();
+    assert_eq!(index.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["nodes", "status", "version"]);
+    let mut old = index.clone();
+    old["version_scope"] = serde_json::json!("authored_store");
+    old["links"] = serde_json::json!(0);
+    let old = sifttext_file_graph::lean_render::render(&old).unwrap() + "\n";
+    let new = sifttext_file_graph::lean_render::render(&index).unwrap() + "\n";
+    println!("index empty old_bytes={} old_tokens={} new_bytes={} new_tokens={}", old.len(), tokens(old.as_bytes()), new.len(), tokens(new.as_bytes()));
     for query in [
         "SELECT 1; SELECT 2".to_owned(),
         "SELECT 1; DELETE FROM nodes".to_owned(),
