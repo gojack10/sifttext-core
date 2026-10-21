@@ -82,6 +82,9 @@ impl Server {
                     }
                     Err(e) => panic!("{e}"),
                 };
+                // Accepted sockets can inherit the listener's nonblocking mode
+                // on macOS; wait for the request instead of racing its first byte.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .unwrap();
@@ -278,6 +281,8 @@ fn login_refresh_rotation_account_and_remote_logout() {
     let (ok, text, error) = finish(child, stdout);
     assert!(ok, "{error}");
     assert!(text.contains("Authentication successful."));
+    let logged_in: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(logged_in, json!({"id":"synthetic-user", "email":"fixture@example.test", "paid":true, "subscription_status":"active"}));
     assert_eq!(server.observed.lock().unwrap().account_calls, 1);
     let path = credential_path(home.path());
     assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
@@ -296,7 +301,11 @@ fn login_refresh_rotation_account_and_remote_logout() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("\"paid\": true"));
+    let shown: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(shown, logged_in);
+    let before = serde_json::to_string_pretty(&json!({"id":"synthetic-user", "username":"fixture", "email":"fixture@example.test", "display_name":"Fixture", "subscription_status":"active", "paid":true})).unwrap();
+    let count = |s: &str| tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(s).len();
+    eprintln!("account: {} -> {} tokens", count(&before), count(std::str::from_utf8(&output.stdout).unwrap().trim_end()));
     let credentials: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(credentials["refresh_token"], "refresh-1");
     server.observed.lock().unwrap().reject_access_once = true;
@@ -312,6 +321,7 @@ fn login_refresh_rotation_account_and_remote_logout() {
     assert!(output.status.success());
     assert!(!path.exists());
     assert!(server.observed.lock().unwrap().revoked);
+    assert_eq!(output.stdout, b"Logged out locally. Remote credentials revoked.\n");
 }
 
 #[test]

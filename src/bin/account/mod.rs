@@ -580,12 +580,12 @@ fn login(store: &Store) -> Result<()> {
 
 fn show_account(account: &Value) -> Result<()> {
     // Serialize only known account fields; never dump a token-bearing response.
-    let output = json!({"id":account["id"], "username":account["username"], "email":account["email"],
-        "display_name":account["display_name"], "subscription_status":account["subscription_status"], "paid":account["paid"]});
+    let output = json!({"id":account["id"], "email":account["email"],
+        "subscription_status":account["subscription_status"], "paid":account["paid"]});
     writeln!(
         std::io::stdout(),
         "{}",
-        serde_json::to_string_pretty(&output)?
+        serde_json::to_string(&output)?
     )?;
     Ok(())
 }
@@ -622,11 +622,11 @@ pub fn run(command: &str) -> Result<()> {
                 });
             writeln!(
                 std::io::stdout(),
-                "Logged out locally. {}Knowledge is unchanged.",
+                "Logged out locally. {}",
                 if revoked {
-                    "Remote credentials revoked. "
+                    "Remote credentials revoked."
                 } else {
-                    "Remote revocation could not be confirmed (offline or no saved login). "
+                    "Remote revocation could not be confirmed (offline or no saved login)."
                 }
             )?;
             Ok(())
