@@ -1,210 +1,156 @@
-# CLI output budget: non-SQL commands
+# CLI output cull: consequential information, not receipts of effort
 
-## What went wrong
+## Contract
 
-`check` answers whether a knowledge home is valid, but a successful answer includes a
-`crystallization_tokens` row for every node. Each row repeats node and rule identifiers.
-The 54,592-token figure in the reported incident measures that report's text, not model
-inference or the amount of knowledge read. The report is built before the output limiter
-checks it. `-y` permits printing it; it does not make validation succeed.
+A command should return only what an LLM needs to understand its outcome, locate the
+relevant source, or choose the next safe action. Preserve validation, exact requested
+evidence, guardrails, permission and mutation/recovery state. Delete duplication before
+compressing it. A small success result does not mean fewer checks ran.
 
-The old warning mentioned SQL because one shared formatter served all large-output
-commands. The warning now names the actual command, without SQL advice. The subsequent
-`worktree` cut removes its branch field and identifies the possible draft and baseline
-on allocation failure. Validation rules, output limits and exit codes are unchanged.
+This audit covers **every CLI operation, including SQL**. Names and micro-summaries stay
+intact in search; child counts stay in outlines. `read` still returns exact original
+source bytes. No new output framework, dependency, flags or silent result truncation.
 
-## Evidence and how to reproduce it
+Implemented in source on local `main`; this is not an installed upgrade or upstream
+release. No user knowledge home, credentials or session archives were modified by this
+work. Verification uses isolated synthetic homes and mocked account/update services.
 
-Run this safe serializer-only probe:
+## Measured examples
+
+Counts use `o200k_base` ordinary encoding. They are samples, **not maxima**. UUIDs, hash
+digits, paths, warnings and JSON whitespace affect counts. Where fixture inputs differ,
+the comparison is explicitly illustrative rather than identical-input measurement.
+
+| Operation / scenario | Before | After | Evidence boundary |
+|---|---:|---:|---|
+| `check`, 904 nodes pass | 54,644 | 44 | Earlier serializer sample versus real CLI fixture; not identical hashes |
+| `check`, one failure among 904 nodes | All successful rows mixed in | 155 | Actual refusal output; independent failures remain |
+| `submit`, success | 87,620 at 904 nodes | 133–137 at 1,201 nodes | Different fixtures; success size no longer scales with validation rows |
+| `accepted`, success | 87,509 at 904 nodes | 148–152 at 1,201 nodes | Different fixtures, same bounded-size projection principle |
+| `normalize`, no own writes | 33,102 at 904 nodes | 10 | Earlier serializer shape versus real CLI output |
+| `normalize`, one change among 1,025 nodes | Whole status map + duplicate lists | 60 | Actual CLI; unchanged nodes no longer returned |
+| Search, deepest 20 hits in a 904-node chain | 757,690 | 1,840 | Same twenty hits; 17,890 ancestor rows reduced to 20 matches |
+| SQL, 1,000 homogeneous integer rows | 7,067 | 4,058 | Same requested data, types and values |
+| Full outline, 904-node wide tree | 40,135 | 38,320 | Same fixture; names/summaries/children deliberately retained |
+| Shallow outline, same wide tree | 41,946 | 38,328 | Same fixture; no silent omission of children |
+| `update --status`, journal with 1,000 changed paths | 19,311 | 192 | Same fixture; persisted journal remains intact |
+| `account`, synthetic paid fixture | 49 | 22 | Same fixture; no real account accessed |
+| `create`, child fixture | 92 | 68 | Same fixture; actual ancestor activation notices remain separate |
+| `session-backup` | 40 | 34 | Same commit fixture |
+| `session-capture`, unavailable | 17 | 11 | Same outcome; null commit removed |
+| `update --config` | 33 | 26 | Same fixture path |
+| Opportunistic update notice | 91 | 74 | Same release/action fixture |
+
+The committed serializer probe also reproduces an identical-input comparison with
+realistic deterministic fingerprints: 904-node successful check **54,673 → 48** tokens,
+accepted sample **87,550 → 100**, and the same deep search hits **757,719 → 1,869**.
+Its compact submit receipt is 98 tokens at 1, 100 and 904 nodes. Those differ from the
+real CLI fixture table because its paths and identifiers are different.
+
+Do not promise an enormous reduction where useful content dominates. Outline savings
+are modest precisely because authored names, summaries, hierarchy, child counts and
+warnings remain. SQL payloads explicitly requested by the query remain exact.
+
+## Complete cut / no-cut inventory
+
+| Operation | Delivered result and cut decision |
+|---|---|
+| Help / no args | Fixed command reference; minor duplicated update/override help removed. Safety guidance retained. |
+| `check` | Success only nodes/status/version. Failure-only actionable rows/locations/measurements; no successful token rows, tokenizer provenance, repeated rule IDs, null-only fields or irrelevant baseline. Rich internal validation unchanged. |
+| `normalize` | Own-write-only JSON: unchanged or normalized plus one change per written node, before/after and removed reason-field names. No full status map, duplicate ID lists or duplicate stderr announcements. Sequential write failure preserves partial/unknown progress; exact receipt checked before writes. |
+| `submit` | Saved/recovered outcome, accepted commit, knowledge version, home and draft-removal result. No successful nested validation, cache counters, duplicate identities or finishing subreceipts. Accepted-incomplete versus not-accepted versus unknown distinguished. Semantic findings preserved when nonempty. |
+| `accepted` | Ready, accepted commit, knowledge version, usable view path, home_advanced=false. No misleading published flag or successful validation dump; retained view remains usable. |
+| `advance` | Advanced/current, one accepted commit, version and home. Removes duplicate hashes/boolean. Refresh failure after reader movement is not reported as no change. Retires only the invocation-owned clean detached temporary accepted view, with physical-directory and repository checks; preserves unknown/dirty/replaced copies. |
+| `worktree` | Only private worktree path and immutable base. Branch stays internal. Partial allocation failure identifies possible draft/baseline and preserves files. Guidance reuses owned drafts rather than allocating per turn. |
+| `search` | Ranked hits only, IDs, intact names/micro-summaries, status, compact readable root/parent IDs, useful query-specific excerpt, total matches, version and path template. Removes expanded ancestor rows and repeated paths/reasons/constants. Applicable warnings once per readable source; warnings over 512 tokens become explicit mandatory source reads, never clipped instructions. |
+| `outline` | Keeps requested hierarchy, IDs, intact names/summaries, statuses/reasons/warnings, child counts, coverage, path template and authored knowledge version. Removes descendants, tokenizer/display fingerprint metadata and leaf expansion costs. Shallow expandable branches retain exact full-CLI token estimates. Internal artifacts/identities/verification remain rich. |
+| `sql` | Exact requested cells, column names/order/empty schema and precision. Removes scope/count duplication; homogeneous numeric column types declared once, mixed-type cells retain distinctions. No inserted limit, truncation, dedup or summarization. Read-only and query resource bounds retained. |
+| `index` | Only nodes/status/version. Removes constant scope and reference count. Normal retrieval already refreshes: no ritual index-before-search/SQL/outline. Not advertised as guaranteed clean rebuild. |
+| `read` | **No success cut:** original node.md bytes. Full verification and unfamiliar fields preserved. Inherits compact rejection diagnostics. Oversized authored content is not silently hidden. |
+| `init` / `--bundle` / `--empty` | **No receipt cut:** home, created flag, initial commit, copied-node count and pointer outcome distinguish consequential setup states. Existing homes preserved. Empty setup does not claim working instructions. |
+| `instructions` | **No cut:** checked version and exact entry path. |
+| `create` | Only uncommitted node ID and path; parent echo and constant committed=false removed. Internal outcome and checks intact. Real ancestor activation notices retained because they describe additional writes. |
+| `runtime-check` | **No cut:** verified runtime location and status. |
+| `source-code` | **No cut:** exact source revision, detached checkout path and maintenance instructions each serve custody/use. |
+| `update` / `-y` | Omits empty refreshed-path lists; retains actual changed paths, actionable conflict locations and consent. Full persisted state/recovery journal unchanged. |
+| `update --status` | Recorded application/knowledge/home, activation-pending and release-check outcomes, actionable available release and unfinished operation/resume identities. No full journals/manifests, repeated checksums/baselines/timestamps/nulls or path-per-change dump. Recorded identity is not proof activation finished. |
+| `update --config`, `--grant`, `--mode`, `--pin`, `--unpin` | Mode, permission, settings path, real pin if set. Internal source label and null pin omitted. Consent/pin semantics unchanged. |
+| `update --resume` / `--rollback` / `--rebuild` | Meaningful progress, chosen identities and retained recovery/build locations preserved. Only empty refreshed-path lists cut where applicable. |
+| Incidental update notices | Release identities/action/guide/consent/pin remain; repeated heading/settings path removed. Checking/activation policy unchanged. |
+| `login` / `account` | Compact allowlisted account ID/email/subscription status/paid outcome; removes display name/username and pretty-print padding. Authorization URL, payment gate and credential protections retained. |
+| `logout` | Local removal and remote-revocation uncertainty retained; repeated reassurance about unchanged knowledge removed. |
+| `session-capture` | Success custody key/commit retained; unavailable result drops commit:null. No transcript dump. |
+| `session-attach` | **No cut:** node, association name and archive key identify distinct custody facts. Existing pre-mutation output gate retained. |
+| `session-backup` | Status and sent commit retained; constant destination_configured=true removed. No private destination disclosure. |
+| `session-restore` | **No cut:** status/link count, not per-link dump. Preservation and ff-only safeguards retained. |
+| `session-retention-config` | **No cut:** consent/location/backup consent/destination-configured are distinct settings. No secret destination disclosure. |
+| Internal `install-home` | **No cut:** small initialized/existing outcome and identities retained; application/knowledge separation unchanged. |
+
+## Reproduce and budget honestly
 
 ```sh
 sh scripts/with-tools.sh cargo run --locked --example cli-output-budget
+# Also count exact saved CLI output files, including wrappers and stderr if captured:
+sh scripts/with-tools.sh cargo run --locked --example cli-output-budget /tmp/output.txt
 ```
 
-It prints bytes and exact `o200k_base` ordinary token counts using the existing Rust
-tokenizer and production renderers. It never opens a knowledge home, runs Git, contacts
-a server or performs an update. Identifiers are deterministic synthetic UUIDs; names
-and summaries are short English samples. Counts include final newlines where the CLI
-adds them. The submit envelope and other small receipts are illustrative source-shaped
-samples, not end-to-end operation results. The check, nested validation projection and
-outline rendering use their production types/renderers.
+The example uses production check, publication, normalization and search projections
+with deterministic synthetic identifiers. It asserts essential sample invariants; it
+never opens a store, writes files, runs Git or contacts a service. It deliberately does
+not duplicate the private outline or SQL renderer. Their committed runnable checks are
+`retrieval_output_budget`, `outline_output_cli` and `sql_output_cli`. Use
+`scripts/build.sh` first when source/build fingerprints change.
 
-The 904-node size is chosen from the reported incident, not an assertion about the
-current local home. Actual identifiers and text change the exact count. These measured
-samples are **not global worst-case bounds**.
+For planning before exact measurement:
 
-| Output shape | 1 node | 100 nodes | 904 nodes |
-|---|---:|---:|---:|
-| Successful `check` | 188 | 6,121 | 54,644 |
-| `check`: one status error per node, plus token-count rows | 132 | 6,949 | 62,992 |
-| Structural rejection: one two-endpoint diagnostic per edge | 135 | 7,443 | 67,786 |
-| Successful `accepted`, including nested validation | 292 | 9,820 | 87,509 |
-| Successful `submit` receipt shape, including nested validation | 403 | 9,931 | 87,620 |
-| `normalize`, no nodes changed | 65 | 3,653 | 33,102 |
-| `normalize`, every ID in both changed/reopened lists | 119 | 8,705 | 79,364 |
-| Wide `outline`, shallow (root + every direct child) | 105 | 4,653 | 41,920 |
-| Wide `outline`, full | 99 | 4,448 | 40,107 |
+- Compact UUID-heavy diagnostic/change row: allow about **100 tokens**.
+- Pretty JSON diagnostic/change row: allow about **150 tokens**.
+- Add complete authored text **each time actually displayed**, including warnings.
+- Successful check/publication/advance/index receipts no longer grow per checked node.
+- A safe loose bound for a concrete rendered output is **tokens <= final UTF-8 bytes**.
+  Count after escaping/repetition; English `characters / 4` is not a worst-case bound.
 
-The normalization measurements above are stdout only. Each reopened node also produces
-`[UUID] set to in_progress.` on stderr. Budget roughly another 25–40 tokens per reopening;
-that makes the 904-node all-reopened case approximately **102k–116k tokens combined**.
-The all-ID normalization sample measures the envelope, not a claim that every such
-transition can be produced by one particular valid before/after pair.
+These per-row allowances are heuristics, not proofs. Full names, summaries, SQL cells,
+headers, remote account fields and subprocess errors can exceed them arbitrarily within
+their own input/resource constraints. A read's successful source file is capped at
+1,048,576 bytes, not 5,000 total tokens; the body ceiling excludes its header.
 
-Additional measured stress shapes:
+There is still **no universal CLI-wide output maximum**. A 904-node wide outline can
+still be ~38k tokens. Genuine failures/changes and explicit broad SQL can still be huge.
+Search no longer multiplies all metadata by every hit's entire ancestry in its CLI
+output, but internal rich evidence remains and huge names/summaries stay intact.
 
-- `search`: the 20 deepest hits in a 904-node chain produce **17,890 rows**, **2,157,217
-  bytes**, **757,690 tokens**, despite the 20-hit limit. Every hit repeats its ancestor
-  chain. This is a source-shaped renderer measurement, not an end-to-end performance
-  or successful deep-store qualification test.
-- `read`: a small body with a 16,384-token warning in its header returns **16,442 tokens**.
-  The 5,000-token ceiling applies to the body, not the complete file or header.
-- `update`: listing one refreshed node path is **50 tokens**; 904 paths is **24,717**.
-  Conflict messages and other embedded receipts can be much larger.
+Guarded returns over 15,000 tokens require `-y`; that is not a global stdout+stderr cap
+or proof of validity. Direct normalize checks the exact receipt before writing. Successful
+publication exposes its compact completion even after a save. Ordinary errors and some
+incidental notices remain outside that limiter. `SIFTTEXT_NO_UPDATE=1` isolates commands
+from incidental update notices for measurements; normal managed invocations can include them.
 
-## Worst-case thinking: no invented universal maximum
+SQL's warning remains exactly:
 
-There is no useful fixed token ceiling for the **full** outputs of most commands.
-They depend on the number of nodes, links, ancestry, authored text, supplied descriptors,
-paths, remote responses and external program errors. Graph-wire limits, memory and
-execution deadlines can reject an operation before a huge report is produced; they are
-not a documented customer output-token budget or an unlimited-scale promise.
+```text
+[<tokens> tokens suppressed] Re-run this sifttext sql command with -y to print them.
+```
 
-Separate three quantities:
+Narrow SQL at the source: count when a count is needed, select required fields, filter,
+and explicitly limit discovery. Never silently rewrite a requested evidence query.
+Start outline navigation shallow and expand selected branches. Reuse unchanged reads,
+continue an owned draft, and do not repeat advance/index after a completed submit.
 
-1. **Full output:** what would be emitted with the output override, or on an unguarded path.
-2. **Default visible output:** guarded returns above 15,000 tokens are replaced by a short
-   notice and exit 1. Exactly 15,000 is allowed. Suppression does not establish validity.
-3. **Combined stdout + stderr:** reopening notices, ordinary errors and automatic update
-   notices are not all covered by that limiter.
+## Verification boundaries and follow-ups
 
-### A deliberately pessimistic counting heuristic
+Combined integration verification is recorded separately in the delivery result. Worker
+reports preserve focused CLI/native/recovery checks and actual output measurements;
+internal outline oracle verification was retained rather than replaced by size assertions.
 
-For rough discussion, use **100 tokens per compact UUID-heavy row**, **150 per pretty-JSON
-validation row**, plus the text fields. These are rounded planning allowances, not
-mathematical upper bounds. Long warnings or names invalidate a flat per-row allowance.
-Never use the English-prose `characters / 4` rule as a worst-case estimate for UUID tables,
-code, arbitrary Unicode or escaped strings.
+The pre-integration library baseline was not green: two stale literal-phrase checks in
+`default_native_kb.rs`, a policy-helper signal/timeout injection failure, and a process
+stderr-classification failure were observed. Some process/lock failures vary across runs.
+These must not be relabeled as fixed or silently skipped to claim a green full suite.
+The earlier default CLI test's JSON-versus-LEAN consumer mismatch was repaired as part of
+migrating the affected retrieval contract; its end-to-end preservation checks remain.
 
-For a conservative byte-based bound with the ordinary tokenizer:
-
-> **tokens <= UTF-8 bytes in the final rendered output.**
-
-Count *after* JSON/LEAN escaping, indentation and repeated ancestors. A character can
-occupy multiple UTF-8 bytes; JSON escaping can expand input. Byte count is deliberately
-loose but, unlike a prose ratio, safe for a concrete rendered string. It does not bound
-an unknown-size output before generation.
-
-For scaling estimates, define:
-
-- `N`: nodes in the whole home; `V`: nodes actually displayed by an outline.
-- `F`: diagnostic rows, including successful token rows retained in a rejection.
-- `C`, `R`: normalized and reopened IDs.
-- `A = sum(depth(hit) + 1)`: search rows across at most 20 hits.
-- `M`: tokens of names, summaries, warnings and active reasons displayed, **counting repetitions**.
-- `P`: listed paths; `Q`: tokens in returned descriptor fields; `X`: external error text.
-
-| Family | Practical token estimate, not a hard bound |
-|---|---|
-| Successful `check` | `200 + 60–75 * N`; pessimistic planning: `200 + 100 * N` |
-| Rejected `check` | `300 + 40–100 * F`; include token rows as well as errors |
-| `submit` / `accepted` | `500 + 95–120 * N` on success; budget `500 + 150 * F` for diagnostics |
-| `normalize` stdout | `100 + 40 * N + 30 * C + 30 * R` |
-| `normalize` stderr | additional `40 * R` allowance |
-| `outline` | `200 + 50 * V + M`; shallow can still have `V = N` |
-| `search` | `200 + 50 * A + M`, plus up to 20 paths and matching excerpts |
-| `read` | exact tokens of the complete authored file, not just the body |
-| `update` | base receipt + `30–60 * P`, plus embedded validation/error text |
-| Session receipts | base receipt + `Q`; not the transcript's token count |
-| Any raw subprocess failure | add `X`; there is no CLI-wide cap on `X` |
-
-For structural graph failure, diagnostic rows can scale with **bad links as well as nodes**:
-dangling references, multiple placements and unrooted nodes are separate findings.
-For a structurally valid graph with bad metadata/statuses, several checks can fail per
-node. One-error-per-node measurements are not the maximum possible rejection.
-
-If every displayed node has `W` tokens of warning text, add `V * W` to an outline, but
-`A * W` to search. At `W=1,000`, the 17,890-row search stress shape adds about **17.9 million
-tokens** just in repeated warnings, if the input is accepted and computation completes.
-
-For an intentionally extreme engineering envelope, put `L = 1,048,576` bytes (the
-complete authored-file cap). Selected metadata can consume almost all of that file;
-the body ceiling does not constrain it. The current LEAN cell encoder at most doubles
-selected text bytes when escaping quotes/backslashes/newlines. Allowing an additional
-1,024 bytes per row for fixed fields/counters, conservative **successful-return** bounds
-are:
-
-- `read`: at most `L` tokens.
-- `outline`: at most `4,096 + V * (2*L + 1,024)` tokens.
-- `search`: at most `4,096 + A * (2*L + 1,024)`, plus twice the UTF-8 length of the hit
-  paths and 4,096 per hit for excerpts/extra cells, in tokens.
-
-These use `tokens <= final bytes`, so they are much looser than normal estimates. At
-904 displayed nodes, the outline envelope is approximately **1.90 billion tokens**;
-with 17,890 repeated search rows, the search envelope is approximately **37.54 billion**
-before the small path/excerpt allowance. These are arithmetic upper allowances, **not
-measured maxima, claims of achievable tokenizer density, or claims the operation can
-finish**. A store, cache generation, graph resource check or filesystem can fail first.
-They exclude errors and automatic update notices. They show why the current text/file
-constraints are not a practical output budget. For other arbitrary input/error channels,
-there is no comparable CLI-wide full-output ceiling to honestly quote.
-
-## Complete command inventory
-
-"Guarded" below refers to the explicit main return, not a claim that all errors or
-incidental stderr are bounded. Small receipt measurements assume the short sample paths
-in the probe, not arbitrary-length caller strings.
-
-| Command | Sample / ordinary shape | Most pessimistic source of growth; limiter coverage |
-|---|---|---|
-| `-h`, `--help`, no command | Fixed help text | Fixed for a given build; no knowledge-size growth, no limiter. |
-| `login` | Sign-in URL + account fields + status | Remote client ID is percent-encoded into the URL; returned account values are pretty-printed. HTTP response limit is 1 MiB per response, **not** a 1 MiB printed-output guarantee. Nested values/escaping can expand output. No token guard. No live login tested. |
-| `account` | 47 tokens in sample | Six known fields are selected, but their values other than `paid` are not constrained to short scalar strings. Response size/depth and pretty printing, not node count, govern the pessimistic case. No token guard. |
-| `logout` | Short fixed sentence | Fixed local/remote-revocation result plus any ordinary error; no knowledge/transcript dump. No token guard. |
-| `source-code` | 55 tokens | A few source paths/revision on success; failed Git clone/checkout includes captured stderr `X`. No token guard. |
-| `runtime-check` | 10 tokens | Status + runtime path; runtime/source-validation errors. No token guard. |
-| `update` and all its modes | Small config/status receipt, or path/conflict report | Lists of refreshed paths, conflict paths, embedded validation, build/Git stderr. Main success receipt is guarded; error output and opportunistic notices are not. `--status`, `--config`, `--grant`, `--mode`, `--pin`, `--unpin`, `--rebuild`, `--resume`, `--rollback` have different shapes; the tiny config result does not bound transactions. |
-| `init` (`--empty`, default, `--bundle`) | 33 tokens | Summary stays small; validation of a bad copied candidate can return an entire rejection report. Other Git/copy errors add `X`. No token guard. Existing recognized homes are not rewritten by this audit. |
-| `instructions` | 44 tokens | One entry path/version on success; whole-home rejection from `local::check` on failure. Neither path is guarded. |
-| `read` | Exact `node.md` | Successful authored file is capped at **1,048,576 bytes**, hence <= that many tokens; body limit alone is insufficient. Success is guarded. Whole-home validation rejection can bypass the guard on stderr. |
-| `check` | Per-node table | `N` token rows or `F` diagnostic rows; bad links can dominate. Both direct success and rejection reports are guarded. |
-| `submit` | 87,620 tokens at synthetic N=904 | Nested validation repeats rows in verbose JSON; rejected receipts can contain many findings. Main receipt is guarded **after publication/completion**; raw errors are not. A suppression notice does not mean nothing was saved. Existing retry test checks recovery without publishing twice. |
-| `accepted` | 87,509 tokens at synthetic N=904 | Same nested validation growth; main receipt guarded, ordinary errors not. |
-| `advance` | 64 tokens | Reader/home/revisions summary, not every changed file; Git/refresh failures add `X`. No token guard. |
-| `worktree` | Two fields: path and baseline | Branch stays internal. Allocation failure identifies the possible draft and baseline; files are preserved. Initial whole-home validation rejection or Git stderr can still be large. No token guard. |
-| `create` | 86 tokens | UUID/path/parent summary, not the supplied node body. Path/error size rather than home size. No token guard. |
-| `normalize` | 33,102 tokens even with no changes at N=904 | Every node's status is returned, then changed and reopened IDs again. Stdout receipt guarded before changes; one stderr notice per reopening is not included in that gate. |
-| `index` | 31 tokens | Only counts/version on success; not all indexed rows. Retrieval refusals are compact classified errors with optional path/field context. No token guard. |
-| `outline` (shallow/full) | About 40k–42k at wide N=904 | All displayed metadata, warnings and active reasons; shallow has no child-count cap. Success guarded; errors not generally guarded. |
-| `search` | 757,690 in the chain stress shape | Up to 20 hits, but every ancestor chain repeats. Untruncated name/summary/warnings/reason metadata dominate; excerpts are separately bounded around 300 characters. Success guarded; errors not generally guarded. |
-| `session-capture` | 35 tokens | Archive key/commit summary, **not the transcript**. Descriptor identifiers/path sizes and Git errors control growth. Unavailable source has a tiny fixed result. No token guard. |
-| `session-attach` | 57 tokens | Returns `archive_key` from the descriptor. Unavailable-source path permits oversized/non-string values there; descriptor input is read without the authored-file 1 MiB cap. Therefore no fixed full-output bound. Receipt guarded before attachment. |
-| `session-backup` | 35 tokens | Commit/status/configured flag; no transcript or per-file list. Git/network errors add `X`. No token guard. |
-| `session-restore` | 17 tokens | Restored-link count, not a link per row; Git/network errors add `X`. No token guard. |
-| `session-retention-config` | 33 tokens | Four settings including archive path; not a session list. Config/file constraints, path escaping and ordinary errors control growth. No token guard. |
-| `install-home` (internal launcher operation) | Home/created/application receipt | Initialization/update error paths and Git stderr; no dedicated token guard. Included although absent from public help. |
-
-After many successful non-account/non-update commands, `updates::opportunistic()` may
-also print an update notice or error to stderr. `SIFTTEXT_NO_UPDATE=1` disables it for
-isolated measurements. It must be included when budgeting a normal managed invocation.
-Commands which internally call `local::check` can inherit its large rejection text even
-when their successful return is tiny. A global "15,000 tokens maximum" claim is false.
-
-## Decisions available to the owner — nothing cut yet
-
-1. **Check:** summary/counts by default; retain per-node token rows only on explicit request?
-2. **Publication:** replace successful nested validation rows with outcome/version/counts?
-3. **Normalize:** emit changed nodes only; avoid returning every unchanged status and repeating IDs?
-4. **Search:** show shared ancestors once, and/or introduce a depth/metadata budget?
-5. **Outline/read:** investigate bounds or selective display of long headers/warnings without
-   silently removing safety information?
-6. **All commands:** should large-error handling retain a useful status/summary and safe retrieval
-   path instead of hiding everything? Keep mutation/retry semantics visible.
-7. **Lower priority:** constrain descriptor/account response fields and budget automatic update
-   notices/raw external errors. These are separate trust-boundary and output-policy decisions,
-   not justification for silently truncating data or weakening validation.
-
-Implemented so far: command-specific suppression wording and the `worktree` two-field
-receipt with recoverable allocation errors. Other command cuts remain proposals; no
-validation or trust boundary has been weakened. Source changes are not an installed
-upgrade and have not been pushed or published.
+The separately advertised `update --attach-node=UUID` has a pre-existing parser/help
+mismatch. Its underlying API receipt needs no cut; adding CLI parsing is a separate
+functional repair, not smuggled into this output cull. No live cloud login, installation,
+upstream release or crash-proof universal cleanup guarantee is claimed.
