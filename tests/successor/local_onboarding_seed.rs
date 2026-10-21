@@ -77,6 +77,58 @@ fn startup_routes_to_scoped_memory_continuity_without_changing_the_six_child_con
 }
 
 #[test]
+fn current_continuity_selects_persistent_bootstrap_and_checked_memory_migration() {
+    let current = node("0dfce959-9e09-42c8-b8a1-1595c7b01e5f")
+        .split("## Preserved earlier procedure")
+        .next()
+        .unwrap();
+    for required in [
+        "## Current execution",
+        "### Install Persistent Instructions",
+        "### Migrate Existing Memory",
+        "**Codex:** its supported persistent `AGENTS.md`",
+        "**Claude Code:** its user-level `CLAUDE.md`",
+        "**Pi:** its agent-directory `APPEND_SYSTEM.md`",
+        "Preserve existing content and imports",
+        "do not duplicate it on repeated setup",
+        "The entrypoint is mandatory at each chat's start",
+        "Do not restart first-install onboarding every chat",
+        "Codex and Claude instruction files provide persistent context",
+        "File existence alone does not establish fresh-chat loading",
+        "separate source-edit authority",
+        "Session-history reconstruction is a separately selected source",
+        "Exclude credentials from maintained imports and public contributions",
+        "### Missing input, override and completion",
+    ] {
+        assert!(
+            current.contains(required),
+            "missing current instruction: {required}"
+        );
+    }
+    assert!(current.contains(concat!(
+        "Use SiftText to maintain durable project knowledge for agents to reuse across chats.\n\n",
+        "Terms used in SiftText instructions:\n",
+        "- A tree groups related nodes.\n",
+        "- A node holds knowledge about a question or topic.\n",
+        "- Its scope states what it covers.\n",
+        "- Its crystallization records the current understanding.\n",
+        "- SiftText Read is the procedure for recovering relevant knowledge.\n",
+        "- SiftText Commit is the procedure for authorized knowledge changes.\n\n",
+        "At the start of each chat, read `<verified absolute entrypoint path>` and follow its applicable instructions.\n\n",
+        "Existing instructions and permission boundaries remain in force.\n",
+    )));
+    let migration = current.split("### Migrate Existing Memory").nth(1).unwrap();
+    assert!(
+        migration
+            .find("retrieve and verify the maintained result")
+            .unwrap()
+            < migration
+                .find("replace migrated active memory with resolving pointers")
+                .unwrap()
+    );
+}
+
+#[test]
 fn embedded_onboarding_requires_no_hosted_connector_or_builtin_agent() {
     for id in ONBOARDING {
         let text = node(id);
