@@ -363,77 +363,8 @@ impl Report {
             }))
             .map_err(std::io::Error::other)?);
         }
-        // Publication owns its receipt projection. Keep that and observer reports
-        // unchanged; ordinary check/read/bootstrap refusals share this smaller view.
         let mut value = serde_json::to_value(self)?;
         customer_report(&mut value);
-        let object = value.as_object_mut().unwrap();
-        object.remove("nodes");
-        if self.status != "stale"
-            && !self.failure.is_some_and(|f| f.stage.starts_with("before"))
-            && !self.rows.iter().any(|row| {
-                matches!(
-                    row.check,
-                    "status_transition_or_reason"
-                        | "active_child_blocks_resolution"
-                        | "parent_requires_reopening"
-                )
-            })
-        {
-            object.remove("before_version");
-        }
-        object.retain(|_, value| !value.is_null());
-        if let Some(failure) = self.failure
-            && !(failure.stage == "candidate" && failure.kind == "invalid_candidate")
-        {
-            object.insert("failure_stage".into(), json!(failure.stage));
-        }
-        let mut seen = BTreeSet::new();
-        let rows = self
-            .rows
-            .iter()
-            .filter_map(|row| {
-                if row.check == "crystallization_tokens"
-                    || (row.check == "validation_unavailable" && self.failure.is_some())
-                    || (row.check == "structural_invalid" && self.problem.is_some())
-                    || (row.id.is_none()
-                        && self.problem.as_ref().is_some_and(|p| p.kind == row.check))
-                {
-                    return None;
-                }
-                let mut row = serde_json::to_value(row).unwrap();
-                let fields = row.as_object_mut().unwrap();
-                fields.remove("rule");
-                fields.remove("law");
-                fields.retain(|_, value| !value.is_null());
-                if fields.get("id") == fields.get("source") {
-                    fields.remove("source");
-                }
-                if fields
-                    .get("check")
-                    .is_some_and(|v| v == "crystallization_over_limit")
-                {
-                    fields.insert("limit".into(), json!(CEILING));
-                }
-                // Transition and closure can repeat this exact predicate. Other
-                // checks (e.g. two invalid field types) may be independent even
-                // when the diagnostic rows happen to have identical fields.
-                if fields
-                    .get("check")
-                    .is_some_and(|v| v == "status_transition_or_reason")
-                    && !seen.insert(row.to_string())
-                {
-                    None
-                } else {
-                    Some(row)
-                }
-            })
-            .collect::<Vec<_>>();
-        if rows.is_empty() {
-            object.remove("rows");
-        } else {
-            object.insert("rows".into(), json!(rows));
-        }
         Ok(crate::lean_render::render(&value).map_err(std::io::Error::other)?)
     }
     pub fn lean(&self) -> Result<String> {
@@ -461,16 +392,18 @@ pub(crate) fn customer_report(value: &mut serde_json::Value) {
     if object.get("status").is_some_and(|s| s == "current") {
         return;
     }
-    if let Some(failure) = object.remove("failure") {
+    let failure = object.remove("failure").filter(|v| !v.is_null());
+    if let Some(failure) = &failure {
         object.insert("failure_kind".into(), failure["kind"].clone());
+        if !(failure["stage"] == "candidate" && failure["kind"] == "invalid_candidate") {
+            object.insert("failure_stage".into(), failure["stage"].clone());
+        }
     }
-    if let Some(problem) = object
-        .remove("problem")
-        .and_then(|p| p.as_object().cloned())
-    {
+    let problem = object.remove("problem").filter(|v| !v.is_null());
+    if let Some(problem) = problem.as_ref().and_then(|p| p.as_object()) {
         for (key, val) in problem {
             if key != "kind" {
-                object.insert(key, val);
+                object.insert(key.clone(), val.clone());
             }
         }
     } else {
@@ -515,13 +448,68 @@ pub(crate) fn customer_report(value: &mut serde_json::Value) {
         object.insert("reason".into(), json!(reason));
         object.insert("next_action".into(), json!(action));
     }
-    if let Some(rows) = object.get_mut("rows").and_then(|v| v.as_array_mut()) {
-        for row in rows {
-            if let Some(row) = row.as_object_mut() {
-                row.remove("rule");
-                row.remove("law");
+    object.remove("nodes");
+    let rows = object.remove("rows").unwrap_or_else(|| json!([]));
+    let rows = rows.as_array().map(Vec::as_slice).unwrap_or_default();
+    if object.get("status").is_none_or(|s| s != "stale")
+        && !failure
+            .as_ref()
+            .is_some_and(|f| f["stage"].as_str().is_some_and(|s| s.starts_with("before")))
+        && !rows.iter().any(|row| {
+            matches!(
+                row["check"].as_str(),
+                Some(
+                    "status_transition_or_reason"
+                        | "active_child_blocks_resolution"
+                        | "parent_requires_reopening"
+                )
+            )
+        })
+    {
+        object.remove("before_version");
+    }
+    object.retain(|_, value| !value.is_null());
+    let mut seen = BTreeSet::new();
+    let rows = rows
+        .iter()
+        .filter_map(|row| {
+            if row["check"] == "crystallization_tokens"
+                || (row["check"] == "validation_unavailable" && failure.is_some())
+                || (row["check"] == "structural_invalid" && problem.is_some())
+                || (row["id"].is_null()
+                    && problem.as_ref().is_some_and(|p| p["kind"] == row["check"]))
+            {
+                return None;
             }
-        }
+            let mut row = row.clone();
+            let fields = row.as_object_mut()?;
+            fields.remove("rule");
+            fields.remove("law");
+            fields.retain(|_, value| !value.is_null());
+            if fields.get("id") == fields.get("source") {
+                fields.remove("source");
+            }
+            if fields
+                .get("check")
+                .is_some_and(|v| v == "crystallization_over_limit")
+            {
+                fields.insert("limit".into(), json!(CEILING));
+            }
+            // Transition and closure can repeat this exact predicate. Other
+            // checks may be independent even when their rows look identical.
+            if fields
+                .get("check")
+                .is_some_and(|v| v == "status_transition_or_reason")
+                && !seen.insert(row.to_string())
+            {
+                None
+            } else {
+                Some(row)
+            }
+        })
+        .collect::<Vec<_>>();
+    if !rows.is_empty() {
+        object.insert("rows".into(), json!(rows));
     }
 }
 
