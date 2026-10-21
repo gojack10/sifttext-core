@@ -58,7 +58,9 @@ fn persist(path: &Path, pending: &Pending) -> Result<()> {
 }
 
 pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
-    submit_inner(policy, request, None, || Ok(()))
+    submit_inner(policy, request, None, || Ok(())).map_err(|error| {
+        format!("submission completion unknown unless reported below; retain files and original submit arguments for retry: {error}").into()
+    })
 }
 
 pub fn submit_reviewed(
@@ -200,14 +202,36 @@ fn submit_inner(
             )
         };
         if receipt.status != "current" {
-            if !receipt.published && pending.completed_head.is_none() {
+            // A refused retry can follow earlier acceptance. This invocation's
+            // published=false says nothing about that prior attempt.
+            let accepted = receipt.accepted_before.as_deref().filter(|accepted| {
+                checked_publication::commit(home, commit).is_ok()
+                    && reader_git(home, &["merge-base", "--is-ancestor", commit, accepted]).is_ok()
+            });
+            if !receipt.published && pending.completed_head.is_none() && accepted.is_none() {
                 // An uncompleted refusal returns to explicit repair/resubmission.
                 // Completed custody must survive a reused path's refusal so the
                 // original request remains recoverable after that path clears.
                 fs::remove_file(&journal)?;
                 fs::File::open(&root)?.sync_all()?;
             }
-            return Ok(serde_json::to_value(receipt)?);
+            let mut output = serde_json::to_value(&receipt)?;
+            output["home"] = json!(home);
+            output["draft"] = json!(draft);
+            output["publication"] = json!(if accepted.is_some() {
+                "accepted_incomplete"
+            } else if receipt.accepted_before.is_some()
+                && receipt.candidate.is_some()
+                && receipt.check != "conditional_ref_race"
+            {
+                "not_accepted"
+            } else {
+                "unknown"
+            });
+            if let Some(accepted) = accepted {
+                output["accepted"] = json!(accepted);
+            }
+            return Ok(output);
         }
         receipt
     };
@@ -224,58 +248,23 @@ fn submit_inner(
         .as_deref()
         .ok_or("missing checked version")?;
     // Save preparation stays concurrent; serialize only normal-home finishing.
-    let _home_lock = lock(&root.join("home.lock"))?;
-    let before = reader_state(home)?;
-    let advanced = advance_checked(policy, home, &before, target, version, None, || Ok(()))?;
-    require(
-        reader_state(home)? == target
-            && reader_git(home, &["rev-parse", "refs/heads/main"])? == target,
-        "home changed before cleanup; retry",
-    )?;
-    if !missing {
-        checked_publication::clean(draft, target)?;
+    let finish = || -> Result<Value> {
+        let _home_lock = lock(&root.join("home.lock"))?;
+        let before = reader_state(home)?;
+        let advanced = advance_checked(policy, home, &before, target, version, None, || Ok(()))?;
         require(
-            reader_git(draft, &["symbolic-ref", "--quiet", "HEAD"])? == pending.branch,
-            "completed draft changed; preserve it",
+            reader_state(home)? == target
+                && reader_git(home, &["rev-parse", "refs/heads/main"])? == target,
+            "home changed before cleanup; retry",
         )?;
-        pending.completed_head = Some(target.to_owned());
-        persist(&journal, &pending)?;
-        reader_git(
-            home,
-            &[
-                "worktree",
-                "remove",
-                draft.to_str().ok_or("non-UTF-8 draft")?,
-            ],
-        )?;
-    }
-    let cleaned_head = pending
-        .completed_head
-        .as_deref()
-        .ok_or("missing cleanup identity")?;
-    reader_git(
-        home,
-        &["merge-base", "--is-ancestor", &pending.commit, cleaned_head],
-    )?;
-    reader_git(home, &["merge-base", "--is-ancestor", cleaned_head, target])?;
-    if missing {
-        // Git removes the directory before its registration. Resume only this
-        // exact completed registration, never prune another agent's worktree.
-        let registered = reader_git(home, &["worktree", "list", "--porcelain", "-z"])?;
-        let wanted = format!("worktree {}", draft.to_str().ok_or("non-UTF-8 draft")?);
-        if let Some(entry) = registered
-            .split("\0\0")
-            .find(|entry| entry.split('\0').any(|row| row == wanted))
-        {
+        if !missing {
+            checked_publication::clean(draft, target)?;
             require(
-                entry
-                    .split('\0')
-                    .any(|row| row == format!("branch {}", pending.branch))
-                    && entry
-                        .split('\0')
-                        .any(|row| row == format!("HEAD {cleaned_head}")),
-                "missing draft registration changed; preserve it",
+                reader_git(draft, &["symbolic-ref", "--quiet", "HEAD"])? == pending.branch,
+                "completed draft changed; preserve it",
             )?;
+            pending.completed_head = Some(target.to_owned());
+            persist(&journal, &pending)?;
             reader_git(
                 home,
                 &[
@@ -285,68 +274,109 @@ fn submit_inner(
                 ],
             )?;
         }
-    }
-    let refs = reader_git(
-        home,
-        &["for-each-ref", "--format=%(refname)", &pending.branch],
-    )?;
-    if !refs.is_empty() {
-        require(refs == pending.branch, "ambiguous cleanup branch")?;
-        require(
+        let cleaned_head = pending
+            .completed_head
+            .as_deref()
+            .ok_or("missing cleanup identity")?;
+        reader_git(
+            home,
+            &["merge-base", "--is-ancestor", &pending.commit, cleaned_head],
+        )?;
+        reader_git(home, &["merge-base", "--is-ancestor", cleaned_head, target])?;
+        if missing {
+            // Git removes the directory before its registration. Resume only this
+            // exact completed registration, never prune another agent's worktree.
+            let registered = reader_git(home, &["worktree", "list", "--porcelain", "-z"])?;
+            let wanted = format!("worktree {}", draft.to_str().ok_or("non-UTF-8 draft")?);
+            if let Some(entry) = registered
+                .split("\0\0")
+                .find(|entry| entry.split('\0').any(|row| row == wanted))
+            {
+                require(
+                    entry
+                        .split('\0')
+                        .any(|row| row == format!("branch {}", pending.branch))
+                        && entry
+                            .split('\0')
+                            .any(|row| row == format!("HEAD {cleaned_head}")),
+                    "missing draft registration changed; preserve it",
+                )?;
+                reader_git(
+                    home,
+                    &[
+                        "worktree",
+                        "remove",
+                        draft.to_str().ok_or("non-UTF-8 draft")?,
+                    ],
+                )?;
+            }
+        }
+        let refs = reader_git(
+            home,
+            &["for-each-ref", "--format=%(refname)", &pending.branch],
+        )?;
+        if !refs.is_empty() {
+            require(refs == pending.branch, "ambiguous cleanup branch")?;
+            require(
+                reader_git(
+                    home,
+                    &["for-each-ref", "--format=%(symref)", &pending.branch],
+                )?
+                .is_empty(),
+                "symbolic cleanup branch",
+            )?;
+            require(
+                !reader_git(home, &["worktree", "list", "--porcelain"])?
+                    .lines()
+                    .any(|line| line == format!("branch {}", pending.branch)),
+                "cleanup branch acquired by another worktree",
+            )?;
             reader_git(
                 home,
-                &["for-each-ref", "--format=%(symref)", &pending.branch],
-            )?
-            .is_empty(),
-            "symbolic cleanup branch",
-        )?;
-        require(
-            !reader_git(home, &["worktree", "list", "--porcelain"])?
-                .lines()
-                .any(|line| line == format!("branch {}", pending.branch)),
-            "cleanup branch acquired by another worktree",
-        )?;
-        reader_git(
-            home,
-            &[
-                "update-ref",
-                "--no-deref",
-                "-d",
-                &pending.branch,
-                cleaned_head,
-            ],
-        )?;
-    }
-    if missing {
-        // This recovery's temporary checked view is ours, never another draft.
-        reader_git(
-            home,
-            &[
-                "worktree",
-                "remove",
-                receipt
-                    .view
-                    .as_ref()
-                    .ok_or("missing recovery view")?
-                    .to_str()
-                    .ok_or("non-UTF-8 recovery view")?,
-            ],
-        )?;
-    }
-    // ponytail: retain completed journals; GC needs an explicit retry-retention contract.
-    // Retain completed custody as an idempotency tombstone. Losing stdout after
-    // cleanup must not make the original request unrecoverable; retries still
-    // validate current accepted history rather than trust this record as proof.
-    let mut output = serde_json::to_value(receipt)?;
-    if missing {
-        output["published"] = json!(false);
-    }
-    output["view"] = json!(home);
-    output["home"] = json!(home);
-    output["home_advance"] = advanced;
-    output["worktree_removed"] = json!(true);
-    before_return()?;
-    Ok(output)
+                &[
+                    "update-ref",
+                    "--no-deref",
+                    "-d",
+                    &pending.branch,
+                    cleaned_head,
+                ],
+            )?;
+        }
+        if missing {
+            // This recovery's temporary checked view is ours, never another draft.
+            reader_git(
+                home,
+                &[
+                    "worktree",
+                    "remove",
+                    receipt
+                        .view
+                        .as_ref()
+                        .ok_or("missing recovery view")?
+                        .to_str()
+                        .ok_or("non-UTF-8 recovery view")?,
+                ],
+            )?;
+        }
+        // ponytail: retain completed journals; GC needs an explicit retry-retention contract.
+        // Retain completed custody as an idempotency tombstone. Losing stdout after
+        // cleanup must not make the original request unrecoverable; retries still
+        // validate current accepted history rather than trust this record as proof.
+        let mut output = serde_json::to_value(&receipt)?;
+        if missing {
+            output["published"] = json!(false);
+        }
+        output["view"] = json!(home);
+        output["home"] = json!(home);
+        output["home_advance"] = advanced;
+        output["worktree_removed"] = json!(true);
+        before_return()?;
+        Ok(output)
+    };
+    finish().map_err(|error| format!(
+        "accepted save finishing incomplete (accepted {target}, version {version}, home {}, draft {}); home or cleanup may already have changed; retain files and retry the original submit request: {error}",
+        home.display(), draft.display()
+    ).into())
 }
 
 #[cfg(test)]

@@ -186,7 +186,8 @@ fn reader_cli_preserves_history_and_recovers_after_post_ff_sigkill() {
     assert_eq!(n.cli(&["index", text(&home)])["nodes"], 0);
     n.refuse(&["worktree", text(&home)]);
     let detached = n.cli(&["accepted", text(&home)]);
-    assert_eq!(detached["check"], "accepted_revision_recovered");
+    assert_eq!(detached["status"], "ready");
+    assert_eq!(detached["home_advanced"], false);
     let view = Path::new(detached["view"].as_str().unwrap());
     assert_ne!(view, home);
     assert_eq!(
@@ -198,17 +199,19 @@ fn reader_cli_preserves_history_and_recovers_after_post_ff_sigkill() {
         published2["candidate"].as_str().unwrap()
     );
     let advanced = n.cli(&["advance", text(&home)]);
-    assert_eq!(advanced["status"], "current");
-    assert_eq!(advanced["advanced"], true);
-    assert_eq!(advanced["reader_before"], initial["commit"]);
-    assert_eq!(advanced["reader"], published2["candidate"]);
-    assert_eq!(advanced["accepted"], advanced["reader"]);
+    assert_eq!(advanced["status"], "advanced");
+    assert_eq!(advanced["accepted"], published2["candidate"]);
+    assert_eq!(advanced.as_object().unwrap().len(), 4);
+    let output = sifttext_file_graph::lean_render::render(&advanced).unwrap() + "\n";
+    let tokens = tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(&output).len();
+    println!("advance: {} bytes, {tokens} o200k tokens", output.len());
+    assert!(tokens < 250);
     assert_eq!(advanced["version"], published2["version"]);
     assert_eq!(
         n.git(&home, &["rev-parse", "HEAD"]),
         published2["candidate"].as_str().unwrap()
     );
-    assert_eq!(n.cli(&["advance", text(&home)])["advanced"], false);
+    assert_eq!(n.cli(&["advance", text(&home)])["status"], "current");
     for node in [&root, &separate] {
         assert_eq!(
             n.run(
@@ -344,7 +347,7 @@ fn reader_cli_preserves_history_and_recovers_after_post_ff_sigkill() {
         published3["candidate"].as_str().unwrap()
     );
     let repaired = n.cli(&["advance", text(&home)]);
-    assert_eq!(repaired["advanced"], false);
+    assert_eq!(repaired["status"], "current");
     assert_eq!(repaired["version"], published3["version"]);
     assert_eq!(
         n.cli(&["sql", text(&home), "SELECT count(*) FROM nodes"])["rows"][0]["c0"],

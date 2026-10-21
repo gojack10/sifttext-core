@@ -79,13 +79,27 @@ fn clean_advance_is_idempotent_and_preserves_detached_recovery() {
         "linked accepted views are not independent homes"
     );
     let result = advance(&policy, &home).unwrap();
-    assert_eq!(result["reader_before"], before);
-    assert_eq!(result["reader"].as_str(), r.candidate.as_deref());
-    assert_eq!(result["reader"], result["accepted"]);
+    assert_eq!(result["status"], "advanced");
+    assert_eq!(result["accepted"].as_str(), r.candidate.as_deref());
+    assert_eq!(result.as_object().unwrap().len(), 4);
     assert_eq!(result["version"].as_str(), r.version.as_deref());
-    assert_eq!(result["advanced"], true);
+    let registrations = git(&home, &["worktree", "list", "--porcelain"]);
+    let retained = fs::read_dir(home.join(".git/sifttext-publications"))
+        .unwrap()
+        .count();
     let again = advance(&policy, &home).unwrap();
-    assert_eq!(again["advanced"], false);
+    assert_eq!(again["status"], "current");
+    assert_eq!(
+        git(&home, &["worktree", "list", "--porcelain"]),
+        registrations
+    );
+    assert_eq!(
+        fs::read_dir(home.join(".git/sifttext-publications"))
+            .unwrap()
+            .count(),
+        retained
+    );
+    assert!(view.exists(), "another invocation's view must survive");
     assert_eq!(again["version"], result["version"]);
     let second = publish(&policy, &home, "Advancesecond");
     advance(&policy, &home).unwrap();
@@ -180,12 +194,17 @@ fn accepted_race_retains_reader_and_interrupted_refresh_retries_truthfully() {
     let before = git(&home, &["rev-parse", "HEAD"]);
     let r = publish(&policy, &home, "Racefirst");
     let target = r.candidate.unwrap();
+    let registrations = git(&home, &["worktree", "list", "--porcelain"]);
     let err = advance_inner(&policy, &home, None, || {
         git(&home, &["update-ref", "refs/heads/main", &before, &target]);
         Ok(())
     })
     .unwrap_err();
     assert!(err.to_string().contains("accepted ref changed"), "{err}");
+    assert_eq!(
+        git(&home, &["worktree", "list", "--porcelain"]),
+        registrations
+    );
     assert_eq!(git(&home, &["rev-parse", "HEAD"]), before);
     // Our synthetic controller restores its own accepted ref; no caller draft was moved.
     git(&home, &["update-ref", "refs/heads/main", &target, &before]);
@@ -200,8 +219,12 @@ fn accepted_race_retains_reader_and_interrupted_refresh_retries_truthfully() {
         "{err}"
     );
     assert_eq!(git(&home, &["rev-parse", "HEAD"]), target);
+    assert_eq!(
+        git(&home, &["worktree", "list", "--porcelain"]),
+        registrations.replace(&format!("HEAD {before}"), &format!("HEAD {target}"))
+    );
     let repaired = advance(&policy, &home).unwrap();
-    assert_eq!(repaired["advanced"], false);
+    assert_eq!(repaired["status"], "current");
     assert_eq!(repaired["accepted"], target);
     let next = publish(&policy, &home, "Racesecond").candidate.unwrap();
     let pause = index::PauseBeforeAccept {
@@ -276,6 +299,86 @@ fn unvalidated_invalid_accepted_branch_does_not_move_reader() {
     assert_eq!(git(&home, &["rev-parse", "HEAD"]), before);
     assert_eq!(fs::read_to_string(file).unwrap(), text);
     assert_eq!(git(draft, &["rev-parse", "HEAD"]), invalid);
+}
+
+#[test]
+fn advance_retains_edited_owned_view_and_never_adopts_it_on_retry() {
+    let dir = tempfile::tempdir().unwrap();
+    let policy = policy();
+    let home = home(dir.path(), &policy);
+    let published = publish(&policy, &home, "Ownedcleanup");
+    let root = home.join(".git/sifttext-publications");
+    let known: std::collections::BTreeSet<_> = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let mut owned = None;
+    let error = advance_inner(&policy, &home, None, || {
+        let added: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| !known.contains(path))
+            .collect();
+        assert_eq!(added.len(), 1);
+        let view = added[0].join("view");
+        fs::write(view.join("user-note"), "unknown custody").unwrap();
+        owned = Some(view);
+        Ok(())
+    })
+    .unwrap_err();
+    let owned = owned.unwrap();
+    assert!(error.to_string().contains("cleanup incomplete"), "{error}");
+    assert!(
+        error.to_string().contains(owned.to_str().unwrap()),
+        "{error}"
+    );
+    assert_eq!(
+        fs::read_to_string(owned.join("user-note")).unwrap(),
+        "unknown custody"
+    );
+    assert_eq!(
+        git(&home, &["rev-parse", "HEAD"]).as_str(),
+        published.candidate.as_deref().unwrap()
+    );
+    let registrations = git(&home, &["worktree", "list", "--porcelain"]);
+    assert_eq!(advance(&policy, &home).unwrap()["status"], "current");
+    assert_eq!(
+        git(&home, &["worktree", "list", "--porcelain"]),
+        registrations
+    );
+    assert!(published.view.unwrap().is_dir());
+    assert!(owned.join("user-note").is_file());
+}
+
+#[test]
+fn advance_does_not_delete_a_clean_replacement_at_its_owned_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let policy = policy();
+    let home = home(dir.path(), &policy);
+    let published = publish(&policy, &home, "Replacementcleanup");
+    let root = home.join(".git/sifttext-publications");
+    let known: std::collections::BTreeSet<_> = fs::read_dir(&root).unwrap()
+        .map(|entry| entry.unwrap().path()).collect();
+    let moved = dir.path().join("moved-owned-view");
+    let mut replacement = None;
+    let error = advance_inner(&policy, &home, None, || {
+        let added: Vec<_> = fs::read_dir(&root).unwrap().map(|entry| entry.unwrap().path())
+            .filter(|path| !known.contains(path)).collect();
+        assert_eq!(added.len(), 1);
+        let view = added[0].join("view");
+        git(&home, &["worktree", "move", view.to_str().unwrap(), moved.to_str().unwrap()]);
+        git(&home, &["worktree", "add", "--detach", view.to_str().unwrap(), published.candidate.as_deref().unwrap()]);
+        replacement = Some(view);
+        Ok(())
+    }).unwrap_err();
+    let replacement = replacement.unwrap();
+    assert!(error.to_string().contains("owned view identity changed"), "{error}");
+    assert!(replacement.is_dir());
+    assert!(moved.is_dir());
+    assert_eq!(git(&replacement, &["rev-parse", "HEAD"]).as_str(), published.candidate.as_deref().unwrap());
+    assert_eq!(advance(&policy, &home).unwrap()["status"], "current");
+    assert!(replacement.is_dir());
+    assert!(moved.is_dir());
 }
 
 #[test]

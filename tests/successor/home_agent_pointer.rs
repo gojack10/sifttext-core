@@ -283,9 +283,8 @@ fn accepted_advance_moves_a_pointer_home_without_touching_the_pointer() {
     );
 
     let moved = advance(&policy, &home).unwrap();
-    assert_eq!(moved["advanced"], true, "{moved}");
-    assert_eq!(moved["reader"].as_str(), Some(candidate.as_str()));
-    assert_eq!(moved["reader"], moved["accepted"]);
+    assert_eq!(moved["status"], "advanced", "{moved}");
+    assert_eq!(moved["accepted"].as_str(), Some(candidate.as_str()));
     assert_eq!(git(&home, &["rev-parse", "HEAD"]), candidate);
     // The generated pointer is byte-identical, still untracked and still excluded, so
     // a rerun stays clean and the pipeline still resolves by ordinary file reads.
@@ -310,7 +309,7 @@ fn accepted_advance_moves_a_pointer_home_without_touching_the_pointer() {
         fs::read(source.join(format!("nodes/{ENTRY}/node.md"))).unwrap(),
         "advance changed the supplied entry bytes"
     );
-    assert_eq!(advance(&policy, &home).unwrap()["advanced"], false);
+    assert_eq!(advance(&policy, &home).unwrap()["status"], "current");
 }
 
 #[test]

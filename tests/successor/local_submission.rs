@@ -445,6 +445,9 @@ fn post_cas_sigkill_recovers_original_request_without_second_publication() {
         let refused = submit(&policy, &q).unwrap();
         assert_eq!(refused["status"], "rejected", "{refused}");
         assert_eq!(refused["published"], false);
+        let public: serde_json::Value = serde_json::from_str(&checked_publication::cli_json(&refused).unwrap()).unwrap();
+        assert_eq!(public["status"], "accepted_incomplete", "{public}");
+        assert_eq!(public["accepted"], accepted);
         assert_eq!(
             fs::read(&note).unwrap(),
             b"interrupted draft work must survive"
@@ -563,6 +566,14 @@ fn completed_save_retry_recovers_lost_success_receipt() {
     assert_eq!(refused["status"], "rejected", "{refused}");
     assert_eq!(refused["published"], false);
     assert_eq!(fs::read(&note).unwrap(), b"reused path custody");
+    // Custody records are not acceptance proofs: an externally rewound ref
+    // cannot be reported accepted solely because this journal once completed.
+    git(&home, &["update-ref", "refs/heads/main", q.base.as_deref().unwrap(), &accepted]);
+    let unverifiable = submit(&policy, &q).unwrap();
+    let public: serde_json::Value = serde_json::from_str(&checked_publication::cli_json(&unverifiable).unwrap()).unwrap();
+    assert_eq!(public["status"], "unknown", "{public}");
+    assert!(public.get("accepted").is_none());
+    git(&home, &["update-ref", "refs/heads/main", &accepted, q.base.as_deref().unwrap()]);
     assert_eq!(git(&home, &["rev-parse", "main"]), accepted);
     assert_eq!(git(&home, &["rev-parse", "HEAD"]), accepted);
     assert_eq!(git(&home, &["rev-list", "--count", "main"]), count);
@@ -971,7 +982,7 @@ fn removed_worktree_failed_branch_cleanup_resumes_without_new_commit() {
         release: release.clone(),
     });
     thread::scope(|scope| {
-        let result = scope.spawn(|| submit(&policy, &paused).is_err());
+        let result = scope.spawn(|| submit(&policy, &paused).unwrap_err().to_string());
         let start = Instant::now();
         while !ready.exists() {
             assert!(start.elapsed() < Duration::from_secs(30));
@@ -979,7 +990,13 @@ fn removed_worktree_failed_branch_cleanup_resumes_without_new_commit() {
         }
         fs::write(&lock, "held cleanup lock").unwrap();
         fs::write(&release, "release").unwrap();
-        assert!(result.join().unwrap());
+        let error = result.join().unwrap();
+        assert!(
+            error.contains("accepted save finishing incomplete"),
+            "{error}"
+        );
+        assert!(error.contains(home.to_str().unwrap()), "{error}");
+        assert!(error.contains(draft.to_str().unwrap()), "{error}");
     });
     assert!(
         !draft.exists(),
