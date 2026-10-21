@@ -406,12 +406,8 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     assert_eq!(invalid_receipt["status"], "not_accepted");
     assert_eq!(invalid_receipt["check"], "candidate_validation_rejected");
     assert_eq!(invalid_receipt["validation"]["status"], "rejected");
-    assert!(
-        !invalid_receipt["validation"]["rows"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
+    // The located source failure is the diagnosis; don't require a duplicate generic row.
+    assert!(invalid_receipt["validation"].get("rows").is_none());
     assert!(invalid_receipt.get("graph_checks").is_none());
     assert!(invalid_receipt["validation"].get("graph").is_none());
     assert_eq!(invalid_receipt["validation"]["field"], "name");
@@ -420,11 +416,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
         relative.as_str()
     );
     assert!(invalid_receipt["validation"].get("reason").is_some());
-    assert!(
-        invalid_receipt["validation"]["rows"][0]
-            .get("rule")
-            .is_none()
-    );
+
     assert_eq!(snapshot(&home), before_refusal);
     assert!(invalid_path.exists());
     fs::write(evidence.join("result.json"), serde_json::to_vec_pretty(&json!({"status":"passed","scope":"same-base concurrent drafts, fast-forward/merge history, exact normal-home bytes/read/SQL/search/navigation, draft/branch cleanup, conflict repair, and real CLI candidate-validation rejection without graph-routing metadata","last":repair_receipt,"validation_rejection":invalid_receipt,"commands":n.records.len()})).unwrap()).unwrap();
