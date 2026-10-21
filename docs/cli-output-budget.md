@@ -139,9 +139,20 @@ continue an owned draft, and do not repeat advance/index after a completed submi
 
 ## Verification boundaries and follow-ups
 
-Combined integration verification is recorded separately in the delivery result. Worker
-reports preserve focused CLI/native/recovery checks and actual output measurements;
-internal outline oracle verification was retained rather than replaced by size assertions.
+After merging all four original worker branches, the combined run passed **41 selected
+binary/CLI/native tests** and **301 library tests**; **3 library failures and 4 ignored
+tests** remained. The failures were the two baseline literal-phrase mismatches and the
+baseline policy-helper injection failure listed below. A subsequent bounded integration
+repair shares failure-only diagnostics between direct checks and nested rejected
+publication receipts; its worker passed 9 affected CLI/projection tests, 40 selected
+library checks and 1 ignored timing probe. Final main verification of that repair is
+reported with delivery; do not reinterpret the broad run as a green complete suite.
+
+Worker reports preserve actual output measurements and native custody/recovery checks.
+Internal outline oracle verification was retained rather than replaced by size assertions.
+An isolated integrated smoke test also initialized and checked all 90 bundled nodes,
+verified exact source read bytes, and exercised instructions/index/SQL/worktree. No user
+knowledge home was used.
 
 The pre-integration library baseline was not green: two stale literal-phrase checks in
 `default_native_kb.rs`, a policy-helper signal/timeout injection failure, and a process
