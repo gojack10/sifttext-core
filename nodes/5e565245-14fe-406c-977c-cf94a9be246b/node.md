@@ -15,4 +15,8 @@ When a consequential choice still lacks enough understanding, follow SiftText Re
 
 Before an authorized knowledge write, read the bundled SiftText Commit procedure at `nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md` and follow its required pre-write reads. Preserve Worktree Publication's fixed-baseline validation, reconciliation and authority checks; a read or a write request does not grant permission. Tell the human the current step and expected check. Return evidence to the original task, not an invented next assignment.
 
+Before saving or naming the location of a file you made for the human's task, read the Node artifacts section of Knowledge Layout and follow it.
+
+When this session exposes a missing or wrong instruction in the bundled Core knowledge base, include a proposed Core issue or pull request in the same delta as the local fix. After the human approves it, open it with `gh` against the Core source repository that `sifttext source-code` checks out. Never open one without that approval.
+
 The human may pause or reshape this route. Clarify ambiguous overrides, preserve unmentioned work, and state the revised next step. Never silently waive permissions or checks. On missing input, unsafe paths or a failed check, retain the draft and report the exact blocker; resume at that check after an authorized repair.

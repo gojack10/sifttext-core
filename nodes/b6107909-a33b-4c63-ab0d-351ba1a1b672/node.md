@@ -16,6 +16,7 @@ HOME/
   nodes/UUID/node.md           authored metadata and Markdown body
   nodes/UUID/children.order    full child UUIDs, one per line
   nodes/UUID/children/UUID     symlink -> ../../UUID
+  nodes/UUID/artifacts/NAME    files the node owns; kept outside Git until this build accepts them
   trees/ROOT_UUID              symlink -> ../nodes/ROOT_UUID
   .sifttext/index.sqlite       derived, ignored, per working copy
 ```
@@ -31,6 +32,10 @@ Empty directories use empty `.keep` files. UUIDs, not names, are identity. Local
 A micro-summary describes stable responsibility and helps readers choose a node; it is not a progress report. Keep independently meaningful questions visible as nodes. Keep mechanical steps for one task together. Do not duplicate an answer in ancestors or add redundant parent/child references. Explain meaningful rejected attempts rather than erase their evidence.
 
 States: `not_examined`, `in_progress`, `resolved`, `stuck`, `deferred`, `discarded`. Stuck needs `blocker`; deferred needs `deferred_reason` with a resume condition; discarded needs `discard_reason`. Resolved needs a nonblank body and no active direct child. Evidence must prove the node's own claim. Worktree Publication owns activation/reopening and explicit status requests.
+
+## Node artifacts
+
+A file made for a task, such as a spreadsheet, report, draft or export, belongs to the deepest node whose question it answers. The current build's `submit` refuses any commit that tracks a file under `nodes/UUID/artifacts/` (`authored_tree` allows only the authored node files and relationship links), while `check` accepts the same tree, so only submission catches it. Until Core accepts tracked artifacts, keep the file outside the home, in the client's workspace or a shared drive, and record its location in the owner's body. Do not list it as an `Add artifact` operation. `artifacts/chats/` is reserved for session links and is not tracked.
 
 ## Derived state and limits
 
