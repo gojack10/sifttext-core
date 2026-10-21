@@ -39,9 +39,8 @@ sifttext logout                           Revoke remote login; always remove loc
                                           Credentials: ~/.config/sifttext/account (outside knowledge)
 sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
-sifttext update                            Check and apply compatible official product updates
-sifttext update [-y]                       Allow a large update receipt
-sifttext update --status                    Force a release check and show status without installing
+sifttext update [-y]                       Check/apply official updates; -y allows >15000 tokens
+sifttext update --status                    Check releases; show recorded identities and pending work
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext update --rebuild                   Rebuild the selected local source and retain its pin
@@ -127,9 +126,10 @@ fn run() -> Result<()> {
         let [_, home] = args.as_slice() else {
             return Err("usage: sifttext session-backup HOME".into());
         };
+        let receipt = local::backup_session_archive(Path::new(home))?;
         println!(
             "{}",
-            serde_json::to_string(&local::backup_session_archive(Path::new(home))?)?
+            serde_json::to_string(&json!({"status":receipt["status"], "commit":receipt["commit"]}))?
         );
         return Ok(());
     }
@@ -330,13 +330,14 @@ fn run() -> Result<()> {
             local::restore_session_links(Path::new(home), Path::new(archive))?
         }
         [cmd, path, name, summary, rest @ ..] if cmd == "create" && rest.len() <= 1 => {
-            local::create(
+            let created = local::create(
                 &policy,
                 Path::new(path),
                 name,
                 summary,
                 rest.first().map(String::as_str),
-            )?
+            )?;
+            json!({"id":created["id"],"path":created["path"]})
         }
         [cmd, path, rest @ ..] if cmd == "check" => {
             let force = rest.last().is_some_and(|arg| arg == "-y");
@@ -560,7 +561,64 @@ fn clone_source_at(repository: &str, revision: &str) -> Result<PathBuf> {
     Ok(checkout.keep())
 }
 
-fn render_update_output(_mode: &str, output: &serde_json::Value) -> Result<String> {
+fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String> {
+    let mut output = output.clone();
+    if mode == "--status" {
+        // The persisted journal is recovery input, not a CLI receipt. Keep the
+        // usable identities and unfinished work, not manifests, clocks or hashes
+        // already available in the installation's state.json.
+        let mut status = json!({
+            "home":output["home"],
+            "application":output["application"],
+            "knowledge":output["knowledge"],
+            "activation_pending":output["activation_pending"],
+            "update_check":output["update_check"],
+        });
+        if let Some(previous) = output.get("previous").filter(|v| v.is_object()) {
+            status["rollback_application"] = previous["application"].clone();
+            status["rollback_knowledge"] = previous["knowledge"].clone();
+        }
+        if let Some(pending) = output.get("pending").filter(|v| v.is_object()) {
+            status["worktree"] = pending["draft"].clone();
+            if pending["plan"].get("Rollback").is_some() {
+                status["pending_operation"] = json!("rollback");
+            } else if pending["plan"].get("Release").is_some() {
+                status["pending_operation"] = json!("update");
+            }
+            for field in ["commit", "repair_node"] {
+                if let Some(value) = pending.get(field).filter(|v| !v.is_null()) {
+                    status[format!("pending_{field}")] = value.clone();
+                }
+            }
+            status["resume"] = json!("sifttext update --resume");
+        } else if output["activation_pending"] == true {
+            status["resume"] = json!("sifttext update --resume");
+        }
+        if output["update_check"] == "update_available" {
+            for field in ["application", "knowledge", "command", "permission", "guide"] {
+                if let Some(value) = output.get(format!("available_{field}")) {
+                    status[format!("available_{field}")] = value.clone();
+                }
+            }
+        }
+        if let Some(error) = output.get("update_error") {
+            status["update_error"] = error.clone();
+        }
+        output = status;
+    } else if mode == "--config"
+        || mode.starts_with("--grant=")
+        || mode.starts_with("--mode=")
+        || mode.starts_with("--pin=")
+    {
+        let settings = output.as_object_mut().ok_or("update settings must be an object")?;
+        settings.remove("source");
+        if settings.get("pinned").is_some_and(|v| v.is_null()) {
+            settings.remove("pinned");
+        }
+    }
+    if output["refresh_instruction_paths"] == json!([]) {
+        output.as_object_mut().unwrap().remove("refresh_instruction_paths");
+    }
     let object = output
         .as_object()
         .ok_or("update output must be an object")?;
@@ -722,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn update_settings_use_lean_and_transaction_receipts_stay_json() {
+    fn update_settings_and_transactions_use_lean() {
         let settings = json!({
             "mode": "notify",
             "permission": "ask",
@@ -740,6 +798,9 @@ mod tests {
             assert!(!rendered.starts_with('{'), "{mode}: {rendered}");
             assert!(rendered.contains("mode:notify"), "{mode}: {rendered}");
             assert!(rendered.contains("permission:ask"), "{mode}: {rendered}");
+            assert!(rendered.contains("path:/home/example/.sifttext/config.json"));
+            assert!(!rendered.contains("source:"));
+            assert!(!rendered.contains("pinned:"));
         }
 
         let receipt = json!({
@@ -748,12 +809,95 @@ mod tests {
             "pending":{"worktree":"/tmp/draft"},
             "paths":["one", "two"]
         });
-        let rendered = render_update_output("--status", &receipt).unwrap();
+        let rendered = render_update_output("", &receipt).unwrap();
         assert!(!rendered.starts_with('{'), "{rendered}");
         assert!(rendered.contains("status:update_available"), "{rendered}");
         assert!(rendered.contains("application:v0.3.3"), "{rendered}");
         assert!(rendered.contains("pending:"), "{rendered}");
         assert!(rendered.contains("paths:"), "{rendered}");
+    }
+
+    #[test]
+    fn update_status_keeps_recovery_actions_without_dumping_the_journal() {
+        let output = json!({
+            "home":"/home/example/knowledge",
+            "application":"releases/v2",
+            "application_sha256":"a".repeat(64),
+            "knowledge":"b".repeat(64),
+            "baseline":"c".repeat(40),
+            "success":{"wall":1,"uptime":2,"boot":"fixture"},
+            "attempt":{"wall":3,"uptime":4,"boot":"fixture"},
+            "previous":{"application":"releases/v1","knowledge":"d".repeat(64),"baseline":"e".repeat(40),"application_sha256":"f".repeat(64)},
+            "pending":{
+                "draft":"/tmp/retained-draft",
+                "base":"c".repeat(40),
+                "commit":"1".repeat(40),
+                "repair_node":"00000000-0000-4000-8000-000000000001",
+                "plan":{"Release":{"manifest":"private recovery input"}},
+                "changed":(0..1000).map(|i| format!("nodes/{i:040}/node.md")).collect::<Vec<_>>()
+            },
+            "activation_pending":true,
+            "update_check":"update_available",
+            "available_application":"v3",
+            "available_knowledge":"2".repeat(64),
+            "available_command":"sifttext update",
+            "available_permission":"ask",
+            "available_config":"/home/example/knowledge/.sifttext/config.json",
+            "available_guide":"/home/example/knowledge/nodes/guide/node.md"
+        });
+        let rendered = render_update_output("--status", &output).unwrap();
+        let shown = sifttext_file_graph::outlines::decode_lean(&format!("{rendered}\n")).unwrap();
+        for field in ["home", "application", "knowledge", "activation_pending", "update_check",
+            "available_application", "available_knowledge", "available_command", "available_permission", "available_guide"] {
+            assert_eq!(shown[field], output[field], "{field}");
+        }
+        assert_eq!(shown["worktree"], output["pending"]["draft"]);
+        assert_eq!(shown["pending_operation"], "update");
+        let mut rollback = output.clone();
+        rollback["pending"]["plan"] = json!({"Rollback":{}});
+        let rollback = render_update_output("--status", &rollback).unwrap();
+        assert!(rollback.contains("pending_operation:rollback"));
+        assert_eq!(shown["pending_commit"], output["pending"]["commit"]);
+        assert_eq!(shown["pending_repair_node"], output["pending"]["repair_node"]);
+        assert_eq!(shown["resume"], "sifttext update --resume");
+        assert_eq!(shown["rollback_application"], output["previous"]["application"]);
+        assert_eq!(shown["rollback_knowledge"], output["previous"]["knowledge"]);
+        for field in ["application_sha256", "baseline", "success", "attempt", "previous", "pending", "available_config"] {
+            assert!(shown.get(field).is_none(), "{field}");
+        }
+        // The old renderer exposed every state field as a scalar, including the
+        // serialized pending journal. Keep that measurement reproducible.
+        let old: serde_json::Map<String, serde_json::Value> = output.as_object().unwrap().iter().map(|(key, value)| {
+            (key.clone(), if value.is_array() || value.is_object() { json!(value.to_string()) } else { value.clone() })
+        }).collect();
+        let old = sifttext_file_graph::lean_render::render(&serde_json::Value::Object(old)).unwrap();
+        let count = |s: &str| tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(s).len();
+        eprintln!("update --status pending journal (1000 changed paths): {} -> {} tokens", count(&old), count(&rendered));
+        assert!(count(&rendered) < count(&old) / 10);
+        assert!(preflight_update_receipt("--status", &output, false).is_ok());
+
+        let current = json!({"home":"/home/example/knowledge","application":"releases/v2","knowledge":"b".repeat(64),"activation_pending":false,"update_check":"current","available_application":"v2","pending":null,"previous":null});
+        let shown = sifttext_file_graph::outlines::decode_lean(&format!("{}\n", render_update_output("--status", &current).unwrap())).unwrap();
+        assert_eq!(shown.as_object().unwrap().len(), 5);
+        assert!(shown.get("available_application").is_none());
+        let mut failed = current;
+        failed["update_check"] = json!("error");
+        failed["update_error"] = json!("release check failed; active installation retained");
+        let shown = sifttext_file_graph::outlines::decode_lean(&format!("{}\n", render_update_output("--status", &failed).unwrap())).unwrap();
+        assert_eq!(shown["update_error"], failed["update_error"]);
+    }
+
+    #[test]
+    fn update_receipts_keep_changed_paths_and_omit_only_an_empty_list() {
+        let output = json!({"status":"updated","application":"v2","refresh_instruction_paths":[]});
+        assert_eq!(render_update_output("", &output).unwrap(), "application:v2\nstatus:updated");
+        let output = json!({"status":"updated","application":"v2","refresh_instruction_paths":["nodes/a/node.md","trees/b"]});
+        let rendered = render_update_output("--resume", &output).unwrap();
+        let shown = sifttext_file_graph::outlines::decode_lean(&format!("{rendered}\n")).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(shown["refresh_instruction_paths"].as_str().unwrap()).unwrap(), output["refresh_instruction_paths"]);
+        let output = json!({"mode":"notify","permission":"standing","pinned":"local-build","source":"file","path":"/home/example/knowledge/.sifttext/config.json"});
+        let shown = sifttext_file_graph::outlines::decode_lean(&format!("{}\n", render_update_output("--pin=local-build", &output).unwrap())).unwrap();
+        assert_eq!(shown["pinned"], "local-build");
     }
 
     #[test]

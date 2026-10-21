@@ -31,7 +31,7 @@ After Platform confirms paid status on its waiting page, run `sifttext login` to
 
 Only server-confirmed `paid:true` produces `Authentication successful.`. Check pending or inactive payment on Platform before retrying login.
 
-Use `sifttext account` to read server account/subscription status, refreshing authorization as needed.
+Use `sifttext account` to read server account/subscription status, refreshing authorization as needed. Account receipts contain the stable account ID, email, subscription status and server-confirmed paid flag; they omit display labels and credentials.
 
 Use `sifttext logout` to delete local credentials even offline and attempt remote refresh-token revocation. Already-issued access tokens expire normally.
 
