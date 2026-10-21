@@ -260,6 +260,24 @@ impl Publication {
         Ok(String::from_utf8(file.checked_bytes(&store.path)?)?)
     }
 
+    /// CLI projection of checked artifacts; internal identities, costs and verification stay rich.
+    pub(crate) fn cli_outline_text(
+        &self, store: &Store, id: &str, full: bool, version: &str,
+    ) -> Result<String> {
+        let mut document = cli_document(&self.outline_text(store, id, full)?, version)?;
+        if !full {
+            for row in document["rows"].as_array_mut().ok_or("missing outline rows")? {
+                if row["children"].as_u64().ok_or("missing child count")? > 0 {
+                    let branch = row["id"].as_str().ok_or("missing outline id")?;
+                    let text = self.outline_text(store, branch, true)?;
+                    let full = crate::lean_render::render(&cli_document(&text, version)?)? + "\n";
+                    row["full_view_tokens"] = json!(outline_artifacts::cost(&full).1);
+                }
+            }
+        }
+        Ok(crate::lean_render::render(&document)? + "\n")
+    }
+
     pub(crate) fn reused(&self) -> bool {
         self.stage.is_none()
     }
@@ -564,6 +582,22 @@ impl Publication {
         Ok(())
     }
 }
+fn cli_document(text: &str, version: &str) -> Result<Value> {
+    let mut document = decode_lean(text)?;
+    let fields = document.as_object_mut().ok_or("invalid outline document")?;
+    for key in ["source_version", "source_version_scope", "token_encoding"] {
+        fields.remove(key);
+    }
+    fields.insert("version".into(), json!(version));
+    for row in document["rows"].as_array_mut().ok_or("missing outline rows")? {
+        let fields = row.as_object_mut().ok_or("invalid outline row")?;
+        for key in ["descendants", "full_view_tokens"] {
+            fields.remove(key);
+        }
+    }
+    Ok(document)
+}
+
 /// Verify the freshly constructed manifest after replacement and before success.
 pub(crate) fn verify_manifest(root: &Path, manifest: &Manifest) -> Result<()> {
     for (relative, hash) in &manifest.files {

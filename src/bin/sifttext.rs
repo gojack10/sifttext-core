@@ -426,7 +426,7 @@ fn run() -> Result<()> {
                     })
                     .into());
             }
-            let output = json!({"status":result.status,"version":result.version,"version_scope":"authored_store","total_matches":result.total_matches,"rows":result.rows});
+            let output = result.cli_value();
             let rendered = sifttext_file_graph::lean_render::render(&output)
                 .map_err(std::io::Error::other)?
                 + "\n";

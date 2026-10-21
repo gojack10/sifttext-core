@@ -105,7 +105,7 @@ fn paused(path: &Path, change: impl FnOnce(&Path)) -> index::View {
     t.join().unwrap()
 }
 #[test]
-fn refreshed_outline_reuses_checked_publication_bytes_and_capture() {
+fn refreshed_outline_projects_checked_publication_without_repeating_source_capture() {
     let d = fixture();
     let p = d.path();
     let policy = policy();
@@ -132,15 +132,41 @@ fn refreshed_outline_reuses_checked_publication_bytes_and_capture() {
                 .iter()
                 .find(|f| f["path"] == file.to_str().unwrap())
                 .unwrap();
-            assert_eq!(text, checked["text"].as_str().unwrap());
+            let project = |text: &str| {
+                let mut value = crate::outlines::decode_lean(text).unwrap();
+                for key in ["source_version", "source_version_scope", "token_encoding"] {
+                    value.as_object_mut().unwrap().remove(key);
+                }
+                value["version"] = json!(inspected.version);
+                for row in value["rows"].as_array_mut().unwrap() {
+                    row.as_object_mut().unwrap().remove("descendants");
+                    row.as_object_mut().unwrap().remove("full_view_tokens");
+                }
+                value
+            };
+            let mut expected = project(checked["text"].as_str().unwrap());
+            if !full {
+                for row in expected["rows"].as_array_mut().unwrap() {
+                    if row["children"].as_u64().unwrap() > 0 {
+                        let branch = p.join("nodes").join(row["id"].as_str().unwrap()).join("outline.full.lean");
+                        let artifact = inspected.files.iter().find(|f| f["path"] == branch.to_str().unwrap()).unwrap();
+                        let rendered = crate::lean_render::render(&project(artifact["text"].as_str().unwrap())).unwrap() + "\n";
+                        row["full_view_tokens"] = json!(tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(&rendered).len());
+                    }
+                }
+            }
+            assert_eq!(text, crate::lean_render::render(&expected).unwrap() + "\n");
         }
     }
     assert!(index::outline(&policy, p, "80000000", false).is_err());
     assert!(index::outline(&policy, p, &id(99), false).is_err());
     let artifact = p.join("nodes").join(id(2)).join("outline.lean");
+    let before_forgery = index::outline(&policy, p, &id(2), false).unwrap();
+    let checked_bytes = fs::read_to_string(&artifact).unwrap();
     fs::write(&artifact, "forged").unwrap();
     let repaired = index::outline(&policy, p, &id(2), false).unwrap();
-    assert_eq!(repaired, fs::read_to_string(artifact).unwrap());
+    assert_eq!(repaired, before_forgery);
+    assert_eq!(fs::read_to_string(artifact).unwrap(), checked_bytes);
     let target = p.join("nodes").join(id(2)).join("node.md");
     crate::coherent_capture::on_inventory(move || {
         fs::write(target, "changed during capture").unwrap();

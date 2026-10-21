@@ -235,7 +235,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         .count();
     let indexed = n.json(&["index", text(&home)]);
     assert_eq!(indexed["nodes"], count);
-    assert_eq!(indexed["version_scope"], "authored_store");
+    assert!(indexed.get("version_scope").is_none());
+    assert!(indexed.get("links").is_none());
     let query = if supplied.is_some() {
         "SiftText"
     } else {
@@ -243,24 +244,18 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     };
     let search = n.json(&["search", text(&home), query]);
     assert_eq!(search["version"], indexed["version"]);
-    assert_eq!(search["version_scope"], "authored_store");
+    assert!(search.get("version_scope").is_none());
     assert!(!search["rows"].as_array().unwrap().is_empty());
-    for hit in search["rows"].as_array().unwrap().iter().filter(|r| r["match"] == true) {
-        assert_eq!(
-            hit["path"],
-            text(
-                &home
-                    .join("nodes")
-                    .join(hit["id"].as_str().unwrap())
-                    .join("node.md")
-            )
-        );
+    for hit in search["rows"].as_array().unwrap() {
+        let path = search["path_template"].as_str().unwrap().replace("{id}", hit["id"].as_str().unwrap());
+        assert_eq!(path, text(&home.join("nodes").join(hit["id"].as_str().unwrap()).join("node.md")));
+        assert!(hit.get("match").is_none());
     }
     let sql = n.json(&["sql", text(&home), "SELECT count(*) FROM nodes"]);
     assert_eq!(sql["version"], indexed["version"]);
-    assert_eq!(sql["version_scope"], "authored_store");
+    assert!(sql.get("version_scope").is_none());
     assert_eq!(sql["rows"][0]["c0"], count.to_string());
-    assert_eq!(sql["rows"][0]["c0_type"], "integer");
+    assert_eq!(sql["c0_type"], "integer");
     for q in [
         "DELETE FROM nodes",
         "PRAGMA user_version=1",
@@ -274,10 +269,10 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     assert_eq!(shallow["coverage"], "shallow");
     assert_eq!(full["coverage"], "full");
     for view in [&shallow, &full] {
-        assert_eq!(view["source_version_scope"], "outline_view");
-        assert_ne!(view["source_version"], indexed["version"]);
+        assert!(view.get("source_version_scope").is_none());
+        assert!(view.get("source_version").is_none());
+        assert_eq!(view["version"], indexed["version"]);
     }
-    assert_ne!(shallow["source_version"], full["source_version"]);
     let name = "Onramppublicationtrial";
     let allocation = n.json(&["worktree", text(&home)]);
     let draft = PathBuf::from(allocation["worktree"].as_str().unwrap());
@@ -310,9 +305,9 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     n.cli(&["check", text(&draft), text(&home)]);
     let found = n.json(&["search", text(&draft), name]);
     assert_eq!(found["total_matches"], 1);
-    let hit = found["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap();
+    let hit = &found["rows"][0];
     assert_eq!(hit["id"], created["id"]);
-    assert_eq!(hit["path"], created["path"]);
+    assert_eq!(found["path_template"].as_str().unwrap().replace("{id}", hit["id"].as_str().unwrap()), created["path"]);
     n.git(&draft, &["add", "--", "nodes", "trees"]);
     n.git(
         &draft,

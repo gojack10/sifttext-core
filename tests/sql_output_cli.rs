@@ -167,6 +167,14 @@ fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
     let homogeneous = run(&thousand);
     assert_eq!(homogeneous["c0_type"], "integer");
     assert_eq!(homogeneous["rows"].as_array().unwrap().len(), 1000);
+    let mut old = homogeneous.clone();
+    old["version_scope"] = serde_json::json!("authored_store");
+    old["column_count"] = serde_json::json!(1);
+    old.as_object_mut().unwrap().remove("c0_type");
+    for row in old["rows"].as_array_mut().unwrap() { row["c0_type"] = serde_json::json!("integer"); }
+    let old = sifttext_file_graph::lean_render::render(&old).unwrap() + "\n";
+    let new = sifttext_file_graph::lean_render::render(&homogeneous).unwrap() + "\n";
+    println!("sql homogeneous rows=1000 old_bytes={} old_tokens={} new_bytes={} new_tokens={}", old.len(), tokens(old.as_bytes()), new.len(), tokens(new.as_bytes()));
     assert!(homogeneous["rows"].as_array().unwrap().iter().all(|row| row.get("c0_type").is_none()));
     let nullable = run("SELECT -0.0 AS x UNION ALL SELECT NULL UNION ALL SELECT 1e-300");
     assert_eq!(nullable["c0_type"], "real");
@@ -179,6 +187,12 @@ fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
     assert!(index.status.success(), "{index:?}");
     let index = sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&index.stdout).unwrap()).unwrap();
     assert_eq!(index.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["nodes", "status", "version"]);
+    let mut old = index.clone();
+    old["version_scope"] = serde_json::json!("authored_store");
+    old["links"] = serde_json::json!(0);
+    let old = sifttext_file_graph::lean_render::render(&old).unwrap() + "\n";
+    let new = sifttext_file_graph::lean_render::render(&index).unwrap() + "\n";
+    println!("index empty old_bytes={} old_tokens={} new_bytes={} new_tokens={}", old.len(), tokens(old.as_bytes()), new.len(), tokens(new.as_bytes()));
     for query in [
         "SELECT 1; SELECT 2".to_owned(),
         "SELECT 1; DELETE FROM nodes".to_owned(),

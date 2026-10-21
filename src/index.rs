@@ -627,7 +627,7 @@ pub(crate) fn with_query<T>(
     )
 }
 
-/// Return the requested publication's exact bytes only after the ordinary
+/// Project the requested checked publication for CLI navigation only after the ordinary
 /// refresh transaction and all source/artifact freshness barriers succeed.
 pub fn outline(policy: &Policy, path: &Path, id: &str, full: bool) -> Result<String> {
     let (view, text) = with_query_prepared(
@@ -638,7 +638,9 @@ pub fn outline(policy: &Policy, path: &Path, id: &str, full: bool) -> Result<Str
         None,
         &[],
         &mut Reuse::default(),
-        |_, store, _, publication| publication.outline_text(store, &store.resolve(id)?, full),
+        |_, store, view, publication| publication.cli_outline_text(
+            store, &store.resolve(id)?, full, view.version.as_deref().ok_or("missing outline version")?,
+        ),
     )?;
     if view.status != "current" {
         return Err(view

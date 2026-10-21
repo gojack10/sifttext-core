@@ -297,7 +297,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
         let search = n.cli(&["search", text(&home), &name]);
         assert_eq!(search["version"], second_receipt["version"]);
         assert_eq!(search["total_matches"], 1);
-        let hit = search["rows"].as_array().unwrap().iter().find(|r| r["match"] == true).unwrap();
+        let hit = &search["rows"][0];
         assert_eq!(hit["id"], node["id"]);
     }
     // Complete shallow/full rows for the two-level root, not merely file existence.

@@ -1,4 +1,4 @@
-//! Search's twenty-hit limit does not bound authored warnings in those hits.
+//! Search discovery retains complete hit text, not repeated ancestor rows or oversized warnings.
 use sifttext_file_graph::Store;
 use std::{
     fs,
@@ -39,12 +39,13 @@ fn search_bounds_rendered_returns_and_y_preserves_scope_and_refusals() {
         }
         out
     };
-    for warnings in [
-        "Small warning.".to_owned(),
-        format!("日本語🦀{}", " ordinary".repeat(15_001)),
+    for (warnings, name, summary) in [
+        ("Small warning.".to_owned(), "Search boundary".to_owned(), "Synthetic fixture".to_owned()),
+        (format!("日本語🦀{}", " ordinary".repeat(15_001)), "Search boundary".to_owned(), "Synthetic fixture".to_owned()),
+        ("Small warning.".to_owned(), format!("Search boundary{}", " long-name".repeat(8000)), " intact-summary".repeat(8000)),
     ] {
-        let fields = serde_json::json!({"id":ID,"name":"Search boundary",
-            "micro_summary":"Synthetic fixture","status":"in_progress",
+        let fields = serde_json::json!({"id":ID,"name":name,
+            "micro_summary":summary,"status":"in_progress",
             "see_also":[],"warnings":warnings});
         fs::write(
             node.join("node.md"),
@@ -68,18 +69,27 @@ fn search_bounds_rendered_returns_and_y_preserves_scope_and_refusals() {
             sifttext_file_graph::outlines::decode_lean(std::str::from_utf8(&full.stdout).unwrap())
                 .unwrap();
         assert_eq!(value["status"], "current");
-        assert_eq!(value["version_scope"], "authored_store");
+        assert!(value.get("version_scope").is_none());
+        assert_eq!(value["path_template"], format!("{path}/nodes/{{id}}/node.md"));
         assert_eq!(value["total_matches"], 1);
         assert_eq!(value["rows"].as_array().unwrap().len(), 1);
         assert_eq!(value["rows"][0]["id"], ID);
-        assert_eq!(value["rows"][0]["match"], true);
-        assert_eq!(value["rows"][0]["depth"], 0);
-        assert_eq!(value["rows"][0]["warnings"], warnings);
+        assert_eq!(value["rows"][0]["name"], name);
+        assert_eq!(value["rows"][0]["micro_summary"], summary);
+        for key in ["match", "depth", "hit", "path", "active_reason", "warnings"] {
+            assert!(value["rows"][0].get(key).is_none(), "{key}");
+        }
+        if warnings == "Small warning." {
+            assert_eq!(value[format!("warnings_{ID}")], warnings);
+        } else {
+            assert_eq!(value[format!("must_read_warnings_{ID}")], format!("{path}/nodes/{ID}/node.md"));
+            assert!(!String::from_utf8_lossy(&full.stdout).contains(&warnings));
+        }
         let tokens = tiktoken_rs::o200k_base_singleton()
             .lock()
             .encode_ordinary(std::str::from_utf8(&full.stdout).unwrap())
             .len();
-        assert_eq!(tokens > 15_000, warnings != "Small warning.");
+        assert_eq!(tokens > 15_000, summary != "Synthetic fixture");
         let inventory = Store::read(&store).unwrap().inventory;
         for scope in [None, Some(ID)] {
             let mut args = vec!["search", path, "boundary"];
@@ -112,7 +122,7 @@ fn search_bounds_rendered_returns_and_y_preserves_scope_and_refusals() {
 }
 
 #[test]
-fn search_cli_merges_complete_chains_and_bounds_ancestor_context() {
+fn search_cli_returns_only_hits_with_compact_context_and_mandatory_warning_read() {
     let temp = tempfile::tempdir().unwrap();
     let store = temp.path().canonicalize().unwrap().join("store");
     fs::create_dir_all(store.join("trees")).unwrap();
@@ -166,40 +176,23 @@ fn search_cli_merges_complete_chains_and_bounds_ancestor_context() {
             .unwrap();
     assert_eq!(value["total_matches"], 1);
     let rows = value["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 3);
-    for (depth, row) in rows.iter().enumerate() {
-        assert_eq!(row["id"], ids[depth]);
-        assert_eq!(row["depth"], depth);
-        assert_eq!(row["hit"], 1);
-        assert_eq!(row["micro_summary"], format!("Summary {depth}"));
-        assert_eq!(row["status"], "deferred");
-        assert_eq!(row["active_reason"], "Later Ω");
-        assert_eq!(row.get("match").is_some(), depth == 2);
-    }
-    assert_eq!(rows[0]["warnings"], warning);
-    assert_eq!(
-        rows[2]["path"],
-        store
-            .join("nodes")
-            .join(&ids[2])
-            .join("node.md")
-            .to_str()
-            .unwrap()
-    );
-    assert!(rows[2]["matching_excerpt"].is_string());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], ids[2]);
+    assert_eq!(rows[0]["root"], ids[0]);
+    assert_eq!(rows[0]["parent"], ids[1]);
+    assert_eq!(rows[0]["micro_summary"], "Summary 2");
+    assert_eq!(rows[0]["status"], "deferred");
+    assert!(rows[0].get("active_reason").is_none());
+    assert_eq!(value[format!("must_read_warnings_{}", ids[0])], store.join("nodes").join(&ids[0]).join("node.md").to_str().unwrap());
+    assert!(rows[0]["matching_excerpt"].is_string());
     let tokens = tiktoken_rs::o200k_base_singleton()
         .lock()
         .encode_ordinary(std::str::from_utf8(&full.stdout).unwrap())
         .len();
-    assert!(tokens > 15_000);
+    assert!(tokens < 1000);
     let guarded = run(false);
-    assert_eq!(guarded.status.code(), Some(1));
-    assert_eq!(
-        String::from_utf8(guarded.stdout).unwrap(),
-        format!(
-            "[{tokens} tokens suppressed] Re-run this sifttext search command with -y to print them.\n"
-        )
-    );
+    assert_eq!(guarded.status.code(), Some(0));
+    assert_eq!(guarded.stdout, full.stdout);
     fs::write(
         store.join("nodes").join(&ids[0]).join("node.md"),
         "invalid ancestor",

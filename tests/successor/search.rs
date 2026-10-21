@@ -247,7 +247,11 @@ fn chains_preserve_roots_gaps_ranking_and_current_reparenting() {
     assert_eq!(partial.rows[2]["id"], id(4));
     let hidden = run(p, "login", None, &BTreeSet::from([id(4)]));
     assert_eq!(hidden.rows.len(), 3);
-    let text = serde_json::to_string(&hidden.rows).unwrap();
+    let cli = hidden.cli_value();
+    assert_eq!(cli["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(cli["rows"][0]["root"], "unavailable");
+    assert_eq!(cli["rows"][0]["parent"], "unavailable");
+    let text = serde_json::to_string(&(&hidden.rows, &cli)).unwrap();
     for n in 1..=3 {
         assert!(!text.contains(&id(n)));
         assert!(!text.contains(&format!("Login {n}")));
@@ -271,6 +275,9 @@ fn chains_preserve_roots_gaps_ranking_and_current_reparenting() {
     assert_ne!(changed.version, out.version);
     assert_eq!(changed.rows[1]["id"], id(3));
     assert_eq!(changed.rows[1]["active_reason"], "Exact reason Ω");
+    assert_eq!(changed.cli_value()["rows"][0]["parent"], id(3));
+    let cli = all.cli_value();
+    assert_eq!(cli["rows"].as_array().unwrap().iter().map(|row| row["id"].as_str().unwrap()).collect::<Vec<_>>(), all.hits.iter().map(|hit| hit.id.as_str()).collect::<Vec<_>>());
     let page = search::search(
         &policy(),
         &Request {
