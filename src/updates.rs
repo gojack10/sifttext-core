@@ -818,8 +818,7 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
         "knowledge":manifest.knowledge.revision,
         "guide":state.home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
         "command":"sifttext update",
-        "permission":config["permission"],
-        "config":config["path"]
+        "permission":config["permission"]
     });
     if let Some(pinned) = config["pinned"].as_str() {
         notice["pinned"] = json!(pinned);
@@ -1512,7 +1511,7 @@ pub fn opportunistic() {
                     && value["status"] != "update_disabled" =>
             {
                 match crate::lean_render::render(&value) {
-                    Ok(notice) => eprintln!("SiftText update\n{notice}"),
+                    Ok(notice) => eprintln!("{notice}"),
                     Err(error) => eprintln!("SiftText update deferred: invalid notice: {error}"),
                 }
             }
@@ -1581,7 +1580,7 @@ mod tests {
         assert_eq!(
             crate::lean_render::render(&notice).unwrap(),
             format!(
-                "application:v1\ncommand:sifttext update\nconfig:/home/fixture/.sifttext/config.json\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nknowledge:{}\npermission:ask\nstatus:update_available",
+                "application:v1\ncommand:sifttext update\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nknowledge:{}\npermission:ask\nstatus:update_available",
                 "b".repeat(64)
             )
         );
@@ -1643,14 +1642,7 @@ mod tests {
         assert_eq!(notice["status"], "update_available");
         assert_eq!(notice["permission"], "standing");
         assert_eq!(notice["command"], "sifttext update");
-        assert_eq!(
-            notice["config"],
-            state
-                .home
-                .join(".sifttext/config.json")
-                .to_string_lossy()
-                .as_ref()
-        );
+        assert!(notice.get("config").is_none());
         assert_eq!(
             update_config(&state.home).unwrap()["permission"],
             "standing"
@@ -2156,6 +2148,11 @@ mod tests {
         assert!(stdout.contains("update_check:update_available"), "{stdout}");
         assert!(stdout.contains("available_application:v2"), "{stdout}");
         assert!(!stdout.starts_with('{'), "{stdout}");
+        let shown = crate::outlines::decode_lean(&stdout).unwrap();
+        for field in ["success", "attempt", "baseline", "application_sha256", "previous", "pending", "available_config"] {
+            assert!(shown.get(field).is_none(), "{field}: {stdout}");
+        }
+        assert_eq!(shown["activation_pending"], false);
         assert!(
             fs::read_link(root.join("current"))
                 .unwrap()

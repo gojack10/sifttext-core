@@ -44,4 +44,11 @@ fn update_config_cli_emits_lean_settings() {
     assert!(stdout.starts_with("mode:notify"), "{stdout}");
     assert!(stdout.contains("permission:standing"), "{stdout}");
     assert!(!stdout.starts_with('{'), "{stdout}");
+    let shown = sifttext_file_graph::outlines::decode_lean(&stdout).unwrap();
+    assert_eq!(shown["path"], home.join(".sifttext/config.json").to_str().unwrap());
+    assert!(shown.get("source").is_none());
+    assert!(shown.get("pinned").is_none());
+    let before = sifttext_file_graph::lean_render::render(&json!({"mode":"notify", "permission":"standing", "pinned":null, "source":"file", "path":home.join(".sifttext/config.json")})).unwrap();
+    let count = |s: &str| tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(s).len();
+    eprintln!("update --config: {} -> {} tokens", count(&before), count(stdout.trim_end()));
 }

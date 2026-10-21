@@ -43,7 +43,7 @@ Record routine permission only after the user's approval:
 "$BIN" update --config
 ```
 
-The grant command changes only the `updates` object in the knowledge home's `.sifttext/config.json`, preserving other settings.
+The grant command changes only the `updates` object in the knowledge home's `.sifttext/config.json`, preserving other settings. Settings receipts show mode, permission, file path and the pin only when set; an omitted pin means none.
 
 Revoke a grant with `"$BIN" update --grant ask`. Never grant permission for yourself or copy it from another machine.
 
@@ -58,6 +58,8 @@ Inspect the installed identities and pending work before recovery:
 ```sh
 "$BIN" update --status
 ```
+
+Status reports recorded application and knowledge identities, home, activation-pending flag and release-check result. With activation pending, those records alone do not establish the current launcher or reader state; preserve the journal and use checked recovery. Unfinished work adds its retained worktree, resume command and any recorded commit or repair-node identity; rollback targets appear only when available. Recovery manifests, checksums and clocks remain in the installation's `state.json`, not the receipt. A failed release check does not mean the active installation or pending work disappeared.
 
 To check and apply the latest compatible release under the user's permission, run `"$BIN" update`.
 
@@ -82,7 +84,7 @@ Check the resolution before committing it:
 
 Commit only the checked resolution in the updater's worktree. Then run `"$BIN" update --resume` for checked publication and activation. Keep the draft under updater custody until completion. The published undertaking retains the repair history after the transaction clears.
 
-After activation, reread the task-relevant `refresh_instruction_paths` returned by the updater. Continue the original task using those instructions while preserving unrelated worktrees.
+After activation, reread the task-relevant `refresh_instruction_paths` returned by the updater; an empty list is omitted. Continue the original task using those instructions while preserving unrelated worktrees.
 
 ## Keep a chosen application build
 
