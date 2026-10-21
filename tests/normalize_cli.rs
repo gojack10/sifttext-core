@@ -220,7 +220,7 @@ fn normalize_suppresses_large_receipt_before_mutation_and_y_retrieves_it() {
         .len();
     assert!(tokens > 15_000, "receipt rendered as {tokens} tokens");
     let notice = format!(
-        "[{} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n",
+        "[{} tokens suppressed] Re-run this sifttext normalize command with -y to print them.\n",
         tokens
     );
     assert_eq!(String::from_utf8_lossy(&suppressed.stdout), notice);

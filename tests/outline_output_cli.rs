@@ -57,6 +57,6 @@ fn full_outline_suppresses_large_returns_and_y_prints_exact_bytes() {
     assert!(guarded.stderr.is_empty(), "{guarded:?}");
     assert_eq!(
         guarded.stdout,
-        format!("[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").as_bytes()
+        format!("[{tokens} tokens suppressed] Re-run this sifttext outline command with -y to print them.\n").as_bytes()
     );
 }

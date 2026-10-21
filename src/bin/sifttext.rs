@@ -14,14 +14,17 @@ const MAINTENANCE_NODE: &str = "6da0b35a-955a-4ad2-bdce-2994ba26119c";
 const LARGE_RETURN_LIMIT: usize = 15_000;
 
 #[derive(Debug)]
-struct LargeReturnSuppressed(usize);
+struct LargeReturnSuppressed {
+    tokens: usize,
+    command: String,
+}
 
 impl std::fmt::Display for LargeReturnSuppressed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{} tokens suppressed] Re-run with -y to print them, read sql schema if needed.",
-            self.0
+            "[{} tokens suppressed] Re-run this sifttext {} command with -y to print them.",
+            self.tokens, self.command
         )
     }
 }
@@ -475,7 +478,11 @@ fn check_large_return(output: &str, force: bool) -> Result<()> {
             .encode_ordinary(output)
             .len();
         if tokens > LARGE_RETURN_LIMIT {
-            return Err(LargeReturnSuppressed(tokens).into());
+            return Err(LargeReturnSuppressed {
+                tokens,
+                command: std::env::args().nth(1).unwrap_or_default(),
+            }
+            .into());
         }
     }
     Ok(())
@@ -677,6 +684,35 @@ mod tests {
                 .is_some_and(|code| code != 0)
         );
         std::fs::remove_dir_all(checkout).unwrap();
+    }
+
+    #[test]
+    fn large_return_warning_names_the_command() {
+        for command in [
+            "check",
+            "read",
+            "outline",
+            "search",
+            "submit",
+            "accepted",
+            "normalize",
+            "session-attach",
+            "update",
+            "sql",
+        ] {
+            let notice = LargeReturnSuppressed {
+                tokens: 15_001,
+                command: command.into(),
+            }
+            .to_string();
+            assert_eq!(
+                notice,
+                format!(
+                    "[15001 tokens suppressed] Re-run this sifttext {command} command with -y to print them."
+                )
+            );
+            assert!(!notice.contains("schema"));
+        }
     }
 
     #[test]

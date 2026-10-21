@@ -76,7 +76,7 @@ fn read_returns_exact_bytes_or_one_token_count_notice_without_mutation() {
             if expected == 15_000 {
                 text.as_bytes().to_vec()
             } else {
-                format!("[{expected} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").into_bytes()
+                format!("[{expected} tokens suppressed] Re-run this sifttext read command with -y to print them.\n").into_bytes()
             }
         );
         let forced = run(&["read", path, ID, "-y"]);

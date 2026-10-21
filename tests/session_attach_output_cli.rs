@@ -81,7 +81,7 @@ fn large_unavailable_attachment_receipt_is_checked_before_persisting() {
     assert_eq!(suppressed.stderr, b"");
     assert_eq!(
         suppressed.stdout,
-        format!("[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").as_bytes()
+        format!("[{tokens} tokens suppressed] Re-run this sifttext session-attach command with -y to print them.\n").as_bytes()
     );
     assert!(!node.join("session-sources.json").exists());
 

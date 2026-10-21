@@ -83,7 +83,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     );
     fs::write(&source, node(id)).unwrap();
 
-    for n in 2..=400 {
+    for n in 2..=600 {
         add(&store, &format!("00000000-0000-4000-8000-{n:012x}"));
     }
     let full = cli(&["check", path, "-y"]);
@@ -97,7 +97,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     let guarded = cli(&["check", path]);
     assert_eq!(guarded.status.code(), Some(1), "{guarded:?}");
     assert!(guarded.stderr.is_empty(), "{guarded:?}");
-    assert_eq!(guarded.stdout, format!("[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").as_bytes());
+    assert_eq!(guarded.stdout, format!("[{tokens} tokens suppressed] Re-run this sifttext check command with -y to print them.\n").as_bytes());
     let retried = cli(&["check", path, "-y"]);
     assert_eq!(retried.status.code(), Some(0), "{retried:?}");
     assert_eq!(retried.stdout, full.stdout);
@@ -123,7 +123,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
         "{guarded_refusal:?}"
     );
     assert!(guarded_refusal.stderr.is_empty(), "{guarded_refusal:?}");
-    assert_eq!(guarded_refusal.stdout, format!("[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").as_bytes());
+    assert_eq!(guarded_refusal.stdout, format!("[{tokens} tokens suppressed] Re-run this sifttext check command with -y to print them.\n").as_bytes());
     let retried_refusal = cli(&["check", path, prior, "-y"]);
     assert_eq!(
         retried_refusal.status.code(),
@@ -135,7 +135,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     assert_eq!(fs::read_to_string(&source).unwrap(), resolved);
     fs::write(&source, node(id)).unwrap();
 
-    for n in 1..=400 {
+    for n in 1..=600 {
         let id = format!("00000000-0000-4000-8000-{n:012x}");
         let dir = store.join("nodes").join(&id);
         assert_eq!(fs::read_to_string(dir.join("node.md")).unwrap(), node(&id));

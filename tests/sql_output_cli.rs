@@ -52,7 +52,7 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
             assert_eq!(guarded.status.code(), Some(1));
             assert_eq!(
                 String::from_utf8(guarded.stdout).unwrap(),
-                "[15001 tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n"
+                "[15001 tokens suppressed] Re-run this sifttext sql command with -y to print them.\n"
             );
         }
         repeats += 1;
@@ -74,7 +74,7 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
     assert_eq!(
         String::from_utf8(guarded.stdout).unwrap(),
         format!(
-            "[{count} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n"
+            "[{count} tokens suppressed] Re-run this sifttext sql command with -y to print them.\n"
         )
     );
 

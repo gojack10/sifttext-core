@@ -88,7 +88,7 @@ fn search_bounds_rendered_returns_and_y_preserves_scope_and_refusals() {
             assert!(guarded.stderr.is_empty(), "{guarded:?}");
             if tokens > 15_000 {
                 assert_eq!(guarded.status.code(), Some(1), "{guarded:?}");
-                assert_eq!(guarded.stdout, format!("[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n").as_bytes());
+                assert_eq!(guarded.stdout, format!("[{tokens} tokens suppressed] Re-run this sifttext search command with -y to print them.\n").as_bytes());
             } else {
                 assert_eq!(guarded.status.code(), Some(0), "{guarded:?}");
                 assert_eq!(guarded.stdout, full.stdout);
@@ -197,7 +197,7 @@ fn search_cli_merges_complete_chains_and_bounds_ancestor_context() {
     assert_eq!(
         String::from_utf8(guarded.stdout).unwrap(),
         format!(
-            "[{tokens} tokens suppressed] Re-run with -y to print them, read sql schema if needed.\n"
+            "[{tokens} tokens suppressed] Re-run this sifttext search command with -y to print them.\n"
         )
     );
     fs::write(
