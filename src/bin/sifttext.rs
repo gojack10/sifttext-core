@@ -372,7 +372,7 @@ fn run() -> Result<()> {
         }
         [cmd, path] if cmd == "index" => {
             let v = local::refresh(&policy, Path::new(path))?;
-            let output = json!({"status":v.status,"version":v.version,"version_scope":"authored_store","nodes":v.nodes.len(),"links":v.links.len()});
+            let output = json!({"status":v.status,"version":v.version,"nodes":v.nodes.len()});
             println!(
                 "{}",
                 sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?

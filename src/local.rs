@@ -2465,10 +2465,24 @@ pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
 /// Decimal strings with storage-class tags also survive IEEE-754-only LEAN decoders.
 pub fn sql_lean(policy: &Policy, path: &Path, sql: &str) -> Result<String> {
     let result = query_sql(policy, path, sql)?;
-    let mut document = json!({"status":"current","version":result.version,
-        "version_scope":"authored_store","column_count":result.columns.len()});
+    let mut document = json!({"status":"current","version":result.version});
+    let numeric_kind = |value: &rusqlite::types::Value| match value {
+        rusqlite::types::Value::Integer(_) => Some("integer"),
+        rusqlite::types::Value::Real(_) => Some("real"),
+        _ => None,
+    };
+    let mut column_types = Vec::new();
     for (i, name) in result.columns.into_iter().enumerate() {
         document[format!("column_{i}")] = json!(name);
+        let mut values = result.rows.iter().map(|row| &row[i])
+            .filter(|value| !matches!(value, rusqlite::types::Value::Null));
+        let kind = values.next().and_then(numeric_kind).filter(|kind| {
+            values.all(|value| numeric_kind(value) == Some(*kind))
+        });
+        if let Some(kind) = kind {
+            document[format!("c{i}_type")] = json!(kind);
+        }
+        column_types.push(kind);
     }
     let rows: Vec<Value> = result.rows.into_iter().map(|values| {
         let mut row = serde_json::Map::new();
@@ -2482,7 +2496,7 @@ pub fn sql_lean(policy: &Policy, path: &Path, sql: &str) -> Result<String> {
                 Sql::Blob(_) => unreachable!(),
             };
             row.insert(format!("c{i}"), value);
-            if let Some(kind) = kind {
+            if let Some(kind) = kind.filter(|_| column_types[i].is_none()) {
                 row.insert(format!("c{i}_type"), json!(kind));
             }
         }
