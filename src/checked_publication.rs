@@ -128,14 +128,62 @@ impl Receipt {
 
 /// Customer-facing transaction receipt; `Serialize` retains full internal diagnostics.
 pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
-    let mut value = serde_json::to_value(receipt)?;
-    if let Some(object) = value.as_object_mut() {
-        object.remove("graph_checks");
+    use serde_json::json;
+    let value = serde_json::to_value(receipt)?;
+    let saved = value.get("home").is_some();
+    let mut output = if value["status"] == "current" {
+        if saved {
+            json!({"status":if value["check"] == "published_checked_candidate" {"saved"} else {"recovered"},
+                "accepted":value["candidate"], "version":value["version"],
+                "home":value["home"], "worktree_removed":value["worktree_removed"]})
+        } else {
+            json!({"status":"ready", "accepted":value["candidate"],
+                "version":value["version"], "view":value["view"], "home_advanced":false})
+        }
+    } else {
+        // A failed conditional ref update is not evidence that nothing changed.
+        let status = if value["published"] == true || value["publication"] == "accepted_incomplete"
+        {
+            "accepted_incomplete"
+        } else if value["check"] == "conditional_ref_race" || value["publication"] == "unknown" {
+            "unknown"
+        } else {
+            "not_accepted"
+        };
+        let mut failure = json!({"status":status, "check":value["check"]});
+        if status == "accepted_incomplete" {
+            failure["accepted"] = value.get("accepted").unwrap_or(&value["candidate"]).clone();
+        }
+        if status != "accepted_incomplete"
+            || value["published"] == true
+            || value["candidate"] == failure["accepted"]
+        {
+            if !value["version"].is_null() {
+                failure["version"] = value["version"].clone();
+            }
+        }
+        for key in ["home", "draft"] {
+            if !value[key].is_null() {
+                failure[key] = value[key].clone();
+            }
+        }
+        if let Some(validation) = value
+            .get("validation")
+            .filter(|v| !v.is_null() && v["status"] != "current")
+        {
+            let mut validation = validation.clone();
+            gate::customer_report(&mut validation);
+            failure["validation"] = validation;
+        }
+        failure
+    };
+    if let Some(findings) = value
+        .get("semantic_findings")
+        .filter(|v| v.as_array().is_some_and(|v| !v.is_empty()))
+    {
+        output["semantic_findings"] = findings.clone();
     }
-    if let Some(validation) = value.get_mut("validation") {
-        gate::customer_report(validation);
-    }
-    serde_json::to_string_pretty(&value).map_err(Into::into)
+    serde_json::to_string_pretty(&output).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -185,7 +233,7 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
         elapsed_ms: 0,
     };
     let output: serde_json::Value = serde_json::from_str(&cli_json(&receipt).unwrap()).unwrap();
-    assert_eq!(output["status"], "rejected");
+    assert_eq!(output["status"], "not_accepted");
     assert_eq!(output["check"], "candidate_validation_rejected");
     assert_eq!(
         output["validation"]["rows"][0]["check"],
@@ -193,6 +241,51 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
     );
     assert!(output.get("graph_checks").is_none());
     assert!(output["validation"].get("graph").is_none());
+}
+
+#[cfg(test)]
+#[test]
+fn cli_publication_projects_outcomes_without_success_diagnostics() {
+    use serde_json::{Value, json};
+    let render =
+        |value: Value| -> Value { serde_json::from_str(&cli_json(&value).unwrap()).unwrap() };
+    let mut value = json!({"status":"current", "check":"published_checked_candidate",
+        "candidate":"commit", "version":"version", "view":"/view",
+        "validation":{"status":"current","rows":[{"check":"successful"}]},
+        "tree":"tree", "elapsed_ms":42});
+    assert_eq!(
+        render(value.clone()),
+        json!({"status":"ready", "accepted":"commit",
+        "version":"version", "view":"/view", "home_advanced":false})
+    );
+    value["home"] = json!("/home");
+    value["worktree_removed"] = json!(true);
+    assert_eq!(
+        render(value.clone()),
+        json!({"status":"saved", "accepted":"commit",
+        "version":"version", "home":"/home", "worktree_removed":true})
+    );
+    value["check"] = json!("accepted_revision_recovered");
+    assert_eq!(render(value.clone())["status"], "recovered");
+    value["status"] = json!("unavailable");
+    value["published"] = json!(true);
+    let failure = render(value.clone());
+    assert_eq!(failure["status"], "accepted_incomplete");
+    assert_eq!(failure["accepted"], "commit");
+    assert!(failure.get("validation").is_none());
+    value["published"] = json!(false);
+    value["check"] = json!("conditional_ref_race");
+    assert_eq!(render(value.clone())["status"], "unknown");
+    value["check"] = json!("unsafe_submission");
+    assert_eq!(render(value.clone())["status"], "not_accepted");
+    value["publication"] = json!("accepted_incomplete");
+    value["accepted"] = json!("previously-saved");
+    let failure = render(value);
+    assert_eq!(failure["accepted"], "previously-saved");
+    assert!(
+        failure.get("version").is_none(),
+        "a rejected candidate's version is not the accepted version"
+    );
 }
 
 // Disable inherited Git routing/config and execution hooks. Repository-local
@@ -302,7 +395,7 @@ fn oid(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn commit(repo: &Path, s: &str) -> Result<String> {
+pub(crate) fn commit(repo: &Path, s: &str) -> Result<String> {
     require(oid(s), "commit must be a full object ID")?;
     let got = git(repo, &["rev-parse", "--verify", &format!("{s}^{{commit}}")])?;
     require(got == s, "commit identity changed")?;
@@ -887,6 +980,61 @@ impl Drop for WorkingView {
             );
         }
     }
+}
+
+/// Retire only the verified detached view returned to this invocation. Callers
+/// must never discover/adopt old views for cleanup. Refuse edits or path reuse;
+/// Git removal is non-forced and the parent must be empty before removal.
+pub(crate) fn remove_owned_view(repo: &Path, receipt: &Receipt, identity: &fs::Metadata) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    require(receipt.status == "current", "unverified cleanup view")?;
+    let view = receipt.view.as_ref().ok_or("missing owned view")?;
+    let current = fs::symlink_metadata(view)?;
+    require(
+        current.is_dir() && current.dev() == identity.dev() && current.ino() == identity.ino(),
+        "owned view identity changed; preserve it",
+    )?;
+    let parent = view.parent().ok_or("missing owned view parent")?;
+    let root = repo.join(".git/sifttext-publications");
+    require(
+        view.file_name().is_some_and(|name| name == "view")
+            && parent.parent() == Some(root.as_path())
+            && parent
+                .file_name()
+                .is_some_and(|name| name.as_encoded_bytes().starts_with(b"submission-"))
+            && fs::canonicalize(view)? == *view,
+        "unsafe owned view path; preserve it",
+    )?;
+    require(
+        git(
+            view,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )? == repo.join(".git").to_str().ok_or("non-UTF-8 home")?,
+        "owned view repository changed; preserve it",
+    )?;
+    require(
+        !run(view, &["symbolic-ref", "--quiet", "HEAD"])?
+            .status
+            .success(),
+        "owned view acquired a branch; preserve it",
+    )?;
+    clean(
+        view,
+        receipt
+            .candidate
+            .as_deref()
+            .ok_or("missing owned view revision")?,
+    )?;
+    git(
+        repo,
+        &[
+            "worktree",
+            "remove",
+            view.to_str().ok_or("non-UTF-8 owned view")?,
+        ],
+    )?;
+    fs::remove_dir(parent)?;
+    Ok(())
 }
 
 fn accepted_index(

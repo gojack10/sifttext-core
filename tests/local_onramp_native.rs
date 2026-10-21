@@ -339,10 +339,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     let committed_tree = n.git(&draft, &["rev-parse", &format!("{commit}^{{tree}}")]);
     let committed_authored = authored(&draft);
     let receipt = n.json(&["submit", text(&home), text(&draft), &commit, base]);
-    assert_eq!(receipt["status"], "current");
-    assert_eq!(receipt["published"], true);
-    assert_eq!(receipt["draft_commit"], commit);
-    let candidate = receipt["candidate"].as_str().unwrap();
+    assert_eq!(receipt["status"], "saved");
+    let candidate = receipt["accepted"].as_str().unwrap();
     assert_eq!(n.git(&home, &["rev-parse", "refs/heads/main"]), candidate);
     assert_eq!(
         n.git(&home, &["rev-parse", &format!("{candidate}^{{tree}}")]),
@@ -355,7 +353,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     assert_eq!(receipt["home"], text(&home));
     assert_eq!(receipt["worktree_removed"], true);
     assert!(!draft.exists());
-    let view = PathBuf::from(receipt["view"].as_str().unwrap());
+    let view = PathBuf::from(receipt["home"].as_str().unwrap());
     assert_eq!(view, home);
     assert_eq!(
         fs::read(view.join("nodes").join(ENTRY).join("node.md")).unwrap(),
@@ -405,8 +403,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     ];
     args.extend(explicit.iter().map(String::as_str));
     let restored = n.json(&args);
-    assert_eq!(restored["published"], true);
-    let restored_view = PathBuf::from(restored["view"].as_str().unwrap());
+    assert_eq!(restored["status"], "saved");
+    let restored_view = PathBuf::from(restored["home"].as_str().unwrap());
     assert_eq!(authored(&restored_view), original);
     assert_eq!(n.json(&["index", text(&restored_view)])["nodes"], count);
     assert_eq!(
@@ -420,9 +418,9 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     n.cli(&["outline", text(&restored_view), ENTRY, "full"]);
     assert_eq!(authored(&bundle), original);
     let recovered = n.json(&["accepted", text(&home)]);
-    assert_eq!(recovered["status"], "current");
-    assert_eq!(recovered["candidate"], restored["candidate"]);
-    assert_eq!(recovered["check"], "accepted_revision_recovered");
+    assert_eq!(recovered["status"], "ready");
+    assert_eq!(recovered["accepted"], restored["accepted"]);
+    assert_eq!(recovered["home_advanced"], false);
     assert_eq!(
         authored(Path::new(recovered["view"].as_str().unwrap())),
         original
@@ -451,8 +449,8 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
             text(d),
             &c,
             first["base"].as_str().unwrap()
-        ])["published"],
-        true
+        ])["status"],
+        "saved"
     );
     let prefix = evidence.join("prefix");
     fs::create_dir(&prefix).unwrap();

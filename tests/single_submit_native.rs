@@ -123,10 +123,11 @@ impl Native {
         expected: &BTreeMap<PathBuf, Vec<u8>>,
         branch: &str,
     ) {
-        assert_eq!(receipt["status"], "current");
-        assert_eq!(receipt["view"], text(home));
+        assert_eq!(receipt["status"], "saved");
+        assert_eq!(receipt["home"], text(home));
+        assert_eq!(receipt.as_object().unwrap().len(), 5);
         assert_eq!(receipt["worktree_removed"], true);
-        let target = receipt["candidate"].as_str().unwrap();
+        let target = receipt["accepted"].as_str().unwrap();
         assert_eq!(self.git(home, &["rev-parse", "HEAD"]), target);
         assert_eq!(self.git(home, &["rev-parse", "refs/heads/main"]), target);
         assert_eq!(snapshot(home), *expected);
@@ -238,12 +239,14 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let second_status = n.git(&second_path, &["status", "--porcelain"]);
     let first_receipt = n.submit(&home, &first, &first_sha, true);
     assert_eq!(
-        first_receipt["candidate"], first_sha,
+        first_receipt["accepted"], first_sha,
         "fast-forward must not manufacture history"
     );
     n.finished(&home, &first, &first_receipt, &first_files, &first_branch);
     let accepted = n.cli(&["accepted", text(&home)]);
-    assert_eq!(accepted["status"], "current");
+    assert_eq!(accepted["status"], "ready");
+    assert_eq!(accepted["home_advanced"], false);
+    assert_eq!(accepted.as_object().unwrap().len(), 5);
     assert_eq!(fs::read(home.join("nodes/.keep")).unwrap(), b"");
     let forced = n.run(
         env!("CARGO_BIN_EXE_sifttext"),
@@ -251,15 +254,16 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
         true,
     );
     let forced = receipt(&forced);
-    for key in ["status", "candidate", "check", "validation"] {
+    for key in ["status", "accepted", "version", "home_advanced"] {
         assert_eq!(forced[key], accepted[key], "accepted -y field {key}");
     }
     assert!(accepted.get("graph_checks").is_none());
-    assert!(accepted["validation"].get("graph").is_none());
+    assert!(accepted.get("validation").is_none());
     // A lost CLI response can be recovered by retrying the original request;
     // after draft removal it must return the accepted receipt without advancing again.
     let retried = n.submit(&home, &first, &first_sha, true);
-    assert_eq!(retried["candidate"], first_receipt["candidate"]);
+    assert_eq!(retried["status"], "recovered");
+    assert_eq!(retried["accepted"], first_receipt["accepted"]);
     assert_eq!(n.git(&home, &["rev-parse", "refs/heads/main"]), first_sha);
     assert!(!first_path.exists());
     assert_eq!(snapshot(&home), first_files);
@@ -273,7 +277,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     combined.extend(second_files);
     let second_receipt = n.submit(&home, &second, &second_sha, true);
     n.finished(&home, &second, &second_receipt, &combined, &second_branch);
-    let merge = second_receipt["candidate"].as_str().unwrap();
+    let merge = second_receipt["accepted"].as_str().unwrap();
     let mut parents: Vec<_> = n
         .git(&home, &["show", "-s", "--format=%P", merge])
         .split_whitespace()
@@ -359,13 +363,13 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     assert_eq!(refused["check"], "git_file_conflict");
     assert_eq!(
         n.git(&home, &["rev-parse", "refs/heads/main"]),
-        left_receipt["candidate"].as_str().unwrap()
+        left_receipt["accepted"].as_str().unwrap()
     );
     assert_eq!(snapshot(&home), left_files);
     assert!(right_path.exists());
     assert_eq!(
         n.git(&right_path, &["rev-parse", "MERGE_HEAD"]),
-        left_receipt["candidate"].as_str().unwrap()
+        left_receipt["accepted"].as_str().unwrap()
     );
     assert!(
         !n.git(&right_path, &["ls-files", "-u", "--", &relative])
@@ -378,9 +382,9 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let repaired_files = snapshot(&right_path);
     let repair_receipt = n.submit(&home, &right, &repair_sha, true);
     n.finished(&home, &right, &repair_receipt, &repaired_files, &right_branch);
-    assert_eq!(repair_receipt["candidate"], repair_sha);
+    assert_eq!(repair_receipt["accepted"], repair_sha);
     let next = n.cli(&["worktree", text(&home)]);
-    assert_eq!(next["base"], repair_receipt["candidate"]);
+    assert_eq!(next["base"], repair_receipt["accepted"]);
     let invalid_path = PathBuf::from(next["worktree"].as_str().unwrap());
     let authored = invalid_path.join(&relative);
     let invalid = fs::read_to_string(&authored)
@@ -399,7 +403,7 @@ fn single_save_concurrent_drafts_home_cleanup_and_conflict_repair() {
     let invalid_sha = n.commit(&invalid_path);
     let before_refusal = snapshot(&home);
     let invalid_receipt = n.submit(&home, &next, &invalid_sha, false);
-    assert_eq!(invalid_receipt["status"], "rejected");
+    assert_eq!(invalid_receipt["status"], "not_accepted");
     assert_eq!(invalid_receipt["check"], "candidate_validation_rejected");
     assert_eq!(invalid_receipt["validation"]["status"], "rejected");
     assert!(

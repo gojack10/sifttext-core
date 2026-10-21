@@ -1197,7 +1197,21 @@ fn advance_inner(
         .version
         .as_deref()
         .ok_or("missing checked accepted version")?;
-    advance_checked(policy, home, &before, target, version, pause, before_merge)
+    let identity = fs::symlink_metadata(recovered.view.as_ref().ok_or("missing owned view")?)?;
+    let result = advance_checked(policy, home, &before, target, version, pause, before_merge);
+    let cleanup = crate::checked_publication::remove_owned_view(home, &recovered, &identity);
+    match (result, cleanup) {
+        (Ok(_), Ok(())) => Ok(json!({
+            "status":if before == target {"current"} else {"advanced"},
+            "accepted":target, "version":version, "home":home,
+        })),
+        (result, Err(cleanup)) => Err(format!(
+            "reader advance finishing incomplete (checked accepted {target}); HEAD may already be advanced; owned view {} cleanup incomplete: {cleanup}; {}; retain files and retry",
+            recovered.view.as_ref().ok_or("missing owned view")?.display(),
+            result.err().map(|e| e.to_string()).unwrap_or_else(|| "home refresh verified".into())
+        ).into()),
+        (Err(error), Ok(())) => Err(error),
+    }
 }
 
 fn advance_checked(

@@ -101,8 +101,8 @@ impl Native {
             commit,
             allocation["base"].as_str().unwrap(),
         ]);
-        assert_eq!(receipt["status"], "current", "{receipt:#}");
-        let accepted = receipt["candidate"].as_str().unwrap();
+        assert_eq!(receipt["status"], "saved", "{receipt:#}");
+        let accepted = receipt["accepted"].as_str().unwrap();
         assert_eq!(self.git(home, &["rev-parse", "HEAD"]), accepted);
         assert_eq!(self.git(home, &["rev-parse", "main"]), accepted);
         assert!(!draft.exists(), "successful draft retained");
@@ -172,13 +172,13 @@ fn selected_commit_attribution_survives_fast_forward_and_diverged_submission() {
                 let second_identity = native.git(&home, &["log", "-1", format, &second_commit]);
                 let first_receipt = native.submit(&home, &first, &first_commit);
                 assert_eq!(
-                    first_receipt["candidate"], first_commit,
+                    first_receipt["accepted"], first_commit,
                     "fast-forward must reuse source commit"
                 );
                 assert!(b.exists(), "other worker draft removed");
                 assert_eq!(native.git(b, &["rev-parse", "HEAD"]), second_commit);
                 let second_receipt = native.submit(&home, &second, &second_commit);
-                let merged = second_receipt["candidate"].as_str().unwrap();
+                let merged = second_receipt["accepted"].as_str().unwrap();
                 assert_ne!(
                     merged, second_commit,
                     "divergence requires an integration commit"
