@@ -360,15 +360,13 @@ fn run() -> Result<()> {
                 &explicit.iter().cloned().collect(),
                 None,
                 |receipt| {
-                    let output = serde_json::to_value(receipt)?;
                     check_large_return(
-                        &format!("{}\n", serde_json::to_string_pretty(&output)?),
+                        &format!("{}\n", serde_json::to_string_pretty(&receipt.cli_json())?),
                         force,
                     )
                 },
             )?;
-            normalized.report_reopenings();
-            serde_json::to_value(normalized)?
+            normalized.cli_json()
         }
         [cmd, path] if cmd == "index" => {
             let v = local::refresh(&policy, Path::new(path))?;
