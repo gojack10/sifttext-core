@@ -329,13 +329,14 @@ fn run() -> Result<()> {
             local::restore_session_links(Path::new(home), Path::new(archive))?
         }
         [cmd, path, name, summary, rest @ ..] if cmd == "create" && rest.len() <= 1 => {
-            local::create(
+            let created = local::create(
                 &policy,
                 Path::new(path),
                 name,
                 summary,
                 rest.first().map(String::as_str),
-            )?
+            )?;
+            json!({"id":created["id"],"path":created["path"]})
         }
         [cmd, path, rest @ ..] if cmd == "check" => {
             let force = rest.last().is_some_and(|arg| arg == "-y");

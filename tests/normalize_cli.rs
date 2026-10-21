@@ -263,8 +263,14 @@ fn create_reopens_resolved_chain_and_keeps_lean_receipt_usable() {
     );
     let receipt = decode_lean(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
     let id = receipt["id"].as_str().unwrap();
-    assert_eq!(receipt["parent"], CHILD);
-    assert_eq!(receipt["committed"], false);
+    assert_eq!(receipt.as_object().unwrap().len(), 2);
+    assert!(receipt.get("parent").is_none());
+    assert!(receipt.get("committed").is_none());
+    let head = |path: &Path| Command::new("git").arg("-C").arg(path).args(["rev-parse", "HEAD"]).output().unwrap().stdout;
+    assert_eq!(head(&draft), head(&repo));
+    let before = sifttext_file_graph::lean_render::render(&json!({"id":receipt["id"],"path":receipt["path"],"parent":CHILD,"committed":false})).unwrap();
+    let count = |s: &str| tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(s).len();
+    eprintln!("create child: {} -> {} tokens", count(&before), count(std::str::from_utf8(&output.stdout).unwrap().trim_end()));
     assert_eq!(
         receipt["path"],
         fs::canonicalize(&draft)
