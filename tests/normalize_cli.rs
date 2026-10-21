@@ -59,7 +59,15 @@ fn normalize(before: &Path, after: &Path, notice: &str) -> Value {
     ]);
     success(&output);
     assert_eq!(String::from_utf8_lossy(&output.stderr), notice);
-    serde_json::from_slice(&output.stdout).unwrap()
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    if receipt["status"] == "unchanged" {
+        let tokens = tiktoken_rs::o200k_base_singleton()
+            .lock()
+            .encode_ordinary(std::str::from_utf8(&output.stdout).unwrap())
+            .len();
+        eprintln!("OUTPUT_TOKENS normalize_unchanged={tokens}");
+    }
+    receipt
 }
 
 #[test]
@@ -71,7 +79,7 @@ fn normalize_reports_only_actual_changes_and_refuses_resolution_without_mutation
     fixture(&after);
     assert_eq!(
         normalize(&before, &after, ""),
-        json!({"status":"current", "normalized_ids":[], "reopened_ids":[], "nodes":{PARENT:{"status":"resolved"}}})
+        json!({"status":"unchanged"})
     );
 
     // Neither inactive state alone reopens a resolved parent.
@@ -96,20 +104,20 @@ fn normalize_reports_only_actual_changes_and_refuses_resolution_without_mutation
             link(&after, PARENT, CHILD);
         }
         let unchanged = normalize(&before, &after, "");
-        assert_eq!(unchanged["reopened_ids"], json!([]));
-        assert_eq!(unchanged["nodes"][PARENT]["status"], "resolved");
+        assert_eq!(unchanged, json!({"status":"unchanged"}));
+        assert!(
+            fs::read_to_string(after.join("nodes").join(PARENT).join("node.md"))
+                .unwrap()
+                .contains("status: \"resolved\"")
+        );
     }
     node(&after, CHILD, "in_progress");
-    let reopened = normalize(
-        &before,
-        &after,
-        &format!("[{PARENT}] set to in_progress.\n"),
-    );
+    let reopened = normalize(&before, &after, "");
     assert_eq!(
         reopened,
-        json!({"status":"current", "normalized_ids":[PARENT], "reopened_ids":[PARENT], "nodes":{PARENT:{"status":"in_progress"}, CHILD:{"status":"in_progress"}}})
+        json!({"status":"normalized", "changes":[{"id":PARENT,"from":"resolved","to":"in_progress"}]})
     );
-    assert_eq!(normalize(&after, &after, "")["reopened_ids"], json!([]));
+    assert_eq!(normalize(&after, &after, ""), json!({"status":"unchanged"}));
 
     // Explicit resolution with an active child must fail without touching either store.
     let parent = after.join("nodes").join(PARENT).join("node.md");
@@ -133,6 +141,43 @@ fn normalize_reports_only_actual_changes_and_refuses_resolution_without_mutation
     assert!(refused.stdout.is_empty());
     assert_eq!(Store::read(&before).unwrap().inventory, base);
     assert_eq!(Store::read(&after).unwrap().inventory, candidate);
+}
+
+#[test]
+fn normalize_reports_removed_reason_field_names_without_their_contents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let before = tmp.path().join("before");
+    let after = tmp.path().join("after");
+    fixture(&before);
+    fixture(&after);
+    for (root, status) in [(&before, "stuck"), (&after, "in_progress")] {
+        let path = root.join("nodes").join(PARENT).join("node.md");
+        let text = fs::read_to_string(&path).unwrap().replace(
+            "status: \"resolved\"",
+            &format!("status: {status:?}\nblocker: \"PRIVATE_REASON_CONTENT\""),
+        );
+        fs::write(path, text).unwrap();
+    }
+    let output = cli(&[
+        "normalize",
+        before.to_str().unwrap(),
+        after.to_str().unwrap(),
+        PARENT,
+    ]);
+    success(&output);
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("PRIVATE_REASON_CONTENT"));
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        receipt,
+        json!({"status":"normalized", "changes":[{
+        "id":PARENT,"from":"in_progress","to":"in_progress","removed_reason_fields":["blocker"]}]})
+    );
+    assert!(
+        !fs::read_to_string(after.join("nodes").join(PARENT).join("node.md"))
+            .unwrap()
+            .contains("blocker:")
+    );
 }
 
 fn git(repo: &Path, args: &[&str]) {
@@ -187,19 +232,47 @@ fn normalize_suppresses_large_receipt_before_mutation_and_y_retrieves_it() {
 
     let before_inventory = Store::read(&before).unwrap().inventory;
     let original = Store::read(&after).unwrap().inventory;
+    let accepted = cli(&[
+        "normalize",
+        before.to_str().unwrap(),
+        after.to_str().unwrap(),
+    ]);
+    success(&accepted);
+    assert!(accepted.stderr.is_empty(), "{accepted:?}");
+    let receipt: Value = serde_json::from_slice(&accepted.stdout).unwrap();
+    assert_eq!(
+        receipt,
+        json!({"status":"normalized", "changes":[
+        {"id":last,"from":"not_examined","to":"in_progress"}]})
+    );
+    let tokens = tiktoken_rs::o200k_base_singleton()
+        .lock()
+        .encode_ordinary(std::str::from_utf8(&accepted.stdout).unwrap())
+        .len();
+    eprintln!("OUTPUT_TOKENS normalize_one_change_1025={tokens}");
+    assert!(tokens < 100, "one change grew to {tokens} tokens");
+    assert_eq!(normalize(&after, &after, ""), json!({"status":"unchanged"}));
+    assert_eq!(Store::read(&before).unwrap().inventory, before_inventory);
+
+    // Real large change sets, not unchanged state maps, still require preflight.
+    for (path, entry) in &original {
+        if path.ends_with("node.md")
+            && let sifttext_file_graph::Entry::File(bytes) = entry
+        {
+            let mut text = String::from_utf8(bytes.clone()).unwrap();
+            text.push_str("Edited\n");
+            fs::write(after.join(path), text).unwrap();
+        }
+    }
+    let edited = Store::read(&after).unwrap().inventory;
     let suppressed = cli(&[
         "normalize",
         before.to_str().unwrap(),
         after.to_str().unwrap(),
     ]);
-    assert!(!suppressed.status.success());
-    assert!(
-        String::from_utf8_lossy(&suppressed.stderr).is_empty(),
-        "{suppressed:?}"
-    );
-    assert_eq!(Store::read(&before).unwrap().inventory, before_inventory);
-    assert_eq!(Store::read(&after).unwrap().inventory, original);
-
+    assert!(!suppressed.status.success(), "{suppressed:?}");
+    assert!(suppressed.stderr.is_empty(), "{suppressed:?}");
+    assert_eq!(Store::read(&after).unwrap().inventory, edited);
     let accepted = cli(&[
         "normalize",
         before.to_str().unwrap(),
@@ -207,31 +280,23 @@ fn normalize_suppresses_large_receipt_before_mutation_and_y_retrieves_it() {
         "-y",
     ]);
     success(&accepted);
-    assert_eq!(
-        String::from_utf8_lossy(&accepted.stderr),
-        format!("[{last}] set to in_progress.\n")
-    );
+    assert!(accepted.stderr.is_empty(), "{accepted:?}");
     let receipt: Value = serde_json::from_slice(&accepted.stdout).unwrap();
-    assert_eq!(receipt["normalized_ids"], json!([last]));
-    assert_eq!(receipt["reopened_ids"], json!([last]));
+    assert_eq!(receipt["changes"].as_array().unwrap().len(), 1025);
     let tokens = tiktoken_rs::o200k_base_singleton()
         .lock()
         .encode_ordinary(std::str::from_utf8(&accepted.stdout).unwrap())
         .len();
-    assert!(tokens > 15_000, "receipt rendered as {tokens} tokens");
-    let notice = format!(
-        "[{} tokens suppressed] Re-run this sifttext normalize command with -y to print them.\n",
-        tokens
+    eprintln!("OUTPUT_TOKENS normalize_1025_actual_changes={tokens}");
+    assert!(tokens > 15_000, "actual changes too small: {tokens}");
+    assert_eq!(
+        String::from_utf8_lossy(&suppressed.stdout),
+        format!(
+            "[{tokens} tokens suppressed] Re-run this sifttext normalize command with -y to print them.\n"
+        )
     );
-    assert_eq!(String::from_utf8_lossy(&suppressed.stdout), notice);
-    assert_ne!(Store::read(&after).unwrap().inventory, original);
-
-    let normalized = after.join("nodes").join(last).join("node.md");
-    assert!(
-        fs::read_to_string(normalized)
-            .unwrap()
-            .contains(r#"status: "in_progress""#)
-    );
+    assert_eq!(Store::read(&before).unwrap().inventory, before_inventory);
+    assert_ne!(Store::read(&after).unwrap().inventory, edited);
 }
 
 #[test]

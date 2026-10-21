@@ -306,14 +306,67 @@ pub struct Acceptance {
     pub normalized_ids: Vec<String>,
     pub reopened_ids: Vec<String>,
     pub nodes: BTreeMap<String, StateView>,
+    pub changes: Vec<Change>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct Change {
+    pub id: String,
+    pub from: Status,
+    pub to: Status,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub removed_reason_fields: Vec<String>,
 }
 
 impl Acceptance {
+    /// Own writes only: neither an unchanged draft nor publication approval.
+    pub fn cli_json(&self) -> serde_json::Value {
+        if self.changes.is_empty() {
+            serde_json::json!({"status": "unchanged"})
+        } else {
+            serde_json::json!({"status": "normalized", "changes": self.changes})
+        }
+    }
+
     pub fn report_reopenings(&self) {
         for id in &self.reopened_ids {
             eprintln!("[{id}] set to in_progress.");
         }
     }
+}
+
+#[derive(Debug)]
+struct Incomplete {
+    changes: Vec<Change>,
+    failed_id: Option<String>,
+    cause: Box<dyn std::error::Error>,
+}
+
+impl std::fmt::Display for Incomplete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut value = serde_json::json!({
+            "status": "incomplete", "write_state": "unknown",
+            "changes": self.changes, "reason": self.cause.to_string(),
+            "next_action": "retain and inspect the draft; some status patches may already be applied; recheck before retrying",
+        });
+        if let Some(id) = &self.failed_id {
+            value["failed_id"] = serde_json::json!(id);
+        }
+        write!(f, "{value}")
+    }
+}
+impl std::error::Error for Incomplete {}
+
+// A successful rename is an own write even if a later patch or verification fails.
+fn apply_changes(changes: &[Change], mut apply: impl FnMut(&str) -> Result<()>) -> Result<()> {
+    for (index, change) in changes.iter().enumerate() {
+        apply(&change.id).map_err(|cause| Incomplete {
+            changes: changes[..index].to_vec(),
+            failed_id: Some(change.id.clone()),
+            cause,
+        })?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -408,11 +461,30 @@ pub fn normalize_with_preflight(
         })
         .cloned()
         .collect();
+    let changes = ids
+        .iter()
+        .map(|id| {
+            let from = &candidate_states[id];
+            let to = State::read(std::str::from_utf8(bytes(&normalized, id)?)?)?;
+            Ok(Change {
+                id: id.clone(),
+                from: from.status,
+                to: to.status,
+                removed_reason_fields: from
+                    .reasons
+                    .keys()
+                    .filter(|key| !to.reasons.contains_key(*key))
+                    .cloned()
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let receipt = Acceptance {
         status: "current",
         normalized_ids: ids.clone(),
         reopened_ids,
         nodes,
+        changes,
     };
     preflight(&receipt)?;
     // ponytail: <=256 nodes; stage complete files instead of in-place writes.
@@ -438,39 +510,86 @@ pub fn normalize_with_preflight(
     before_capture.unchanged_all()?;
     candidate_capture.unchanged_all()?;
     policy.verify_stamp()?;
-    for id in &ids {
+    apply_changes(&receipt.changes, |id| {
         let destination = candidate.path.join(node_path(id));
         require(
             crate::read_regular(&destination)? == bytes(candidate, id)?,
             "node changed before patch",
         )?;
         fs::rename(staging.path().join(id), destination)?;
-    }
-    let (accepted, metadata) = Store::capture_view(&candidate.path, None)?;
-    require(
-        accepted.inventory == normalized.inventory,
-        "normalized candidate changed during acceptance",
-    )?;
-    let after_states = states(&metadata)?;
-    let accepted = Acceptance {
-        status: "current",
-        normalized_ids: ids,
-        reopened_ids: receipt.reopened_ids.clone(),
-        nodes: after_states
-            .into_iter()
-            .map(|(id, state)| {
-                (
-                    id,
-                    StateView {
-                        status: state.status,
-                    },
-                )
-            })
-            .collect(),
+        Ok(())
+    })?;
+    let verify = || -> Result<Acceptance> {
+        let (accepted, metadata) = Store::capture_view(&candidate.path, None)?;
+        require(
+            accepted.inventory == normalized.inventory,
+            "normalized candidate changed during acceptance",
+        )?;
+        let after_states = states(&metadata)?;
+        let accepted = Acceptance {
+            status: "current",
+            normalized_ids: ids,
+            reopened_ids: receipt.reopened_ids.clone(),
+            changes: receipt.changes.clone(),
+            nodes: after_states
+                .into_iter()
+                .map(|(id, state)| {
+                    (
+                        id,
+                        StateView {
+                            status: state.status,
+                        },
+                    )
+                })
+                .collect(),
+        };
+        require(
+            accepted == receipt,
+            "normalized receipt changed during acceptance",
+        )?;
+        Ok(accepted)
     };
-    require(
-        accepted == receipt,
-        "normalized receipt changed during acceptance",
-    )?;
-    Ok(accepted)
+    verify().map_err(|cause| {
+        if receipt.changes.is_empty() {
+            cause
+        } else {
+            Box::new(Incomplete {
+                changes: receipt.changes,
+                failed_id: None,
+                cause,
+            }) as Box<dyn std::error::Error>
+        }
+    })
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+
+    #[test]
+    fn a_later_write_failure_keeps_confirmed_changes_and_names_the_uncertain_patch() {
+        let changes: Vec<_> = ["first", "second", "third"]
+            .into_iter()
+            .map(|id| Change {
+                id: id.into(),
+                from: Status::NotExamined,
+                to: Status::InProgress,
+                removed_reason_fields: vec![],
+            })
+            .collect();
+        let mut writes = vec![];
+        let error = apply_changes(&changes, |id| {
+            require(id != "second", "synthetic write refusal")?;
+            writes.push(id.to_owned());
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(writes, ["first"]);
+        let output: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+        assert_eq!(output["status"], "incomplete");
+        assert_eq!(output["write_state"], "unknown");
+        assert_eq!(output["failed_id"], "second");
+        assert_eq!(output["changes"], serde_json::json!([changes[0]]));
+        assert!(output["next_action"].as_str().unwrap().contains("retain"));
+    }
 }

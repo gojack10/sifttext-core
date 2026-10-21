@@ -69,6 +69,8 @@ fn refusal(home: &Path, store: &Path, args: &[&str], expected: &[&str]) {
         "graph_mode",
         "e8234ea5-3467-4f2b-8ca2-2bcc5cc80d11",
         "capture_or_graph_invalid",
+        "crystallization_tokens",
+        "before_version:_",
     ] {
         assert!(!text.contains(forbidden), "leaked {forbidden}: {text}");
     }
@@ -259,4 +261,29 @@ fn legacy_marker_and_shared_capture_errors_are_actionable_and_read_only() {
     let out = cli(&home, &["instructions"]);
     assert!(out.status.success(), "{out:?}");
     assert_eq!(fs::read(store.join("nodes/.keep")).unwrap(), b"");
+
+    // A late per-node validation failure inherits the same failure-only view in
+    // read, instructions, worktree allocation and supplied-bundle initialization.
+    fs::write(
+        &entry,
+        original.replace("see_also:", "ruled_out: []\nsee_also:"),
+    )
+    .unwrap();
+    let destination = home.join("refused-init");
+    for args in [
+        vec!["check", store_arg],
+        vec!["read", store_arg, ENTRY],
+        vec!["instructions", store_arg],
+        vec!["worktree", store_arg],
+        vec!["init", destination.to_str().unwrap(), "--bundle", store_arg],
+    ] {
+        refusal(
+            &home,
+            &store,
+            &args,
+            &[ENTRY, "ruled_out_removed", "rows[1]"],
+        );
+        assert!(!destination.exists());
+    }
+    fs::write(entry, original).unwrap();
 }
