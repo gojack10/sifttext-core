@@ -1414,7 +1414,7 @@ fn validate_session_snapshot(path: &Path, descriptor: &Value) -> Result<()> {
 /// leave the previously retained copy untouched.
 pub fn capture_session(source: &Path, descriptor: &Value, archive_root: &Path) -> Result<Value> {
     if descriptor["availability"] == "unavailable" {
-        return Ok(json!({"status":"source_unavailable","commit":null}));
+        return Ok(json!({"status":"source_unavailable"}));
     }
     let session_id = descriptor["session_id"]
         .as_str()

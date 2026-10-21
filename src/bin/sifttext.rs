@@ -126,9 +126,10 @@ fn run() -> Result<()> {
         let [_, home] = args.as_slice() else {
             return Err("usage: sifttext session-backup HOME".into());
         };
+        let receipt = local::backup_session_archive(Path::new(home))?;
         println!(
             "{}",
-            serde_json::to_string(&local::backup_session_archive(Path::new(home))?)?
+            serde_json::to_string(&json!({"status":receipt["status"], "commit":receipt["commit"]}))?
         );
         return Ok(());
     }
