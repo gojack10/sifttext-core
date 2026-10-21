@@ -442,26 +442,24 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         &commit,
         allocation["base"].as_str().unwrap(),
     ]);
-    assert_eq!(receipt["status"], "current");
-    assert_eq!(receipt["published"], true);
-    assert_eq!(receipt["draft_commit"], commit);
+    assert_eq!(receipt["status"], "saved");
+    assert_eq!(receipt["accepted"], commit);
     assert_eq!(inventory(&other), committed_inventory);
     assert_eq!(receipt["home"], o);
-    assert_eq!(receipt["view"], o);
     assert_eq!(receipt["worktree_removed"], true);
     assert!(!draft.exists());
     assert_eq!(n.git(&other, &["rev-parse", "HEAD"]), commit);
     assert_eq!(
         n.json(&[
             "sql",
-            receipt["view"].as_str().unwrap(),
+            receipt["home"].as_str().unwrap(),
             "SELECT count(*) FROM nodes"
         ])["rows"][0]["c0"],
         (source_nodes + 1).to_string()
     );
     let advanced = n.json(&["advance", o]);
-    assert_eq!(advanced["accepted"], receipt["candidate"]);
-    assert_eq!(advanced["advanced"], false);
+    assert_eq!(advanced["accepted"], receipt["accepted"]);
+    assert_eq!(advanced["status"], "current");
     assert_eq!(
         n.json(&["search", o, "Defaultbundlescratchtrial"])["rows"][0]["id"],
         created["id"]
@@ -478,7 +476,8 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         &revert_commit,
         recovery["base"].as_str().unwrap(),
     ]);
-    assert_eq!(restored["published"], true);
+    assert_eq!(restored["status"], "saved");
+    assert_eq!(restored["accepted"], revert_commit);
     n.json(&["advance", o]);
     assert_eq!(
         n.json(&["sql", o, "SELECT count(*) FROM nodes"])["rows"][0]["c0"],
