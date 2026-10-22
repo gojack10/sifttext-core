@@ -360,7 +360,7 @@ fn run_command(mut cmd: Command) -> Result<Output> {
         if let Some(s) = child.try_wait()? {
             break s;
         }
-        if start.elapsed() >= Duration::from_secs(10) {
+        if start.elapsed() >= Duration::from_secs(30) {
             child.kill()?;
             child.wait()?;
             return Err("Git helper timeout".into());
