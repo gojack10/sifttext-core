@@ -67,6 +67,15 @@ To upgrade a healthy managed installation, use `sifttext update` within your upd
 
 Continue local work during a blocked knowledge merge while your agent reconciles the retained private worktree within your permission.
 
+## Ordinary Git compatibility
+
+For large homes, [explicit ordinary-Git acceleration](docs/git-compatibility.md)
+can reduce warm status work using Git's built-in monitor and untracked cache.
+It is opt-in, repository-local, capability/filesystem gated, and currently
+qualified only on local internal macOS APFS. Initialization does not enable it;
+setup and re-prime deliberately allow an index write without staging user files.
+It does not repair or accelerate Core's isolated checked-publication helpers.
+
 ## Inspect a release
 
 Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. A matching checksum establishes byte agreement with the release record. Build provenance requires separate evidence.
