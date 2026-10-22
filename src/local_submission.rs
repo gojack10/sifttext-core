@@ -36,6 +36,7 @@ fn lock(path: &Path, wait: bool) -> Result<fs::File> {
         .create(true)
         .truncate(false)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .mode(0o600)
         .open(path)?;
     use std::os::unix::fs::MetadataExt;
     require(
@@ -85,6 +86,68 @@ fn draft_key(draft: &Path) -> Result<String> {
     Ok(format!("{:x}", Sha256::digest(draft.as_os_str().as_encoded_bytes())))
 }
 
+// Discoverable without .git or the Store: recursive Git removal can unlink
+// .git before removing the root. This UID-private, per-path gate is always
+// acquired first, including by genuine standalone stores. Never unlink gates
+// or their directory (even after cleanup); waiters retain the same inode.
+// /tmp is intentional, not caller-specific TMPDIR/HOME. Clearing this internal
+// namespace requires quiescing all native mutators for this UID first.
+fn lifecycle_root() -> Result<PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    let parent = fs::canonicalize("/tmp")?;
+    let metadata = fs::symlink_metadata(&parent)?;
+    require(metadata.is_dir() && metadata.uid() == 0 && metadata.mode() & 0o1000 != 0,
+        "unsafe lifecycle gate parent")?;
+    let root = parent.join(format!("sifttext-lifecycle-{}", unsafe { libc::geteuid() }));
+    if let Err(error) = fs::DirBuilder::new().mode(0o700).create(&root)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(error.into());
+    }
+    check_lifecycle_directory(&root)?;
+    Ok(root)
+}
+
+fn check_lifecycle_directory(root: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(root)?;
+    require(metadata.is_dir() && metadata.uid() == unsafe { libc::geteuid() }
+        && metadata.mode() & 0o777 == 0o700 && fs::canonicalize(root)? == root,
+        "unsafe lifecycle gate directory")
+}
+
+pub(super) fn lifecycle_lock(path: &Path, wait: bool) -> Result<fs::File> {
+    use std::os::unix::fs::MetadataExt;
+    let path = std::path::absolute(path)?;
+    // Canonicalize parent aliases, never a reused final symlink. Session APIs
+    // also accept relative roots; publication retains its stricter path checks.
+    let path = match path.file_name() {
+        Some(name) => fs::canonicalize(path.parent().ok_or("missing root parent")?)?.join(name),
+        None => fs::canonicalize(&path)?,
+    };
+    let key = format!("{:x}", Sha256::digest(path.as_os_str().as_encoded_bytes()));
+    let root = lifecycle_root()?;
+    let lock_path = root.join(format!("{key}.lock"));
+    let file = lock(&lock_path, wait)?;
+    let metadata = file.metadata()?;
+    let named = fs::symlink_metadata(&lock_path)?;
+    require(metadata.uid() == unsafe { libc::geteuid() }
+        && metadata.mode() & 0o777 == 0o600
+        && (metadata.dev(), metadata.ino()) == (named.dev(), named.ino()),
+        "unsafe lifecycle gate file")?;
+    Ok(file)
+}
+
+// A retained bit also fails closed after interrupted partial deletion. A path
+// once used by Git is not silently reclassified as a fresh standalone store.
+pub(super) fn mark_git_lifecycle(file: &mut fs::File) -> Result<()> {
+    if file.metadata()?.len() == 0 {
+        file.write_all(b"G")?;
+        file.sync_all()?;
+    }
+    Ok(())
+}
+
 pub(super) fn draft_lock(repo: &Path, draft: &Path, wait: bool) -> Result<fs::File> {
     lock(&save_root(repo)?.join(format!("{}.lock", draft_key(draft)?)), wait)
 }
@@ -96,6 +159,7 @@ pub(super) fn home_lock(home: &Path, wait: bool) -> Result<fs::File> {
 // Only this module can construct a lease. Checked publication borrows it rather
 // than recursively acquiring the same lock; completion retains it through removal.
 pub(crate) struct DraftLease {
+    _lifecycle: fs::File,
     _file: fs::File,
     _home_file: Option<fs::File>,
     root: PathBuf,
@@ -103,9 +167,13 @@ pub(crate) struct DraftLease {
 }
 impl DraftLease {
     pub(crate) fn acquire(repo: &Path, draft: &Path) -> Result<Self> {
+        let mut lifecycle = lifecycle_lock(draft, false)?;
         let root = save_root(repo)?;
         let key = draft_key(draft)?;
         let file = lock(&root.join(format!("{key}.lock")), false)?;
+        if fs::symlink_metadata(draft.join(".git")).is_ok() {
+            mark_git_lifecycle(&mut lifecycle)?;
+        }
         // The low-level API also accepts a branch-owned primary worktree as a
         // draft. Its session operations use home.lock, unlike linked drafts.
         let home_file = if fs::symlink_metadata(draft).is_ok_and(|m| m.is_dir())
@@ -117,7 +185,7 @@ impl DraftLease {
         } else {
             None
         };
-        Ok(Self { _file: file, _home_file: home_file, root, key })
+        Ok(Self { _lifecycle: lifecycle, _file: file, _home_file: home_file, root, key })
     }
 
     pub(crate) fn check(&self, repo: &Path, draft: Option<&Path>) -> Result<()> {

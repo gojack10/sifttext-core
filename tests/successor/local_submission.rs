@@ -1057,20 +1057,18 @@ fn attachment_lifetime_capture_submit_restore_and_legacy_residues() {
     let sidecar = format!("nodes/{node}/session-sources.json");
     let records = fs::read(draft.join(&sidecar)).unwrap();
     let base = git(&home, &["rev-parse", "main"]);
-    // Old lock residues and unrelated ignored user files still refuse cleanup.
-    // No auto-migration, blanket ignored-file allowlist or held-lock unlinking.
-    for relative in [".sifttext/locks/session-attach-legacy.lock", ".sifttext/private-note.txt"] {
-        let path = draft.join(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, b"preserve").unwrap();
-        let refused = submit(&policy, &q).unwrap();
-        assert_ne!(refused["status"], "current", "{refused}");
-        assert_eq!(fs::read(&path).unwrap(), b"preserve");
-        assert_eq!(fs::read(draft.join(&sidecar)).unwrap(), records);
-        assert_eq!(git(&home, &["rev-parse", "main"]), base);
-        // Only this fixture's unheld residue is removed by its owner.
-        fs::remove_file(path).unwrap();
-    }
+    // Unrelated ignored user data still refuses cleanup. Legacy custody has
+    // its stronger exact-candidate retry regression below; no duplicate submit.
+    let path = draft.join(".sifttext/private-note.txt");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"preserve").unwrap();
+    let refused = submit(&policy, &q).unwrap();
+    assert_ne!(refused["status"], "current", "{refused}");
+    assert_eq!(fs::read(&path).unwrap(), b"preserve");
+    assert_eq!(fs::read(draft.join(&sidecar)).unwrap(), records);
+    assert_eq!(git(&home, &["rev-parse", "main"]), base);
+    // Only this fixture's unheld note is removed by its owner.
+    fs::remove_file(path).unwrap();
     let saved = submit(&policy, &q).unwrap();
     assert_eq!(saved["status"], "current", "{saved}");
     assert_eq!(saved["worktree_removed"], true);
@@ -1129,7 +1127,6 @@ fn attachment_lifetime_serializes_restore_and_all_publication_entries() {
     let sidecar = draft.join(format!("nodes/{node}/session-sources.json"));
     let newer = fs::read(&sidecar).unwrap();
     let main = git(&home, &["rev-parse", "main"]);
-    assert_ne!(submit(&policy, &q).unwrap()["status"], "current");
     assert_eq!(checked_publication::submit(&policy, &q).status, "rejected");
     assert_eq!(fs::read(sidecar).unwrap(), newer);
     assert_eq!(git(&home, &["rev-parse", "main"]), main);
@@ -1138,6 +1135,7 @@ fn attachment_lifetime_serializes_restore_and_all_publication_entries() {
 
 #[test]
 fn attachment_lifetime_rejects_symlink_and_hardlink_lock_files() {
+    use std::os::unix::fs::PermissionsExt;
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().canonicalize().unwrap();
     let (policy, home, q, _) = fixture(&dir);
@@ -1145,19 +1143,39 @@ fn attachment_lifetime_rejects_symlink_and_hardlink_lock_files() {
     let node = crate::Store::read(draft).unwrap().nodes.keys().next().unwrap().clone();
     let descriptor = json!({"schema_version":1,"harness":"pi","availability":"unavailable"});
     let root = super::save_root(&home).unwrap();
-    let path = root.join(format!("{}.lock", super::draft_key(draft).unwrap()));
+    let key = super::draft_key(draft).unwrap();
+    let gate = super::lifecycle_root().unwrap().join(format!("{key}.lock"));
     let target = dir.join("user-file");
     fs::write(&target, b"private fixture").unwrap();
-    for hardlink in [false, true] {
-        if hardlink { fs::hard_link(&target, &path).unwrap(); }
-        else { std::os::unix::fs::symlink(&target, &path).unwrap(); }
-        assert!(local::attach_session(draft, &node, &descriptor, "sample", &dir).is_err());
-        assert!(local::restore_session_links(draft, &dir).is_err());
-        assert!(submit(&policy, &q).is_err());
-        assert_eq!(checked_publication::save(&policy, &q).status, "rejected");
-        assert_eq!(fs::read(&target).unwrap(), b"private fixture");
-        fs::remove_file(&path).unwrap();
+    for path in [root.join(format!("{key}.lock")), gate.clone()] {
+        // Only this fixture's unused lock names; no live handles or waiters.
+        if path.exists() { fs::remove_file(&path).unwrap(); }
+        for hardlink in [false, true] {
+            if hardlink { fs::hard_link(&target, &path).unwrap(); }
+            else { std::os::unix::fs::symlink(&target, &path).unwrap(); }
+            assert!(local::attach_session(draft, &node, &descriptor, "sample", &dir).is_err());
+            assert!(local::restore_session_links(draft, &dir).is_err());
+            assert!(submit(&policy, &q).is_err());
+            assert_eq!(checked_publication::save(&policy, &q).status, "rejected");
+            assert_eq!(fs::read(&target).unwrap(), b"private fixture");
+            fs::remove_file(&path).unwrap();
+        }
     }
+    drop(super::lifecycle_lock(draft, false).unwrap());
+    fs::set_permissions(&gate, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(local::restore_session_links(draft, &dir).is_err());
+    fs::set_permissions(&gate, fs::Permissions::from_mode(0o600)).unwrap();
+    // Check the shared-namespace trust boundary using private specimen paths;
+    // never change the real UID namespace while other native processes run.
+    let shared = dir.join("shared-gate-directory");
+    fs::create_dir(&shared).unwrap();
+    fs::set_permissions(&shared, fs::Permissions::from_mode(0o777)).unwrap();
+    assert!(super::check_lifecycle_directory(&shared).is_err());
+    fs::set_permissions(&shared, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(super::check_lifecycle_directory(&shared).is_ok());
+    let alias = dir.join("gate-alias");
+    std::os::unix::fs::symlink(&shared, &alias).unwrap();
+    assert!(super::check_lifecycle_directory(&alias).is_err());
 }
 
 #[test]
@@ -1228,6 +1246,84 @@ fn attachment_lifetime_process_worker() {
         Err(error) => json!({"ok":false,"error":error.to_string()}),
     };
     fs::write(value["output"].as_str().unwrap(), serde_json::to_vec(&result).unwrap()).unwrap();
+}
+
+#[test]
+fn attachment_lifetime_missing_git_window() {
+    use std::os::unix::fs::MetadataExt;
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap();
+    let (policy, home, q, other) = fixture(&dir);
+    let draft = q.draft.as_ref().unwrap();
+    let node = crate::Store::read(draft).unwrap().nodes.keys().next().unwrap().clone();
+    let (descriptor, archive, _) = session_fixture(&dir);
+    let lease = super::DraftLease::acquire(&home, draft).unwrap();
+    let identity = lease._lifecycle.metadata().unwrap();
+    let sidecar = draft.join(format!("nodes/{node}/session-sources.json"));
+    assert!(!sidecar.exists());
+    let state_before = fs::read_dir(draft.join(".sifttext")).ok()
+        .map(|entries| entries.map(|e| e.unwrap().file_name()).collect::<BTreeSet<_>>());
+    // Deterministic partial-removal boundary: the real publication lease is
+    // held, .git is gone, and the root and native Store are still present.
+    fs::rename(draft.join(".git"), dir.join("removed-git-entry")).unwrap();
+    assert!(!draft.join(".git").exists());
+    assert!(draft.join("nodes").exists());
+    let alias = dir.join("parent-alias");
+    std::os::unix::fs::symlink(draft.parent().unwrap(), &alias).unwrap();
+    assert!(super::lifecycle_lock(&alias.join(draft.file_name().unwrap()), false).is_err());
+    let reused = dir.join("reused-draft");
+    std::os::unix::fs::symlink(draft, &reused).unwrap();
+    // A reused final symlink does not switch to its target's lifecycle key.
+    drop(super::lifecycle_lock(&reused, false).unwrap());
+    assert!(local::restore_session_links(&reused, &archive).is_err());
+    let mut workers = Vec::new();
+    for operation in ["attach", "restore"] {
+        let path = dir.join(format!("{operation}.json"));
+        let started = dir.join(format!("{operation}.started"));
+        let output = dir.join(format!("{operation}.output"));
+        fs::write(&path, serde_json::to_vec(&json!({
+            "operation":operation,"home":draft,"archive":archive,"node":node,
+            "descriptor":descriptor,"started":started,"output":output
+        })).unwrap()).unwrap();
+        let child = PendingChild(Some(Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "local::submission::tests::attachment_lifetime_process_worker", "--nocapture"])
+            .env("SIFTTEXT_ATTACHMENT_LIFETIME_REQUEST", path)
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()));
+        let start = Instant::now();
+        while !started.exists() {
+            assert!(start.elapsed() < Duration::from_secs(5));
+            thread::sleep(Duration::from_millis(5));
+        }
+        workers.push((child, output));
+    }
+    thread::sleep(Duration::from_millis(150));
+    assert!(workers.iter().all(|(_, output)| !output.exists()), "session entry bypassed real publication lease after .git disappeared");
+    assert!(!sidecar.exists());
+    assert_eq!(fs::read_dir(draft.join(".sifttext")).ok()
+        .map(|entries| entries.map(|e| e.unwrap().file_name()).collect::<BTreeSet<_>>()), state_before);
+    let other_node = local::create(&policy, &other, "Independent", "Other draft.", None).unwrap();
+    local::attach_session(&other, other_node["id"].as_str().unwrap(),
+        &json!({"schema_version":1,"harness":"pi","availability":"unavailable"}), "sample", &archive).unwrap();
+    fs::remove_dir_all(draft).unwrap();
+    drop(lease);
+    for (mut worker, output) in workers {
+        assert!(worker.0.take().unwrap().wait().unwrap().success());
+        let result: serde_json::Value = serde_json::from_slice(&fs::read(output).unwrap()).unwrap();
+        assert_eq!(result["ok"], false, "{result}");
+    }
+    assert!(!draft.exists());
+    assert!(local::restore_session_links(draft, &archive).is_err());
+    assert!(!draft.exists());
+    let gate = super::lifecycle_lock(draft, false).unwrap();
+    let after = gate.metadata().unwrap();
+    assert_eq!((after.dev(), after.ino(), after.nlink()), (identity.dev(), identity.ino(), 1));
+    drop(gate);
+    // Simulate a leftover/reused root after interrupted cleanup, not a native
+    // recreation. The retained Git bit forbids standalone lock-dir creation.
+    fs::create_dir(draft).unwrap();
+    assert!(local::restore_session_links(draft, &archive).is_err());
+    assert!(!draft.join(".sifttext").exists());
+    fs::remove_dir(draft).unwrap();
 }
 
 #[test]
