@@ -167,7 +167,13 @@ To skip background checks, run `sifttext update --mode disabled`. Alternatively 
 
 For older installations, consult their installed command help and update guide before using settings flags. If standing grants are unsupported, ask before each update.
 
-For a blocked update, read the installed Managed Releases and Updates guide and inspect `sifttext update --status`. Reconcile any conflicting knowledge draft under that guide, then check and commit the resolution before `sifttext update --resume`.
+For local diagnosis, use `sifttext update --local-status` if the installed help lists it. This reads only the recorded application-update journal and activation-marker presence: no release request, cache/config/state write, lock creation/acquisition or activation. It works while ordinary readers or an updater hold the application mutex. Missing, invalid or unsafe state is refused without creating files. It does not inspect credentials, the knowledge home, Git worktrees, native save journals/tombstones or SQLite.
+
+The receipt is **not an atomic snapshot** across state and marker, and does not verify the current launcher, accepted knowledge HEAD, pin/settings, lock ownership or publication readiness. During concurrent activation it may show last recorded identities and a marker observed at a different moment. Preserve these observations and any refusal; do not infer permission to resume, publish or remove a lock.
+
+`update --status` retains its existing meaning: explicitly fetch/check releases and record attempt/success/cache state without installing a release. It requires the exclusive application-update mutex and can report `update busy` while an ordinary managed command holds a shared lock. `SIFTTEXT_NO_UPDATE=1` skips opportunistic checks only; it does not make `--status` read-only or disable an explicit update. Older installations without `--local-status` have no equivalent safe inspection flag: consult their guide and inspect the recorded files with ordinary read-only tools instead of treating `--status` as a lock probe.
+
+For a blocked update, read the installed Managed Releases and Updates guide and inspect `sifttext update --local-status` (or the older version's documented status operation, with its release-check side effects understood). Reconcile any conflicting knowledge draft under that guide, then check and commit the resolution before `sifttext update --resume`. Actual updates, install initialization and recovery retain exclusion against ordinary operations; local inspection never bypasses those safeguards.
 
 To restore the retained previous release, use `sifttext update --rollback` under the installed recovery guide. Preserve any required checked knowledge reversal and follow that version's instructions to finish activation.
 

@@ -40,7 +40,9 @@ sifttext logout                           Revoke remote login; always remove loc
 sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
 sifttext update [-y]                       Check/apply official updates; -y allows >15000 tokens
-sifttext update --status                    Check releases; show recorded identities and pending work
+sifttext update --status                    Check releases (network/writes; needs exclusive update lock)
+sifttext update --local-status              Read recorded update state only; no lock/network/writes
+                                          Not an atomic snapshot or knowledge-publication clearance
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext update --rebuild                   Rebuild the selected local source and retain its pin
@@ -155,6 +157,7 @@ fn run() -> Result<()> {
             [_, mode]
                 if [
                     "--status",
+                    "--local-status",
                     "--resume",
                     "--rollback",
                     "--config",
