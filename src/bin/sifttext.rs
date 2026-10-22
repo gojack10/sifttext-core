@@ -169,6 +169,8 @@ fn run() -> Result<()> {
                     mode.clone()
                 }
             }
+            [_, flag] if flag.starts_with("--attach-node=") => flag.clone(),
+            [_, flag, value] if flag == "--attach-node" => format!("--attach-node={value}"),
             [_, flag, value] if flag == "--pin" => format!("--pin={value}"),
             [_, flag, value]
                 if (flag == "--grant" && ["standing", "ask"].contains(&value.as_str()))
