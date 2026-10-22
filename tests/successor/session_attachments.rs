@@ -345,6 +345,7 @@ fn concurrent_same_node_attachments_preserve_every_record_and_link() {
     let home = tempfile::tempdir().unwrap();
     let archive = tempfile::tempdir().unwrap();
     fixture(home.path());
+    git(home.path(), &["init", "-q", "-b", "main"]);
     let count = 8;
     let start = Arc::new(Barrier::new(count));
     let workers: Vec<_> = (0..count)
@@ -461,7 +462,7 @@ fn checked_publication_keeps_source_descriptors_but_not_local_chat_links() {
     );
 
     fixture(&draft);
-    let descriptor = serde_json::to_vec(&json!([{
+    let source_descriptor = json!({
         "schema_version": 1,
         "harness": "pi",
         "session_id": "00000000-0000-4000-8000-000000000001",
@@ -471,15 +472,15 @@ fn checked_publication_keeps_source_descriptors_but_not_local_chat_links() {
         "branch_entry_ids": ["entry-1"],
         "leaf_id": "entry-1",
         "cutoff_entry_id": "entry-1"
-    }]))
-    .unwrap();
+    });
     let descriptor_path = format!("nodes/{NODE}/session-sources.json");
-    fs::write(draft.join(&descriptor_path), &descriptor).unwrap();
-    let archive = temp.path().join("archive.jsonl");
+    let archive_root = temp.path().join("archive");
+    let archive = archive_root.join(source_descriptor["archive_key"].as_str().unwrap());
+    fs::create_dir_all(archive.parent().unwrap()).unwrap();
     fs::write(&archive, "synthetic source\n").unwrap();
+    local::attach_session(&draft, NODE, &source_descriptor, "synthetic topic", &archive_root).unwrap();
+    let descriptor = fs::read(draft.join(&descriptor_path)).unwrap();
     let chats = draft.join(format!("nodes/{NODE}/artifacts/chats"));
-    fs::create_dir_all(&chats).unwrap();
-    std::os::unix::fs::symlink(&archive, chats.join("pi-synthetic-topic.jsonl")).unwrap();
     let exclude = git(
         &draft,
         &[

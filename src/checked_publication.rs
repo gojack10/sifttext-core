@@ -1076,12 +1076,14 @@ fn accepted_index(
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None)
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None)
 }
 
 /// Submit through the normal structural checks, then require a caller-provided
 /// semantic verdict bound to this exact candidate commit and rule snapshot.
 /// Core does not select a provider or decide whether review is mandatory.
+/// The reviewer runs under draft custody and must not reenter session mutation
+/// or publication for that draft.
 pub fn submit_reviewed(
     policy: &Policy,
     request: &Request,
@@ -1096,6 +1098,7 @@ pub fn submit_reviewed(
         None,
         &mut |_, _| Ok(()),
         Some((mode, rules, &mut review)),
+        None,
     )
 }
 
@@ -1113,12 +1116,25 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record, None)
+    submit_inner(policy, request, true, previous_heads, &mut record, None, None)
 }
 
-pub(crate) fn save_prepared_reviewed(
+pub(crate) fn save_prepared_leased(
     policy: &Policy,
     request: &Request,
+    lease: &crate::local::DraftLease,
+    previous_heads: Option<(&str, &str)>,
+    mut record: impl FnMut(&str, &str) -> Result<()>,
+) -> Receipt {
+    submit_inner(
+        policy, request, true, previous_heads, &mut record, None, Some(lease),
+    )
+}
+
+pub(crate) fn save_prepared_reviewed_leased(
+    policy: &Policy,
+    request: &Request,
+    lease: &crate::local::DraftLease,
     mode: ReviewMode,
     rules: &[u8],
     previous_heads: Option<(&str, &str)>,
@@ -1132,6 +1148,7 @@ pub(crate) fn save_prepared_reviewed(
         previous_heads,
         &mut record,
         Some((mode, rules, review)),
+        Some(lease),
     )
 }
 
@@ -1142,6 +1159,7 @@ fn submit_inner(
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
     review: Option<(ReviewMode, &[u8], &mut SemanticReviewer<'_>)>,
+    lease: Option<&crate::local::DraftLease>,
 ) -> Receipt {
     let start = Instant::now();
     let mut receipt = Receipt {
@@ -1164,18 +1182,26 @@ fn submit_inner(
         semantic_findings: vec![],
         elapsed_ms: 0,
     };
-    if execute(
-        policy,
-        request,
-        &mut receipt,
-        in_draft,
-        previous_heads,
-        record,
-        review,
-    )
-    .is_err()
-        && receipt.published
-    {
+    let result = (|| -> Result<()> {
+        // Every library entry owns custody too. The completion layer passes its
+        // existing lease so the lock stays held through normal-home finishing.
+        let owned;
+        let lease = if let Some(lease) = lease {
+            Some(lease)
+        } else if let Some(draft) = &request.draft {
+            owned = crate::local::DraftLease::acquire(&request.repo, draft)?;
+            Some(&owned)
+        } else {
+            None
+        };
+        if let Some(lease) = lease {
+            lease.check(&request.repo, request.draft.as_deref())?;
+        }
+        execute(
+            policy, request, &mut receipt, in_draft, previous_heads, record, review,
+        )
+    })();
+    if result.is_err() && receipt.published {
         receipt.status = "unavailable";
         receipt.check = "published_view_requires_recovery";
         receipt.view = None;

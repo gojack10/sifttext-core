@@ -1720,9 +1720,45 @@ fn session_archive_lock(root: &Path) -> Result<fs::File> {
     Ok(lock)
 }
 
-fn session_attachment_lock(home: &Path, node_id: &str) -> Result<fs::File> {
+pub(crate) use submission::DraftLease;
+
+fn session_attachment_lock(home: &Path) -> Result<fs::File> {
     use std::os::unix::fs::MetadataExt;
 
+    crate::real_dir(home)?;
+    let versioned = match fs::symlink_metadata(home.join(".git")) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    if versioned {
+        let common = PathBuf::from(reader_git(
+            home,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?);
+        let own = PathBuf::from(reader_git(home, &["rev-parse", "--absolute-git-dir"])?);
+        let lock = if own == common {
+            submission::home_lock(home, true)?
+        } else {
+            submission::draft_lock(home, home, true)?
+        };
+        // The directory/registration may have disappeared while waiting. Do not
+        // recreate a removed draft or reuse its stale store/sidecar snapshot.
+        crate::real_dir(home)?;
+        require(
+            reader_git(home, &["rev-parse", "--absolute-git-dir"])?
+                == own.to_str().ok_or("non-UTF-8 Git directory")?
+                && reader_git(home, &["rev-parse", "--show-toplevel"])?
+                    == home.to_str().ok_or("non-UTF-8 home")?
+                && reader_git(home, &["worktree", "list", "--porcelain", "-z"])?
+                    .split('\0')
+                    .any(|row| row == format!("worktree {}", home.display())),
+            "session worktree changed while waiting",
+        )?;
+        return Ok(lock);
+    }
+    // Standalone stores remain supported. Serialize their sidecars and restore
+    // under one home-local lock; they have no publication/removal lifecycle.
     let state = home.join(".sifttext");
     if let Err(error) = fs::create_dir(&state)
         && error.kind() != std::io::ErrorKind::AlreadyExists
@@ -1743,7 +1779,7 @@ fn session_attachment_lock(home: &Path, node_id: &str) -> Result<fs::File> {
         .create(true)
         .truncate(false)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(locks.join(format!("session-attach-{node_id}.lock")))?;
+        .open(locks.join("session-attach.lock"))?;
     require(
         lock.metadata()?.is_file() && lock.metadata()?.nlink() == 1,
         "unsafe session attachment lock",
@@ -1762,6 +1798,8 @@ pub fn attach_session(
     attach_session_with_gate(home, node_id, descriptor, topic, archive_root, |_| Ok(()))
 }
 
+/// The gate runs under session custody; it must not reenter attachment,
+/// restore or publication for the same store.
 pub fn attach_session_with_gate(
     home: &Path,
     node_id: &str,
@@ -1783,7 +1821,9 @@ pub fn attach_session_with_gate(
                     && descriptor["archive_key"].as_str().is_some())),
         "valid session descriptor required",
     )?;
-    let store = Store::read(home)?;
+    let home = fs::canonicalize(home)?;
+    let _attachment_lock = session_attachment_lock(&home)?;
+    let store = Store::read(&home)?;
     require(store.nodes.contains_key(node_id), "session node is absent")?;
     let home = store.path;
     let available = descriptor["availability"] == "available";
@@ -1794,7 +1834,6 @@ pub fn attach_session_with_gate(
     };
     let node = home.join("nodes").join(node_id);
     crate::real_dir(&node)?;
-    let _attachment_lock = session_attachment_lock(&home, node_id)?;
     let sidecar = node.join("session-sources.json");
     let mut records: Vec<Value> = if sidecar.exists() {
         serde_json::from_slice(&crate::read_regular(&sidecar)?)?
@@ -2018,7 +2057,9 @@ pub fn backup_session_archive(home: &Path) -> Result<Value> {
 
 pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> {
     require(archive_root.is_absolute(), "archive_root must be absolute")?;
-    let settings = session_retention_settings(home)?;
+    let home = fs::canonicalize(home)?;
+    let _attachment_lock = session_attachment_lock(&home)?;
+    let settings = session_retention_settings(&home)?;
     let (enabled, _, backup_enabled, remote) = retention_fields(&settings)?;
     let cloned = if !archive_root.exists() {
         require(
@@ -2066,7 +2107,7 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
         )?;
         git(&root, &["merge", "--ff-only", "FETCH_HEAD"])?;
     }
-    let store = Store::read(home)?;
+    let store = Store::read(&home)?;
     let home = store.path;
     // A home that arrived by clone or pull carries no `.git/info/exclude` rules, so
     // re-apply them before writing private links; otherwise they surface as untracked

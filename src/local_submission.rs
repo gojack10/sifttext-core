@@ -29,7 +29,7 @@ struct Pending {
     completed_head: Option<String>,
 }
 
-fn lock(path: &Path) -> Result<fs::File> {
+fn lock(path: &Path, wait: bool) -> Result<fs::File> {
     let file = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -42,9 +42,91 @@ fn lock(path: &Path) -> Result<fs::File> {
         file.metadata()?.is_file() && file.metadata()?.nlink() == 1,
         "unsafe save lock",
     )?;
-    file.try_lock()
-        .map_err(|e| format!("save busy; retain draft and retry: {e}"))?;
+    if wait {
+        file.lock()?;
+    } else {
+        file.try_lock()
+            .map_err(|e| format!("save busy; retain draft and retry: {e}"))?;
+    }
     Ok(file)
+}
+
+// Common Git metadata survives worktree removal. Never unlink these lock files:
+// a waiter must acquire the same inode even after the submitted draft disappears.
+fn save_root(repo: &Path) -> Result<PathBuf> {
+    let repo = fs::canonicalize(repo)?;
+    let common = PathBuf::from(reader_git(
+        &repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?);
+    crate::real_dir(&common)?;
+    require(fs::canonicalize(&common)? == common, "noncanonical Git metadata")?;
+    let root = common.join("sifttext-saves");
+    if let Err(error) = fs::create_dir(&root)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(error.into());
+    }
+    crate::real_dir(&root)?;
+    Ok(root)
+}
+
+fn draft_key(draft: &Path) -> Result<String> {
+    use std::path::Component;
+    require(
+        draft.is_absolute()
+            && draft.components().all(|c| matches!(c, Component::RootDir | Component::Normal(_))),
+        "draft must be an absolute canonical path",
+    )?;
+    // Resolve parent aliases, not the last component: a completed draft path
+    // reused as a symlink must retain the original journal/lock identity.
+    let draft = fs::canonicalize(draft.parent().ok_or("missing draft parent")?)?
+        .join(draft.file_name().ok_or("missing draft name")?);
+    Ok(format!("{:x}", Sha256::digest(draft.as_os_str().as_encoded_bytes())))
+}
+
+pub(super) fn draft_lock(repo: &Path, draft: &Path, wait: bool) -> Result<fs::File> {
+    lock(&save_root(repo)?.join(format!("{}.lock", draft_key(draft)?)), wait)
+}
+
+pub(super) fn home_lock(home: &Path, wait: bool) -> Result<fs::File> {
+    lock(&save_root(home)?.join("home.lock"), wait)
+}
+
+// Only this module can construct a lease. Checked publication borrows it rather
+// than recursively acquiring the same lock; completion retains it through removal.
+pub(crate) struct DraftLease {
+    _file: fs::File,
+    _home_file: Option<fs::File>,
+    root: PathBuf,
+    key: String,
+}
+impl DraftLease {
+    pub(crate) fn acquire(repo: &Path, draft: &Path) -> Result<Self> {
+        let root = save_root(repo)?;
+        let key = draft_key(draft)?;
+        let file = lock(&root.join(format!("{key}.lock")), false)?;
+        // The low-level API also accepts a branch-owned primary worktree as a
+        // draft. Its session operations use home.lock, unlike linked drafts.
+        let home_file = if fs::symlink_metadata(draft).is_ok_and(|m| m.is_dir())
+            && fs::symlink_metadata(draft.join(".git")).is_ok()
+            && Path::new(&reader_git(draft, &["rev-parse", "--absolute-git-dir"])?)
+                == root.parent().ok_or("missing common Git directory")?
+        {
+            Some(lock(&root.join("home.lock"), false)?)
+        } else {
+            None
+        };
+        Ok(Self { _file: file, _home_file: home_file, root, key })
+    }
+
+    pub(crate) fn check(&self, repo: &Path, draft: Option<&Path>) -> Result<()> {
+        require(
+            draft.map(draft_key).transpose()?.as_deref() == Some(self.key.as_str())
+                && save_root(repo)? == self.root,
+            "publication lease does not match submitted draft",
+        )
+    }
 }
 
 fn persist(path: &Path, pending: &Pending) -> Result<()> {
@@ -89,18 +171,14 @@ fn submit_inner(
         "unsupported home accepted ref",
     )?;
     let home = &request.repo;
-    reader_state(home)?; // Fail before publication if the normal home has user edits.
     let draft = request.draft.as_ref().ok_or("missing draft")?;
     require(draft.is_absolute(), "draft must be absolute")?;
     let commit = request.commit.as_ref().ok_or("missing submitted commit")?;
     let base = request.base.as_ref().ok_or("missing submitted base")?;
-    let root = home.join(".git/sifttext-saves");
-    if !root.try_exists()? {
-        fs::create_dir(&root)?;
-    }
-    crate::real_dir(&root)?;
-    let key = format!("{:x}", Sha256::digest(draft.as_os_str().as_encoded_bytes()));
-    let _draft_lock = lock(&root.join(format!("{key}.lock")))?;
+    let draft_lease = DraftLease::acquire(home, draft)?;
+    reader_state(home)?; // Recheck after acquiring custody, before publication.
+    let root = save_root(home)?;
+    let key = draft_key(draft)?;
     let journal = root.join(format!("{key}.json"));
     let mut pending: Pending = if journal.try_exists()? {
         serde_json::from_slice(&crate::read_regular(&journal)?)?
@@ -180,9 +258,10 @@ fn submit_inner(
             persist(&journal, &pending)
         };
         let receipt = if let Some((mode, rules, reviewer)) = review.as_mut() {
-            checked_publication::save_prepared_reviewed(
+            checked_publication::save_prepared_reviewed_leased(
                 policy,
                 request,
+                &draft_lease,
                 *mode,
                 *rules,
                 previous_heads
@@ -192,9 +271,10 @@ fn submit_inner(
                 record,
             )
         } else {
-            checked_publication::save_prepared(
+            checked_publication::save_prepared_leased(
                 policy,
                 request,
+                &draft_lease,
                 previous_heads
                     .as_ref()
                     .map(|(from, to)| (from.as_str(), to.as_str())),
@@ -249,7 +329,7 @@ fn submit_inner(
         .ok_or("missing checked version")?;
     // Save preparation stays concurrent; serialize only normal-home finishing.
     let finish = || -> Result<Value> {
-        let _home_lock = lock(&root.join("home.lock"))?;
+        let _home_lock = home_lock(home, false)?;
         let before = reader_state(home)?;
         let advanced = advance_checked(policy, home, &before, target, version, None, || Ok(()))?;
         require(
