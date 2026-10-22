@@ -1168,6 +1168,7 @@ fn advance_inner(
     pause: Option<&index::PauseBeforeAccept>,
     before_merge: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
+    let _home_lock = submission::home_lock(home, false)?;
     let before = reader_state(home)?;
     let recovered = crate::checked_publication::submit(
         policy,
