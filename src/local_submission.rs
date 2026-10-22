@@ -116,15 +116,19 @@ fn check_lifecycle_directory(root: &Path) -> Result<()> {
         "unsafe lifecycle gate directory")
 }
 
-pub(super) fn lifecycle_lock(path: &Path, wait: bool) -> Result<fs::File> {
-    use std::os::unix::fs::MetadataExt;
+pub(super) fn lifecycle_path(path: &Path) -> Result<PathBuf> {
     let path = std::path::absolute(path)?;
-    // Canonicalize parent aliases, never a reused final symlink. Session APIs
-    // also accept relative roots; publication retains its stricter path checks.
-    let path = match path.file_name() {
+    // Path components strip trailing slash/dot syntax. Resolve parent aliases,
+    // never a final symlink: validation must use this same gate spelling.
+    Ok(match path.file_name() {
         Some(name) => fs::canonicalize(path.parent().ok_or("missing root parent")?)?.join(name),
         None => fs::canonicalize(&path)?,
-    };
+    })
+}
+
+pub(super) fn lifecycle_lock(path: &Path, wait: bool) -> Result<fs::File> {
+    use std::os::unix::fs::MetadataExt;
+    let path = lifecycle_path(path)?;
     let key = format!("{:x}", Sha256::digest(path.as_os_str().as_encoded_bytes()));
     let root = lifecycle_root()?;
     let lock_path = root.join(format!("{key}.lock"));

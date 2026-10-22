@@ -121,6 +121,14 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
     let archive = tempfile::tempdir().unwrap();
     let relocated = tempfile::tempdir().unwrap();
     fixture(home.path());
+    // Relative input through a parent alias remains a genuine standalone root;
+    // slash/dot suffixes must not be rejected wholesale.
+    let alias_dir = tempfile::tempdir_in(".").unwrap();
+    let parent_alias = alias_dir.path().join("parent");
+    std::os::unix::fs::symlink(home.path().parent().unwrap(), &parent_alias).unwrap();
+    let relative_home = parent_alias.strip_prefix(std::env::current_dir().unwrap()).unwrap()
+        .join(home.path().file_name().unwrap());
+    assert!(!relative_home.is_absolute());
     let key = "sessions/session-1.jsonl";
     let source = archive.path().join(key);
     fs::create_dir_all(source.parent().unwrap()).unwrap();
@@ -137,7 +145,7 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
         "cutoff_entry_id": "entry-1"
     });
     let attached = local::attach_session(
-        home.path(),
+        Path::new(&format!("{}/", relative_home.display())),
         NODE,
         &descriptor,
         "sample topic",
@@ -155,7 +163,7 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
     fs::create_dir_all(moved.parent().unwrap()).unwrap();
     fs::write(&moved, "synthetic session\n").unwrap();
     assert_eq!(
-        local::restore_session_links(home.path(), relocated.path()).unwrap()["links"],
+        local::restore_session_links(Path::new(&format!("{}/.", relative_home.display())), relocated.path()).unwrap()["links"],
         1
     );
     assert_eq!(

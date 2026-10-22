@@ -1723,12 +1723,13 @@ fn session_archive_lock(root: &Path) -> Result<fs::File> {
 
 pub(crate) use submission::DraftLease;
 
-fn session_attachment_lock(home: &Path) -> Result<(fs::File, Option<fs::File>)> {
+fn session_attachment_lock(home: &Path) -> Result<(PathBuf, (fs::File, Option<fs::File>))> {
     // Before .git classification, and retained through every Store mutation.
     // A cleanup waiter revalidates before creating even standalone lock dirs.
-    let mut lifecycle = submission::lifecycle_lock(home, true)?;
-    crate::real_dir(home)?;
-    let canonical_home = fs::canonicalize(home)?;
+    let home = submission::lifecycle_path(home)?;
+    let mut lifecycle = submission::lifecycle_lock(&home, true)?;
+    crate::real_dir(&home)?;
+    let canonical_home = fs::canonicalize(&home)?;
     let home = canonical_home.as_path();
     let versioned = match fs::symlink_metadata(home.join(".git")) {
         Ok(_) => true,
@@ -1760,12 +1761,12 @@ fn session_attachment_lock(home: &Path) -> Result<(fs::File, Option<fs::File>)> 
                     .any(|row| row == format!("worktree {}", home.display())),
             "session worktree changed while waiting",
         )?;
-        return Ok((lifecycle, Some(lock)));
+        return Ok((canonical_home, (lifecycle, Some(lock))));
     }
     require(lifecycle.metadata()?.len() == 0, "Git session root disappeared; retain files for recovery")?;
     // Genuine standalone stores need only the per-root gate. No local lock
     // directory is needed, and no old lock residue is deleted or allowlisted.
-    Ok((lifecycle, None))
+    Ok((canonical_home, (lifecycle, None)))
 }
 
 pub fn attach_session(
@@ -1801,8 +1802,7 @@ pub fn attach_session_with_gate(
                     && descriptor["archive_key"].as_str().is_some())),
         "valid session descriptor required",
     )?;
-    let _attachment_lock = session_attachment_lock(home)?;
-    let home = fs::canonicalize(home)?;
+    let (home, _attachment_lock) = session_attachment_lock(home)?;
     let store = Store::read(&home)?;
     require(store.nodes.contains_key(node_id), "session node is absent")?;
     let home = store.path;
@@ -2037,8 +2037,7 @@ pub fn backup_session_archive(home: &Path) -> Result<Value> {
 
 pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> {
     require(archive_root.is_absolute(), "archive_root must be absolute")?;
-    let _attachment_lock = session_attachment_lock(home)?;
-    let home = fs::canonicalize(home)?;
+    let (home, _attachment_lock) = session_attachment_lock(home)?;
     let settings = session_retention_settings(&home)?;
     let (enabled, _, backup_enabled, remote) = retention_fields(&settings)?;
     let cloned = if !archive_root.exists() {

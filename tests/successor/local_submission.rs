@@ -1257,6 +1257,10 @@ fn attachment_lifetime_missing_git_window() {
     let draft = q.draft.as_ref().unwrap();
     let node = crate::Store::read(draft).unwrap().nodes.keys().next().unwrap().clone();
     let (descriptor, archive, _) = session_fixture(&dir);
+    // The final alias exists before custody starts; only .git removal below
+    // synthesizes the controlled recursive-cleanup boundary.
+    let reused = dir.join("reused-draft");
+    std::os::unix::fs::symlink(draft, &reused).unwrap();
     let lease = super::DraftLease::acquire(&home, draft).unwrap();
     let identity = lease._lifecycle.metadata().unwrap();
     let sidecar = draft.join(format!("nodes/{node}/session-sources.json"));
@@ -1271,11 +1275,62 @@ fn attachment_lifetime_missing_git_window() {
     let alias = dir.join("parent-alias");
     std::os::unix::fs::symlink(draft.parent().unwrap(), &alias).unwrap();
     assert!(super::lifecycle_lock(&alias.join(draft.file_name().unwrap()), false).is_err());
-    let reused = dir.join("reused-draft");
-    std::os::unix::fs::symlink(draft, &reused).unwrap();
-    // A reused final symlink does not switch to its target's lifecycle key.
-    drop(super::lifecycle_lock(&reused, false).unwrap());
-    assert!(local::restore_session_links(&reused, &archive).is_err());
+    // Snapshot every entry, file byte and link target, without following links.
+    fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, (u32, u64, u64, Vec<u8>)> {
+        let mut entries = std::collections::BTreeMap::new();
+        for entry in fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            let m = fs::symlink_metadata(&path).unwrap();
+            let bytes = if m.is_symlink() { fs::read_link(&path).unwrap().as_os_str().as_encoded_bytes().to_vec() }
+                else if m.is_file() { fs::read(&path).unwrap() } else { Vec::new() };
+            entries.insert(path.clone(), (m.mode(), m.ino(), m.nlink(), bytes));
+            if m.is_dir() { entries.extend(snapshot(&path)); }
+        }
+        entries
+    }
+    let before = snapshot(draft);
+    // Real OS-process API calls must reject all final-alias spellings, both
+    // during deletion custody and after interrupted cleanup releases custody.
+    let alias_attempts = |stage: &str| {
+        let mut results = Vec::new();
+        for suffix in ["", "/", "/."] {
+            let supplied = PathBuf::from(format!("{}{suffix}", reused.display()));
+            // A final symlink never switches to the target's lifecycle key.
+            drop(super::lifecycle_lock(&supplied, false).unwrap());
+            for operation in ["attach", "restore"] {
+                let name = format!("{stage}-{operation}-{}", results.len());
+                let request = dir.join(format!("{name}.json"));
+                let output = dir.join(format!("{name}.output"));
+                fs::write(&request, serde_json::to_vec(&json!({
+                    "operation":operation,"home":supplied,"archive":archive,"node":node,
+                    "descriptor":descriptor,"started":dir.join(format!("{name}.started")),"output":output
+                })).unwrap()).unwrap();
+                let status = Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "local::submission::tests::attachment_lifetime_process_worker", "--nocapture"])
+                    .env("SIFTTEXT_ATTACHMENT_LIFETIME_REQUEST", request)
+                    .stdout(Stdio::null()).stderr(Stdio::null()).status().unwrap();
+                assert!(status.success());
+                let result: serde_json::Value = serde_json::from_slice(&fs::read(output).unwrap()).unwrap();
+                eprintln!("{stage} {operation} alias{suffix}: {result}");
+                results.push(result);
+            }
+        }
+        assert!(results.iter().all(|r| r["ok"] == false), "final alias bypassed lifecycle custody: {results:?}");
+        assert_eq!(snapshot(draft), before, "alias entry mutated the real draft");
+    };
+    alias_attempts("held");
+    for suffix in ["/", "/."] {
+        assert!(super::lifecycle_lock(Path::new(&format!("{}{suffix}", draft.display())), false).is_err());
+    }
+    // `alias/..` is the target's parent, not the final alias identity.
+    let parent_gate = super::lifecycle_lock(draft.parent().unwrap(), false).unwrap();
+    assert!(super::lifecycle_lock(&reused.join(".."), false).is_err());
+    drop(parent_gate);
+    drop(lease);
+    alias_attempts("retained");
+    assert!(local::restore_session_links(draft, &archive).is_err());
+    // Reacquire the real lease for the original missing-root waiter check.
+    let lease = super::DraftLease::acquire(&home, draft).unwrap();
     let mut workers = Vec::new();
     for operation in ["attach", "restore"] {
         let path = dir.join(format!("{operation}.json"));
@@ -1304,6 +1359,7 @@ fn attachment_lifetime_missing_git_window() {
     let other_node = local::create(&policy, &other, "Independent", "Other draft.", None).unwrap();
     local::attach_session(&other, other_node["id"].as_str().unwrap(),
         &json!({"schema_version":1,"harness":"pi","availability":"unavailable"}), "sample", &archive).unwrap();
+    assert_eq!(snapshot(draft), before);
     fs::remove_dir_all(draft).unwrap();
     drop(lease);
     for (mut worker, output) in workers {
