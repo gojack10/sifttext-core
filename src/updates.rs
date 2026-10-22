@@ -2510,18 +2510,53 @@ mod tests {
         )
         .unwrap();
         assert_eq!(repair_receipt["status"], "current", "{repair_receipt}");
-        let attached = update(
-            &root,
-            &format!("--attach-node={}", undertaking["id"].as_str().unwrap()),
-        )
-        .unwrap();
-        assert_eq!(attached["status"], "repair_attached");
-        // The repair undertaking is registered by its stable accepted location in the customer
-        // home. The draft worktree path returned at creation is removed once publication finishes,
-        // so it cannot be the handoff address an agent returns to later.
+        let invoke_update = |args: &[&str]| {
+            Command::new(crate::native_bin("sifttext"))
+                .arg("update")
+                .args(args)
+                .env("SIFTTEXT_INSTALL_ROOT", &root)
+                .output()
+                .unwrap()
+        };
         let repair_id = undertaking["id"].as_str().unwrap();
         let repair_path = state.home.join("nodes").join(repair_id).join("node.md");
-        assert_eq!(attached["path"], repair_path.to_string_lossy().as_ref());
+        let attached_arg = format!("--attach-node={repair_id}");
+        for args in [
+            &[attached_arg.as_str()][..],
+            &["--attach-node", repair_id][..],
+        ] {
+            let output = invoke_update(args);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let attached =
+                crate::outlines::decode_lean(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+            assert_eq!(attached["status"], "repair_attached");
+            assert_eq!(attached["repair_node"], repair_id);
+            // Publication removes the draft; later agents need the accepted home path.
+            assert_eq!(attached["path"], repair_path.to_string_lossy().as_ref());
+            let saved: State = load(&root.join("state.json")).unwrap();
+            assert_eq!(
+                saved.pending.unwrap().repair_node.as_deref(),
+                Some(repair_id)
+            );
+        }
+        let saved = fs::read(root.join("state.json")).unwrap();
+        let outside_id = a.parent().unwrap().file_name().unwrap().to_str().unwrap();
+        for (id, message) in [
+            ("not-a-uuid", "invalid maintenance node UUID"),
+            (
+                outside_id,
+                "repair node must belong to SiftText Maintenance",
+            ),
+        ] {
+            let output = invoke_update(&["--attach-node", id]);
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr).contains(message));
+            assert_eq!(fs::read(root.join("state.json")).unwrap(), saved);
+        }
         assert!(
             repair_path.is_file(),
             "repair node is not readable at {repair_path:?}"
@@ -2531,11 +2566,19 @@ mod tests {
             state.pending.as_ref().unwrap().repair_node.as_deref(),
             undertaking["id"].as_str()
         );
-        let later_notice = update(&root, "").unwrap();
+        let output = invoke_update(&[]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let later_notice =
+            crate::outlines::decode_lean(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
         assert_eq!(later_notice["status"], "needs_agent");
-        assert_eq!(later_notice["repair"]["repair_node"], undertaking["id"]);
+        let repair: Value = serde_json::from_str(later_notice["repair"].as_str().unwrap()).unwrap();
+        assert_eq!(repair["repair_node"], undertaking["id"]);
         assert_eq!(
-            later_notice["repair"]["repair_node_path"],
+            repair["repair_node_path"],
             repair_path.to_string_lossy().as_ref()
         );
         let pending = state.pending.as_ref().unwrap();
@@ -2563,6 +2606,11 @@ mod tests {
                 .unwrap()
                 .contains("Customer and official paragraphs reconciled.")
         );
+        let saved = fs::read(root.join("state.json")).unwrap();
+        let output = invoke_update(&[attached_arg.as_str()]);
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("no update is pending"));
+        assert_eq!(fs::read(root.join("state.json")).unwrap(), saved);
     }
     #[test]
     fn shared_operation_excludes_activation_and_state_writes_are_atomic() {
