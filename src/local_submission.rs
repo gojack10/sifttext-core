@@ -171,6 +171,19 @@ pub(crate) struct DraftLease {
 }
 impl DraftLease {
     pub(crate) fn acquire(repo: &Path, draft: &Path) -> Result<Self> {
+        // A concurrent fork can briefly retain another thread's CLOEXEC file
+        // descriptions until exec. Tolerate only that bounded admission handoff;
+        // scratch recovery still uses a single nonwaiting lifecycle_lock.
+        let start = std::time::Instant::now();
+        loop {
+            match Self::acquire_once(repo, draft) {
+                Err(error) if error.to_string().contains("save busy") && start.elapsed() < std::time::Duration::from_millis(50) => std::thread::sleep(std::time::Duration::from_millis(2)),
+                result => return result,
+            }
+        }
+    }
+
+    fn acquire_once(repo: &Path, draft: &Path) -> Result<Self> {
         let mut lifecycle = lifecycle_lock(draft, false)?;
         let root = save_root(repo)?;
         let key = draft_key(draft)?;
@@ -190,6 +203,12 @@ impl DraftLease {
             None
         };
         Ok(Self { _lifecycle: lifecycle, _file: file, _home_file: home_file, root, key })
+    }
+
+    pub(crate) fn custody(&self) -> Result<checked_publication::Custody> {
+        let mut files = vec![&self._lifecycle, &self._file];
+        if let Some(home) = &self._home_file { files.push(home); }
+        checked_publication::Custody::new(&files)
     }
 
     pub(crate) fn check(&self, repo: &Path, draft: Option<&Path>) -> Result<()> {
@@ -248,6 +267,7 @@ fn submit_inner(
     let commit = request.commit.as_ref().ok_or("missing submitted commit")?;
     let base = request.base.as_ref().ok_or("missing submitted base")?;
     let draft_lease = DraftLease::acquire(home, draft)?;
+    let _custody = draft_lease.custody()?;
     reader_state(home)?; // Recheck after acquiring custody, before publication.
     let root = save_root(home)?;
     let key = draft_key(draft)?;
@@ -401,7 +421,8 @@ fn submit_inner(
         .ok_or("missing checked version")?;
     // Save preparation stays concurrent; serialize only normal-home finishing.
     let finish = || -> Result<Value> {
-        let _home_lock = home_lock(home, false)?;
+        let home_lock = home_lock(home, false)?;
+        let _home_custody = checked_publication::Custody::new(&[&home_lock])?;
         let before = reader_state(home)?;
         let advanced = advance_checked(policy, home, &before, target, version, None, || Ok(()))?;
         require(
@@ -495,20 +516,8 @@ fn submit_inner(
             )?;
         }
         if missing {
-            // This recovery's temporary checked view is ours, never another draft.
-            reader_git(
-                home,
-                &[
-                    "worktree",
-                    "remove",
-                    receipt
-                        .view
-                        .as_ref()
-                        .ok_or("missing recovery view")?
-                        .to_str()
-                        .ok_or("non-UTF-8 recovery view")?,
-                ],
-            )?;
+            let identity = fs::symlink_metadata(receipt.view.as_ref().ok_or("missing recovery view")?)?;
+            checked_publication::remove_owned_view(home, &receipt, &identity)?;
         }
         // ponytail: retain completed journals; GC needs an explicit retry-retention contract.
         // Retain completed custody as an idempotency tombstone. Losing stdout after

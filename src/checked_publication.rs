@@ -1,15 +1,18 @@
 //! Cooperative local Git publication. Git merges authored files; caches never merge.
 //! The accepted branch must not be checked out. `save` checks the submitted draft;
 //! the low-level `submit` retains its detached-view recovery/observer contract.
+mod lifetime;
+mod owned;
 use crate::{Policy, Result, candidate_validation as gate, index, require};
+pub(crate) use lifetime::Custody;
+use owned::WorkingView;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     fs,
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
-    sync::mpsc,
+    process::{Command, Output},
     thread,
     time::{Duration, Instant},
 };
@@ -111,6 +114,10 @@ pub struct Receipt {
     pub graph_checks: Vec<gate::GraphCheck>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub semantic_findings: Vec<SemanticFinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle: Vec<owned::Note>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<&'static str>,
     pub elapsed_ms: u128,
 }
 impl Receipt {
@@ -120,7 +127,8 @@ impl Receipt {
             "accepted_before":self.accepted_before,"candidate":self.candidate,
             "tree":self.tree,"draft_commit":self.draft_commit,"draft_base":self.draft_base,
             "draft_branch":self.draft_branch,"version":self.version,
-            "rule":gate::CANDIDATE_RULE,"rows":[],
+            "failure_kind":self.failure_kind,
+            "rule":gate::CANDIDATE_RULE,"rows":self.lifecycle,
         }))
         .map_err(|e| std::io::Error::other(e).into())
     }
@@ -175,8 +183,19 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
             gate::customer_report(&mut validation);
             failure["validation"] = validation;
         }
+        for key in ["failure_kind", "lifecycle"] {
+            if !value[key].is_null() {
+                failure[key] = value[key].clone();
+            }
+        }
         failure
     };
+    if let Some(notes) = value.get("lifecycle").and_then(|v| v.as_array()) {
+        let incomplete: Vec<_> = notes.iter().filter(|n| n["cleanup"] != "removed").collect();
+        if !incomplete.is_empty() {
+            output["lifecycle"] = serde_json::to_value(incomplete)?;
+        }
+    }
     if let Some(findings) = value
         .get("semantic_findings")
         .filter(|v| v.as_array().is_some_and(|v| !v.is_empty()))
@@ -230,6 +249,8 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
         draft_index_available: false,
         graph_checks: vec![graph],
         semantic_findings: vec![],
+        lifecycle: vec![],
+        failure_kind: None,
         elapsed_ms: 0,
     };
     let output: serde_json::Value = serde_json::from_str(&cli_json(&receipt).unwrap()).unwrap();
@@ -280,7 +301,12 @@ fn cli_publication_projects_outcomes_without_success_diagnostics() {
     assert_eq!(render(value.clone())["status"], "not_accepted");
     value["publication"] = json!("accepted_incomplete");
     value["accepted"] = json!("previously-saved");
+    value["failure_kind"] = json!("timeout");
+    value["lifecycle"] = json!([{"phase":"setup", "kind":"timeout", "record":"/scratch/owner.json", "cleanup":"busy"}]);
     let failure = render(value);
+    assert_eq!(failure["failure_kind"], "timeout");
+    assert_eq!(failure["lifecycle"][0]["cleanup"], "busy");
+    assert!(failure.get("view").is_none());
     assert_eq!(failure["accepted"], "previously-saved");
     assert!(
         failure.get("version").is_none(),
@@ -323,6 +349,10 @@ fn command(repo: &Path, args: &[&str]) -> Command {
             "merge.autoStash=false",
             "-c",
             "rerere.enabled=false",
+            "-c",
+            "gc.auto=0",
+            "-c",
+            "maintenance.auto=false",
         ])
         .args(args);
     cmd
@@ -331,57 +361,8 @@ fn command(repo: &Path, args: &[&str]) -> Command {
 fn run(repo: &Path, args: &[&str]) -> Result<Output> {
     run_command(command(repo, args))
 }
-fn run_command(mut cmd: Command) -> Result<Output> {
-    const CAP: usize = 16 * 1024 * 1024;
-    let mut child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let pipes: [Box<dyn Read + Send>; 2] = [
-        Box::new(child.stdout.take().ok_or("missing stdout")?),
-        Box::new(child.stderr.take().ok_or("missing stderr")?),
-    ];
-    let (tx, rx) = mpsc::channel();
-    for (tag, pipe) in pipes.into_iter().enumerate() {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let result = pipe
-                .take((CAP + 1) as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
-            let _ = tx.send((tag, result));
-        });
-    }
-    drop(tx);
-    let start = Instant::now();
-    let status = loop {
-        if let Some(s) = child.try_wait()? {
-            break s;
-        }
-        if start.elapsed() >= Duration::from_secs(30) {
-            child.kill()?;
-            child.wait()?;
-            return Err("Git helper timeout".into());
-        }
-        thread::sleep(Duration::from_millis(2));
-    };
-    let mut bytes = [Vec::new(), Vec::new()];
-    for _ in 0..2 {
-        let (tag, result) = rx.recv_timeout(Duration::from_secs(1))?;
-        bytes[tag] = result?;
-    }
-    require(
-        bytes.iter().map(Vec::len).sum::<usize>() <= CAP,
-        "Git output resource limit",
-    )?;
-    let [stdout, stderr] = bytes;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
+pub(crate) fn run_command(cmd: Command) -> Result<Output> {
+    lifetime::run(cmd)
 }
 fn git(repo: &Path, args: &[&str]) -> Result<String> {
     let out = run(repo, args)?;
@@ -928,113 +909,14 @@ fn authored_tree(repo: &Path, revision: &str) -> Result<()> {
     }
     Ok(())
 }
-struct WorkingView {
-    repo: PathBuf,
-    dir: tempfile::TempDir,
-    path: PathBuf,
-    retained: bool,
-}
-impl WorkingView {
-    fn new(repo: &Path, root: &Path, revision: &str) -> Result<Self> {
-        let dir = tempfile::Builder::new()
-            .prefix("submission-")
-            .tempdir_in(root)?;
-        let path = dir.path().join("view");
-        git(
-            repo,
-            &[
-                "worktree",
-                "add",
-                "--quiet",
-                "--detach",
-                path.to_str().ok_or("non-UTF-8 path")?,
-                revision,
-            ],
-        )?;
-        Ok(Self {
-            repo: repo.into(),
-            dir,
-            path,
-            retained: false,
-        })
-    }
-    fn retain(mut self) -> PathBuf {
-        self.retained = true;
-        let path = self.path.clone();
-        // Drop uses the retained bit; keep directory without moving out of Drop.
-        self.dir.disable_cleanup(true);
-        path
-    }
-}
-impl Drop for WorkingView {
-    fn drop(&mut self) {
-        if !self.retained {
-            let _ = run(
-                &self.repo,
-                &[
-                    "worktree",
-                    "remove",
-                    "--force",
-                    self.path.to_str().unwrap_or(""),
-                ],
-            );
-        }
-    }
-}
-
-/// Retire only the verified detached view returned to this invocation. Callers
-/// must never discover/adopt old views for cleanup. Refuse edits or path reuse;
-/// Git removal is non-forced and the parent must be empty before removal.
-pub(crate) fn remove_owned_view(repo: &Path, receipt: &Receipt, identity: &fs::Metadata) -> Result<()> {
-    use std::os::unix::fs::MetadataExt;
-    require(receipt.status == "current", "unverified cleanup view")?;
-    let view = receipt.view.as_ref().ok_or("missing owned view")?;
-    let current = fs::symlink_metadata(view)?;
-    require(
-        current.is_dir() && current.dev() == identity.dev() && current.ino() == identity.ino(),
-        "owned view identity changed; preserve it",
-    )?;
-    let parent = view.parent().ok_or("missing owned view parent")?;
-    let root = repo.join(".git/sifttext-publications");
-    require(
-        view.file_name().is_some_and(|name| name == "view")
-            && parent.parent() == Some(root.as_path())
-            && parent
-                .file_name()
-                .is_some_and(|name| name.as_encoded_bytes().starts_with(b"submission-"))
-            && fs::canonicalize(view)? == *view,
-        "unsafe owned view path; preserve it",
-    )?;
-    require(
-        git(
-            view,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        )? == repo.join(".git").to_str().ok_or("non-UTF-8 home")?,
-        "owned view repository changed; preserve it",
-    )?;
-    require(
-        !run(view, &["symbolic-ref", "--quiet", "HEAD"])?
-            .status
-            .success(),
-        "owned view acquired a branch; preserve it",
-    )?;
-    clean(
-        view,
-        receipt
-            .candidate
-            .as_deref()
-            .ok_or("missing owned view revision")?,
-    )?;
-    git(
-        repo,
-        &[
-            "worktree",
-            "remove",
-            view.to_str().ok_or("non-UTF-8 owned view")?,
-        ],
-    )?;
-    fs::remove_dir(parent)?;
-    Ok(())
+/// Retire a matching verified retained reader through the same exact finish
+/// used for disposable views. This never adopts an unrecorded legacy view.
+pub(crate) fn remove_owned_view(
+    repo: &Path,
+    receipt: &Receipt,
+    identity: &fs::Metadata,
+) -> Result<()> {
+    owned::remove_returned(repo, receipt, identity)
 }
 
 fn accepted_index(
@@ -1180,8 +1062,11 @@ fn submit_inner(
         draft_index_available: false,
         graph_checks: vec![],
         semantic_findings: vec![],
+        lifecycle: vec![],
+        failure_kind: None,
         elapsed_ms: 0,
     };
+    let notes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let result = (|| -> Result<()> {
         // Every library entry owns custody too. The completion layer passes its
         // existing lease so the lock stays held through normal-home finishing.
@@ -1197,10 +1082,20 @@ fn submit_inner(
         if let Some(lease) = lease {
             lease.check(&request.repo, request.draft.as_deref())?;
         }
+        let _custody = lease.map(|l| l.custody()).transpose()?;
         execute(
-            policy, request, &mut receipt, in_draft, previous_heads, record, review,
+            policy,
+            request,
+            &mut receipt,
+            in_draft,
+            previous_heads,
+            record,
+            review,
+            &notes,
         )
     })();
+    receipt.lifecycle = notes.take();
+    receipt.failure_kind = result.as_ref().err().map(|e| owned::error_kind(e));
     if result.is_err() && receipt.published {
         receipt.status = "unavailable";
         receipt.check = "published_view_requires_recovery";
@@ -1217,6 +1112,7 @@ fn execute(
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
     mut review: Option<(ReviewMode, &[u8], &mut SemanticReviewer<'_>)>,
+    notes: &owned::Notes,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
     crate::real_dir(&q.repo)?;
@@ -1311,13 +1207,20 @@ fn execute(
     // Only the detached repository reader and Core's retained publication views
     // are donors, never unrelated registered drafts. Git and the index verifier
     // both check them; missing/corrupt data is just an optimization miss.
+    owned::recover(&repo, &root, notes)?;
     let main_index = accepted_index(policy, &repo, &root, &main)?;
-    let before = WorkingView::new(&repo, &root, &main)?;
+    r.check = "owned_view_setup";
+    let before = WorkingView::new(&repo, &root, &main, notes)?;
     let draft_index = if let Some(path) = &draft {
         if path.join(".sifttext/index.sqlite").try_exists()? {
             // Sparse preparation must use the submitted draft's pinned base,
             // not the newer accepted main (sparse omissions are not deletions).
-            let base = WorkingView::new(&repo, &root, q.base.as_deref().ok_or("missing base")?)?;
+            let base = WorkingView::new(
+                &repo,
+                &root,
+                q.base.as_deref().ok_or("missing base")?,
+                notes,
+            )?;
             index::prepare_reuse(policy, path, Some(&base.path))?
         } else {
             None
@@ -1330,7 +1233,7 @@ fn execute(
     let candidate = if in_draft {
         None
     } else {
-        Some(WorkingView::new(&repo, &root, &main)?)
+        Some(WorkingView::new(&repo, &root, &main, notes)?)
     };
     let view = if in_draft {
         draft.as_ref().ok_or("missing draft")?
@@ -1426,6 +1329,9 @@ fn execute(
         // Persist both sides before moving HEAD: a crash before or after the Git
         // operation must not orphan the preceding recorded preparation.
         record(submitted, &sha)?;
+    }
+    if let Some(candidate) = &candidate {
+        candidate.revision(&sha)?;
     }
     if in_draft && already {
         git(
@@ -1612,7 +1518,7 @@ fn execute(
     r.view = Some(if in_draft {
         view.clone()
     } else {
-        candidate.ok_or("missing candidate")?.retain()
+        candidate.ok_or("missing candidate")?.retain(&sha)?
     });
     r.status = "current";
     r.check = if already {

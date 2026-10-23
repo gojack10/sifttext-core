@@ -259,9 +259,12 @@ fn candidate_mutated_after_passing_review_is_refused_and_draft_recovers() {
         fs::read_to_string(draft.join(format!("nodes/{REVIEW_NODE_ID}/node.md"))).unwrap(),
         source
     );
+    assert!(view.exists(), "unexpected edited scratch must be preserved");
     assert!(
-        !view.exists(),
-        "refused candidate view should be cleaned up"
+        rejected
+            .lifecycle
+            .iter()
+            .any(|note| note.cleanup == "preserved_unsafe_or_incomplete")
     );
 
     q.pause_before_publish = None;

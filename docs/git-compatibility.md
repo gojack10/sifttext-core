@@ -4,6 +4,31 @@ Core knowledge remains an ordinary Git repository. Normal status must continue
 showing tracked edits, deletions and new untracked authored files. Ignoring
 outputs does not necessarily avoid enumerating their containing directories.
 
+## Publication scratch lifetime
+
+Checked publication reserves each private scratch view and syncs its versioned
+ownership record before asking Git to register it. Disposable views and returned
+retained reading views are distinct: retention is durable before a view is
+returned. Only a matching recorded disposable view is eligible for next-operation
+recovery. Ordinary `read`/`search` do not initiate cleanup; unrecorded legacy,
+retained, replaced, branch-owned, unexpectedly edited or ambiguous views stay put.
+
+Controlled publication/reader Git helpers have a 30-second per-helper deadline,
+output limits, a Unix process group and inherited advisory custody for their
+ordinary descendants. Timeout/error handling kills and drains owned execution
+before cleanup. Core death leaves recorded ownership and inherited custody, not
+an RAII cleanup guarantee. The next explicit checked publication tries each
+recorded path without waiting on busy scratch. This is cooperative local Unix
+custody, not a sandbox against a substituted executable, escaped session/closed
+handles, arbitrary filesystem writers, power loss or storage failure.
+
+Failure receipts retain a bounded `failure_kind` and `lifecycle` cleanup notes;
+unusable scratch is never returned as a verified `view`. Cleanup refusal preserves
+the directory and registration together for inspection/retry. Keep the original
+submit arguments and save journals after interruption: `not_accepted`,
+`accepted_incomplete` and `unknown` remain different outcomes. Never remove locks,
+unlock/prune arbitrary registrations or infer old ownership from age/PID absence.
+
 ## Supported opt-in
 
 This optional setup uses **both** standard Git `core.fsmonitor=true` (the built-in

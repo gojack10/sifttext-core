@@ -221,26 +221,22 @@ fn git_config_value(path: &Path, key: &str) -> Result<String> {
 
 // Reader movement must not run inherited filters, hooks, fsmonitor or lazy fetch.
 pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
-    git_output(
-        git_command(path)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_NO_REPLACE_OBJECTS", "1")
-            .env("GIT_NO_LAZY_FETCH", "1")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .args([
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.attributesFile=/dev/null",
-                "-c",
-                "merge.autoStash=false",
-                "-c",
-                "rerere.enabled=false",
-            ])
-            .args(args)
-            .output()?,
-    )
+    let mut cmd = git_command(path);
+    cmd.env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_NO_REPLACE_OBJECTS", "1")
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "-c", "core.fsmonitor=false",
+            "-c", "core.attributesFile=/dev/null",
+            "-c", "merge.autoStash=false",
+            "-c", "rerere.enabled=false",
+            "-c", "gc.auto=0",
+            "-c", "maintenance.auto=false",
+        ])
+        .args(args);
+    git_output(crate::checked_publication::run_command(cmd)?)
 }
 
 fn git_output(out: std::process::Output) -> Result<String> {
@@ -1168,7 +1164,8 @@ fn advance_inner(
     pause: Option<&index::PauseBeforeAccept>,
     before_merge: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
-    let _home_lock = submission::home_lock(home, false)?;
+    let home_lock = submission::home_lock(home, false)?;
+    let _custody = crate::checked_publication::Custody::new(&[&home_lock])?;
     let before = reader_state(home)?;
     let recovered = crate::checked_publication::submit(
         policy,
@@ -1722,6 +1719,12 @@ fn session_archive_lock(root: &Path) -> Result<fs::File> {
 }
 
 pub(crate) use submission::DraftLease;
+
+pub(crate) fn publication_gate(view: &Path) -> Result<fs::File> {
+    let mut gate = submission::lifecycle_lock(view, false)?;
+    submission::mark_git_lifecycle(&mut gate)?;
+    Ok(gate)
+}
 
 fn session_attachment_lock(home: &Path) -> Result<(PathBuf, (fs::File, Option<fs::File>))> {
     // Before .git classification, and retained through every Store mutation.
