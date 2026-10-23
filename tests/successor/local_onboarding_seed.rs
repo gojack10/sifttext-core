@@ -91,7 +91,7 @@ fn current_continuity_selects_persistent_bootstrap_and_checked_memory_migration(
         "**Pi:** its agent-directory `APPEND_SYSTEM.md`",
         "Preserve existing content and imports",
         "do not duplicate it on repeated setup",
-        "The entrypoint is mandatory at each chat's start",
+        "The entrypoint is mandatory at each chat's start unless explicitly told not to use SiftText",
         "Do not restart first-install onboarding every chat",
         "Codex and Claude instruction files provide persistent context",
         "File existence alone does not establish fresh-chat loading",
@@ -105,18 +105,40 @@ fn current_continuity_selects_persistent_bootstrap_and_checked_memory_migration(
             "missing current instruction: {required}"
         );
     }
-    assert!(current.contains(concat!(
-        "Use SiftText to maintain durable project knowledge for agents to reuse across chats.\n\n",
-        "Terms used in SiftText instructions:\n",
-        "- A tree groups related nodes.\n",
-        "- A node holds knowledge about a question or topic.\n",
-        "- Its scope states what it covers.\n",
-        "- Its crystallization records the current understanding.\n",
-        "- SiftText Read is the procedure for recovering relevant knowledge.\n",
-        "- SiftText Commit is the procedure for authorized knowledge changes.\n\n",
-        "At the start of each chat, read `<verified absolute entrypoint path>` and follow its applicable instructions.\n\n",
-        "Existing instructions and permission boundaries remain in force.\n",
-    )));
+    let bootstrap = current
+        .split("````markdown\n")
+        .nth(1)
+        .unwrap()
+        .split("````")
+        .next()
+        .unwrap();
+    assert_eq!(
+        bootstrap,
+        concat!(
+            "## SiftText\n\n",
+            "SiftText stores evolving memory so you and your agents can save and recover understanding across chats.\n\n",
+            "SiftText terms\n",
+            "- A tree groups related nodes.\n",
+            "- A node holds knowledge about a question or topic.\n",
+            "- Scope states what a node covers.\n",
+            "- A crystallization records a node’s current understanding.\n",
+            "- SiftText Read recovers relevant knowledge.\n",
+            "- SiftText Commit saves knowledge changes.\n\n",
+            "At the start of every chat, read and follow the onboarding node below unless you are explicitly told not to use SiftText.\n\n",
+            "```text\n<verified absolute entrypoint path>\n```\n",
+        )
+    );
+    for unwanted in [
+        "**",
+        ":",
+        "SIFTTEXT_NO_UPDATE",
+        "Local-only knowledge interface",
+    ] {
+        assert!(
+            !bootstrap.contains(unwanted),
+            "unexpected bootstrap text: {unwanted}"
+        );
+    }
     let migration = current.split("### Migrate Existing Memory").nth(1).unwrap();
     assert!(
         migration

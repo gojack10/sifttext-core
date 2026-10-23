@@ -1,7 +1,7 @@
 ---
 id: "0dfce959-9e09-42c8-b8a1-1595c7b01e5f"
 name: "Maintain Memory Continuity"
-micro_summary: "Establishes persistent harness entrances and migrates encountered memory into maintained knowledge within permission."
+micro_summary: "Installs a brief SiftText explanation, terms and onboarding pointer, and migrates selected memory within permission."
 status: "in_progress"
 see_also: [{"target":"5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d","reason":"Required reading and context-handoff responsibility; reuse when already loaded."},{"target":"c72d552d-3499-445b-a8d5-05d0ff7824f2","reason":"Required authority, timing, preservation and checked-publication route before knowledge changes."},{"target":"a472e05c-9bbf-48f2-89d7-6c6092c339ed","reason":"Actual command discovery and existing scoped project-folder create/prepend mechanics."}]
 scope: "Guide authorized setup and subsequent chats through persistent harness entry and preserved memory migration without a parallel memory system."
@@ -13,7 +13,7 @@ Use the current procedure below. The preserved earlier procedure is reference ma
 
 ## Observed conditions
 
-The earlier procedure selected persistent harness entrances and source-preserving memory migration, but left harness-specific installation mechanisms to discovery. Jack selected persistent `AGENTS.md` for Codex, `CLAUDE.md` for Claude Code and `APPEND_SYSTEM.md` for Pi. He approved a short bootstrap explaining SiftText and its terms before naming the local entrypoint. He also requested an ad-hoc migration of existing harness memory. These selections establish the requested procedure, not successful installation or migration.
+The earlier procedure selected persistent harness entrances and source-preserving memory migration, but left harness-specific installation mechanisms to discovery. Jack selected persistent `AGENTS.md` for Codex, `CLAUDE.md` for Claude Code and `APPEND_SYSTEM.md` for Pi. He approved a short bootstrap explaining SiftText and its terms before naming the local entrypoint. He also requested an ad-hoc migration of existing harness memory. These selections establish the requested procedure, not successful installation or migration. Jack later limited the bootstrap to a brief explanation, SiftText terms and the mandatory onboarding read, with an explicit opt-out. He selected “stores evolving memory” and excluded transport, update-policy and publication instructions from the bootstrap.
 
 ## Inference and response
 
@@ -40,23 +40,27 @@ During authorized first installation, configure the user's selected harness so f
 
 Use this bootstrap, replacing the path placeholder during installation:
 
-```markdown
-Use SiftText to maintain durable project knowledge for agents to reuse across chats.
+````markdown
+## SiftText
 
-Terms used in SiftText instructions:
+SiftText stores evolving memory so you and your agents can save and recover understanding across chats.
+
+SiftText terms
 - A tree groups related nodes.
 - A node holds knowledge about a question or topic.
-- Its scope states what it covers.
-- Its crystallization records the current understanding.
-- SiftText Read is the procedure for recovering relevant knowledge.
-- SiftText Commit is the procedure for authorized knowledge changes.
+- Scope states what a node covers.
+- A crystallization records a node’s current understanding.
+- SiftText Read recovers relevant knowledge.
+- SiftText Commit saves knowledge changes.
 
-At the start of each chat, read `<verified absolute entrypoint path>` and follow its applicable instructions.
+At the start of every chat, read and follow the onboarding node below unless you are explicitly told not to use SiftText.
 
-Existing instructions and permission boundaries remain in force.
+```text
+<verified absolute entrypoint path>
 ```
+````
 
-The entrypoint is mandatory at each chat's start. First-install onboarding runs during setup or an authorized repair. Do not configure other harnesses or connect unrelated project folders. Connecting a project folder is a separate task with its existing scoped CLI Operations procedure.
+The entrypoint is mandatory at each chat's start unless explicitly told not to use SiftText. First-install onboarding runs during setup or an authorized repair. Do not configure other harnesses or connect unrelated project folders. Connecting a project folder is a separate task with its existing scoped CLI Operations procedure.
 
 ### Migrate Existing Memory
 
