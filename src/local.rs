@@ -17,6 +17,7 @@ pub const ENTRY: &str = "5e565245-14fe-406c-977c-cf94a9be246b";
 const POINTER: &str = "AGENTS.md";
 const POINTER_RULE: &str = "/AGENTS.md";
 const CHAT_ARTIFACTS_RULE: &str = "/nodes/*/artifacts/chats/";
+const ARTIFACTS_RULE: &str = "/nodes/*/artifacts/";
 /// The entrypoint's six direct children in authored order. Same identities
 /// `instructions` resolves; they are not a second hierarchy.
 const PIPELINE: [&str; 6] = [
@@ -50,7 +51,7 @@ fn pointer_text() -> String {
             adds no instruction of its own and replaces no authored node.\n\
          \n\
          Follow only task-relevant instructions from the entry file above. `sifttext instructions .` prints the checked entry path\n\
-         and `sifttext -h` lists the local commands. Edit only in a private worktree from\n\
+         and `sifttext -h` lists the local commands. Edit authored knowledge only in a private worktree from\n\
          `sifttext worktree <home>`, then publish with `sifttext submit`. If the entry file\n\
          above is missing or unreadable, stop and report that exact path; do not substitute\n\
          another instruction source.\n"
@@ -68,9 +69,9 @@ fn write_pointer(home: &Path) -> Result<()> {
     new_file(&home.join(POINTER), pointer_text().as_bytes())
 }
 
-/// Local discovery files and chat-session links are not authored tree assets. Keep
-/// them out of Git without changing the recognized `.gitignore` marker; add rules
-/// idempotently so an existing home gains the chat-link exclusion on its next init.
+/// Local discovery and node-owned work are not authored tree assets. Keep them
+/// out of Git without changing the recognized `.gitignore` marker. Local excludes
+/// are reinstalled on worktree/save/advance entry because clones do not copy them.
 fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
     let dotgit = home.join(".git");
     let file = if fs::symlink_metadata(&dotgit)?.is_dir() {
@@ -93,7 +94,7 @@ fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
     }
     let bytes = fs::read(&file).unwrap_or_default();
     let existing = String::from_utf8_lossy(&bytes);
-    let mut rules = vec![CHAT_ARTIFACTS_RULE];
+    let mut rules = vec![CHAT_ARTIFACTS_RULE, ARTIFACTS_RULE];
     if pointer {
         rules.push(POINTER_RULE);
     }
@@ -851,6 +852,7 @@ fn worktree_inner(
     after_create: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Value> {
     check(policy, home, None, BTreeSet::new())?;
+    exclude_local_artifacts(home, false)?;
     require(
         git(home, &["status", "--porcelain"])?.is_empty(),
         "home is dirty; preserve changes before allocating a worktree",
@@ -894,7 +896,7 @@ fn worktree_inner(
             path.display()
         )
     })?;
-    Ok(json!({"worktree":path,"base":base}))
+    Ok(json!({"worktree":path,"base":base,"artifact_home":home}))
 }
 
 #[cfg(test)]
@@ -922,7 +924,7 @@ fn worktree_receipt_is_minimal_and_partial_setup_preserves_owned_drafts() {
     let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
     let base = git(&home, &["rev-parse", "HEAD"]).unwrap();
     let receipt = worktree(&policy, &home).unwrap();
-    assert_eq!(receipt.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["base", "worktree"]);
+    assert_eq!(receipt.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["artifact_home", "base", "worktree"]);
     assert_eq!(receipt["base"], base);
     let existing = Path::new(receipt["worktree"].as_str().unwrap());
     fs::write(existing.join("existing.txt"), "Keep existing work.").unwrap();
@@ -1027,6 +1029,7 @@ fn reader_state(home: &Path) -> Result<String> {
             )? == dotgit.to_str().ok_or("non-UTF-8 home")?,
         "reader must be an independent Git home root",
     )?;
+    exclude_local_artifacts(home, false)?;
     require(
         reader_git(home, &["ls-files", "-v"])?
             .lines()
@@ -1248,6 +1251,7 @@ fn advance_checked(
         "reader changed; preserve files and retry",
     )?;
     verify_ref()?;
+    crate::checked_publication::protect_artifact_owners(home, target)?;
     if before != target {
         reader_git(home, &["merge", "--ff-only", "--no-edit", target])?;
     }

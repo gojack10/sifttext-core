@@ -434,6 +434,7 @@ pub(crate) fn clean(draft: &Path, expected: &str) -> Result<()> {
 // Only absent skip-worktree paths may be hydrated from that commit; present hidden
 // files must still refuse, since Git status/write-tree do not inspect their bytes.
 fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
+    protect_local_artifacts(draft)?;
     require(
         git(draft, &["rev-parse", "HEAD"])? == expected,
         "draft HEAD changed",
@@ -516,6 +517,74 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
             !git_dir.join(name).try_exists()?,
             "unfinished Git operation",
         )?;
+    }
+    Ok(())
+}
+
+/// Refuse user-owned material before Git's recursive ignored-file inventory or
+/// destructive draft cleanup. Chat links retain their separate checked contract.
+/// Durable-home artifacts never enter the disposable editing worktree.
+pub(crate) fn protect_local_artifacts(root: &Path) -> Result<()> {
+    let nodes = root.join("nodes");
+    match fs::symlink_metadata(&nodes) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+        Ok(_) => crate::real_dir(&nodes)?,
+    }
+    for node in fs::read_dir(nodes)? {
+        let node = node?;
+        if !crate::uuid(node.file_name().to_str().unwrap_or_default()) {
+            continue;
+        }
+        crate::real_dir(&node.path())?;
+        let artifacts = node.path().join("artifacts");
+        match fs::symlink_metadata(&artifacts) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+            Ok(_) => crate::real_dir(&artifacts)?,
+        }
+        for entry in fs::read_dir(&artifacts)? {
+            require(
+                entry?.file_name() == "chats",
+                "draft-local artifacts are not disposable; preserve them and deliberately move them to the owning node in the durable home before submitting",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Check only container/owner identities, never artifact contents. A node may
+/// not disappear from accepted knowledge while its durable container remains.
+pub(crate) fn protect_artifact_owners(home: &Path, target: &str) -> Result<()> {
+    let nodes = home.join("nodes");
+    if !nodes.try_exists()? {
+        return Ok(());
+    }
+    crate::real_dir(&nodes)?;
+    let mut owners = Vec::new();
+    for node in fs::read_dir(nodes)? {
+        let node = node?;
+        let id = node.file_name();
+        if !crate::uuid(id.to_str().unwrap_or_default()) {
+            continue;
+        }
+        crate::real_dir(&node.path())?;
+        let artifacts = node.path().join("artifacts");
+        match fs::symlink_metadata(&artifacts) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+            Ok(_) => crate::real_dir(&artifacts)?,
+        }
+        owners.push(format!("nodes/{}/node.md", id.to_str().ok_or("invalid owner")?));
+    }
+    if !owners.is_empty() {
+        let tree = run(home, &["ls-tree", "-rz", "--name-only", target])?;
+        require(tree.status.success(), "artifact owner tree unavailable")?;
+        let paths: BTreeSet<_> = tree.stdout.split(|b| *b == 0).collect();
+        for owner in owners {
+            require(paths.contains(owner.as_bytes()),
+                "artifact owner removal refused; deliberately rehome durable artifacts and remove the old container, or retain the owner")?;
+        }
     }
     Ok(())
 }
@@ -917,6 +986,29 @@ pub(crate) fn remove_owned_view(
     identity: &fs::Metadata,
 ) -> Result<()> {
     owned::remove_returned(repo, receipt, identity)
+}
+
+#[cfg(test)]
+#[test]
+fn authored_tree_refuses_force_tracked_artifacts_including_chat_links() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path();
+    git(repo, &["init", "-q", "-b", "main"]).unwrap();
+    let artifacts = repo.join("nodes/00000000-0000-4000-8000-000000000001/artifacts");
+    fs::create_dir_all(&artifacts).unwrap();
+    fs::write(artifacts.join("budget.csv"), b"item,quantity\nwidget,10\n").unwrap();
+    git(repo, &["add", "."]).unwrap();
+    git(repo, &["commit", "-qm", "fixture: force-tracked task file"]).unwrap();
+    let head = git(repo, &["rev-parse", "HEAD"]).unwrap();
+    assert!(authored_tree(repo, &head).is_err());
+    fs::create_dir(artifacts.join("chats")).unwrap();
+    std::os::unix::fs::symlink("/unavailable-session", artifacts.join("chats/session.jsonl")).unwrap();
+    git(repo, &["rm", "--cached", "-r", "nodes"]).unwrap();
+    git(repo, &["add", "nodes/00000000-0000-4000-8000-000000000001/artifacts/chats"]).unwrap();
+    git(repo, &["commit", "-qm", "fixture: force-tracked chat link"]).unwrap();
+    let head = git(repo, &["rev-parse", "HEAD"]).unwrap();
+    assert!(authored_tree(repo, &head).is_err());
+    assert_eq!(fs::read(artifacts.join("budget.csv")).unwrap(), b"item,quantity\nwidget,10\n");
 }
 
 fn accepted_index(
@@ -1491,6 +1583,8 @@ fn execute(
         inspection.status == "current" && inspection.version == r.version,
         "derived candidate changed",
     )?;
+    r.check = "artifact_owner_removed";
+    protect_artifact_owners(&repo, &sha)?;
     // Git's conditional update is the serialization point; never retry a lost race.
     r.check = "conditional_ref_race";
     if !in_draft || sha != main {

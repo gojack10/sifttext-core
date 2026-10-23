@@ -167,6 +167,167 @@ fn reviewed_submit_returns_findings_then_repairs_and_publishes_normally() {
 }
 
 #[test]
+fn node_artifacts_survive_refusal_save_lost_receipt_recovery_and_draft_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap();
+    let (policy, home, initial, other) = fixture(&dir);
+    let owner = fs::read_dir(initial.draft.as_ref().unwrap().join("nodes"))
+        .unwrap().next().unwrap().unwrap().file_name();
+    let first = submit(&policy, &initial).unwrap();
+    assert_eq!(first["status"], "current", "{first}");
+    let artifacts = home.join("nodes").join(&owner).join("artifacts");
+    fs::create_dir(&artifacts).unwrap();
+    // A usable spreadsheet larger than the authored-file cap, not a customer fixture.
+    let spreadsheet = format!("item,quantity\n{}", "generic-item,10\n".repeat(100_000));
+    assert!(spreadsheet.len() > crate::LIMIT);
+    let workbook = artifacts.join("task-budget.csv");
+    fs::write(&workbook, spreadsheet.as_bytes()).unwrap();
+    let external = dir.join("external-report.txt");
+    fs::write(&external, b"external user work").unwrap();
+    std::os::unix::fs::symlink(&external, artifacts.join("report")).unwrap();
+    std::os::unix::fs::symlink("unavailable-target", artifacts.join("missing")).unwrap();
+    std::os::unix::fs::symlink(".", artifacts.join("cycle")).unwrap();
+    let project = artifacts.join("project");
+    fs::create_dir(&project).unwrap();
+    git(&project, &["init", "-q"]);
+    fs::write(project.join("work.txt"), "independent project work").unwrap();
+    git(&project, &["add", "."]);
+    git(&project, &["commit", "-qm", "project: retain independent history"]);
+    let project_head = git(&project, &["rev-parse", "HEAD"]);
+    // Unknown resources remain opaque, not opened or recursively inventoried.
+    let fifo = artifacts.join("pipe");
+    let fifo_c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) }, 0);
+    let before = git(&home, &["rev-parse", "HEAD"]);
+    // Simulate a clone/older home: info/exclude is local and not transported.
+    fs::write(home.join(".git/info/exclude"), "# preserve this local rule\n").unwrap();
+    let allocation = local::worktree(&policy, &home).unwrap();
+    assert_eq!(allocation["artifact_home"], json!(home));
+    let draft = PathBuf::from(allocation["worktree"].as_str().unwrap());
+    assert!(!draft.join("nodes").join(&owner).join("artifacts").exists());
+    let note = draft.join("nodes").join(&owner).join("node.md");
+    fs::write(&note, fs::read_to_string(&note).unwrap()
+        + "\nTask budget: nodes/" + owner.to_str().unwrap()
+        + "/artifacts/task-budget.csv in the durable knowledge home.\n").unwrap();
+    crate::status::normalize(&policy, &home, &draft, &BTreeSet::new(), None).unwrap();
+    local::check(&policy, &draft, Some(&home), BTreeSet::new()).unwrap();
+    git(&draft, &["add", "-A"]);
+    git(&draft, &["commit", "-qm", "knowledge: retain task budget location"]);
+    let q = Request {
+        repo: home.clone(), accepted_ref: "refs/heads/main".into(),
+        draft: Some(draft.clone()), commit: Some(git(&draft, &["rev-parse", "HEAD"])),
+        base: Some(before.clone()), explicit: BTreeSet::new(),
+        pause_before_publish: None, pause_after_publish: None,
+    };
+    let refused = super::submit_reviewed(&policy, &q,
+        checked_publication::ReviewMode::Hard, b"artifact trial",
+        |candidate, _, _, rules| Ok(checked_publication::SemanticVerdict {
+            candidate: candidate.into(), rules: crate::sha256(rules),
+            passed: false, findings: vec![],
+        })).unwrap();
+    assert_eq!(refused["status"], "rejected", "{refused}");
+    assert_eq!(git(&home, &["rev-parse", "main"]), before);
+    assert!(draft.exists());
+    assert_eq!(fs::read(&workbook).unwrap(), spreadsheet.as_bytes());
+    // Lose stdout after the actual home advance and completed-worktree removal.
+    assert!(super::submit_inner(&policy, &q, None, || Err("lost receipt".into())).is_err());
+    assert!(!draft.exists());
+    let recovered = submit(&policy, &q).unwrap();
+    assert_eq!(recovered["status"], "current", "{recovered}");
+    assert_eq!(recovered["published"], false);
+    assert_eq!(recovered["worktree_removed"], true);
+    assert_eq!(git(&home, &["rev-parse", "HEAD"]), q.commit.clone().unwrap());
+    assert_eq!(fs::read(&workbook).unwrap(), spreadsheet.as_bytes());
+    assert_eq!(fs::read(&external).unwrap(), b"external user work");
+    assert_eq!(fs::read_link(artifacts.join("missing")).unwrap(), Path::new("unavailable-target"));
+    assert_eq!(git(&project, &["rev-parse", "HEAD"]), project_head);
+    assert_eq!(fs::read(project.join("work.txt")).unwrap(), b"independent project work");
+    assert!(fs::symlink_metadata(&fifo).is_ok());
+    assert!(git(&home, &["ls-files", "--", &format!("nodes/{}/artifacts", owner.to_str().unwrap())]).is_empty());
+    assert!(git(&home, &["status", "--porcelain"]).is_empty());
+    assert!(git(&home, &["check-ignore", workbook.to_str().unwrap()]).ends_with("task-budget.csv"));
+    local::advance(&policy, &home).unwrap();
+    let next = local::worktree(&policy, &home).unwrap();
+    assert!(!Path::new(next["worktree"].as_str().unwrap()).join("nodes").join(&owner).join("artifacts").exists());
+    assert!(other.exists(), "unrelated draft was removed");
+    assert_eq!(fs::read(&workbook).unwrap(), spreadsheet.as_bytes());
+}
+
+#[test]
+fn artifact_owner_removal_refuses_publication_and_reader_advance_until_rehomed() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap();
+    let (policy, home, initial, _) = fixture(&dir);
+    let owner = fs::read_dir(initial.draft.as_ref().unwrap().join("nodes"))
+        .unwrap().next().unwrap().unwrap().file_name();
+    submit(&policy, &initial).unwrap();
+    let before = git(&home, &["rev-parse", "HEAD"]);
+    let artifacts = home.join("nodes").join(&owner).join("artifacts");
+    fs::create_dir(&artifacts).unwrap();
+    fs::write(artifacts.join("work.txt"), "preserve owner work").unwrap();
+    let allocation = local::worktree(&policy, &home).unwrap();
+    let draft = PathBuf::from(allocation["worktree"].as_str().unwrap());
+    git(&draft, &["rm", "-r", &format!("nodes/{}", owner.to_str().unwrap()),
+        &format!("trees/{}", owner.to_str().unwrap())]);
+    for folder in ["nodes", "trees"] {
+        fs::create_dir_all(draft.join(folder)).unwrap();
+        fs::write(draft.join(folder).join(".keep"), "").unwrap();
+    }
+    git(&draft, &["add", "nodes", "trees"]);
+    git(&draft, &["commit", "-qm", "knowledge: remove artifact owner"]);
+    let q = Request {
+        repo: home.clone(), accepted_ref: "refs/heads/main".into(),
+        draft: Some(draft.clone()), commit: Some(git(&draft, &["rev-parse", "HEAD"])),
+        base: Some(before.clone()), explicit: BTreeSet::new(),
+        pause_before_publish: None, pause_after_publish: None,
+    };
+    let refused = submit(&policy, &q).unwrap();
+    assert_eq!(refused["status"], "rejected", "{refused}");
+    assert_eq!(refused["check"], "artifact_owner_removed", "{refused}");
+    assert_eq!(git(&home, &["rev-parse", "main"]), before);
+    assert_eq!(git(&home, &["rev-parse", "HEAD"]), before);
+    assert_eq!(fs::read(artifacts.join("work.txt")).unwrap(), b"preserve owner work");
+    assert!(draft.exists());
+    // An accepted ref moved by an external writer must not let advance orphan
+    // the durable home either. This direct ref move is synthetic test setup.
+    git(&home, &["update-ref", "refs/heads/main", q.commit.as_ref().unwrap(), &before]);
+    assert!(local::advance(&policy, &home).is_err());
+    assert_eq!(git(&home, &["rev-parse", "HEAD"]), before);
+    assert_eq!(fs::read(artifacts.join("work.txt")).unwrap(), b"preserve owner work");
+    fs::rename(&artifacts, dir.join("rehomed-work")).unwrap();
+    local::advance(&policy, &home).unwrap();
+    assert_eq!(git(&home, &["rev-parse", "HEAD"]), q.commit.as_ref().unwrap().as_str());
+    assert_eq!(fs::read(dir.join("rehomed-work/work.txt")).unwrap(), b"preserve owner work");
+}
+
+#[test]
+fn draft_local_artifacts_are_never_disposable_or_publishable() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap();
+    let (policy, home, mut q, other) = fixture(&dir);
+    let draft = q.draft.as_ref().unwrap().clone();
+    let owner = fs::read_dir(draft.join("nodes")).unwrap().next().unwrap().unwrap().file_name();
+    let artifacts = draft.join("nodes").join(&owner).join("artifacts");
+    fs::create_dir(&artifacts).unwrap();
+    let workbook = artifacts.join("budget.csv");
+    fs::write(&workbook, b"item,quantity\nwidget,10\n").unwrap();
+    let before = git(&home, &["rev-parse", "main"]);
+    let refused = submit(&policy, &q);
+    assert!(refused.is_err() || refused.as_ref().unwrap()["status"] == "rejected");
+    assert_eq!(git(&home, &["rev-parse", "main"]), before);
+    assert_eq!(fs::read(&workbook).unwrap(), b"item,quantity\nwidget,10\n");
+    // Force-adding is not a route around the authored-tree trust boundary.
+    git(&draft, &["add", "-f", workbook.to_str().unwrap()]);
+    git(&draft, &["commit", "-qm", "knowledge: invalid tracked artifact"]);
+    q.commit = Some(git(&draft, &["rev-parse", "HEAD"]));
+    let refused = submit(&policy, &q);
+    assert!(refused.is_err() || refused.as_ref().unwrap()["status"] == "rejected");
+    assert_eq!(fs::read(&workbook).unwrap(), b"item,quantity\nwidget,10\n");
+    assert_eq!(git(&home, &["rev-parse", "main"]), before);
+    assert!(draft.exists() && other.exists());
+}
+
+#[test]
 fn advisory_findings_publish_through_normal_submission() {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().canonicalize().unwrap();

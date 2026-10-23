@@ -551,14 +551,13 @@ fn inventory_entries(
                     return Ok(());
                 }
                 let parts: Vec<_> = rel.components().collect();
-                if parts.len() == 4
+                if parts.len() == 3
                     && parts[0].as_os_str() == "nodes"
                     && uuid(parts[1].as_os_str().to_str().unwrap_or_default())
                     && parts[2].as_os_str() == "artifacts"
-                    && parts[3].as_os_str() == "chats"
                 {
-                    // Harness session links are local navigation, not authored tree assets.
-                    // Never follow or serialize their targets; all other unrelated links remain refused.
+                    // Node-owned local work is not knowledge. Check only the container:
+                    // never traverse, hash, copy or serialize files/projects/link targets.
                     real_dir(&p)?;
                     return Ok(());
                 }

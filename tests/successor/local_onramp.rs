@@ -66,6 +66,7 @@ fn supplied_init_preserves_edits_and_uses_current_components() {
     assert_eq!(Store::read(&home).unwrap().nodes.len(), 1);
     let exclude = fs::read_to_string(home.join(".git/info/exclude")).unwrap();
     assert!(exclude.lines().any(|line| line == "/nodes/*/artifacts/chats/"));
+    assert!(exclude.lines().any(|line| line == "/nodes/*/artifacts/"));
     assert_eq!(
         crate::candidate_validation::version(&Store::read(&home).unwrap()),
         crate::candidate_validation::version(&Store::read(&bundle).unwrap()),
@@ -117,6 +118,38 @@ fn supplied_init_preserves_edits_and_uses_current_components() {
     assert_eq!(Store::read(&receipt.view.unwrap()).unwrap().nodes.len(), 2);
     // Independent accepted publication leaves the original reader and authored bytes untouched.
     assert_eq!(Store::read(&home).unwrap().nodes.len(), 1);
+}
+
+#[test]
+fn local_artifacts_are_opaque_but_not_an_escape_for_authored_paths_or_orphan_owners() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path());
+    let before = Store::read(dir.path()).unwrap();
+    let node = dir.path().join("nodes").join(ROOT);
+    let artifacts = node.join("artifacts");
+    fs::create_dir(&artifacts).unwrap();
+    fs::write(artifacts.join("budget.csv"), b"item,quantity\nwidget,10\n").unwrap();
+    let captured = crate::coherent_capture::Capture::read(dir.path(), None).unwrap();
+    assert_eq!(captured.store.inventory, before.inventory);
+    fs::write(artifacts.join("budget.csv"), b"item,quantity\nwidget,20\n").unwrap();
+    captured.unchanged_all().unwrap(); // Artifact content is not knowledge freshness.
+    let external = tempfile::tempdir().unwrap();
+    fs::write(external.path().join("user.txt"), "external bytes").unwrap();
+    let parked = dir.path().join("parked");
+    fs::rename(&artifacts, &parked).unwrap();
+    std::os::unix::fs::symlink(external.path(), &artifacts).unwrap();
+    assert!(Store::read(dir.path()).is_err(), "artifact root must be a real container");
+    assert_eq!(fs::read(external.path().join("user.txt")).unwrap(), b"external bytes");
+    fs::remove_file(&artifacts).unwrap();
+    fs::rename(&parked, &artifacts).unwrap();
+    let unrelated = node.join("external");
+    std::os::unix::fs::symlink(external.path(), &unrelated).unwrap();
+    assert!(Store::read(dir.path()).is_err(), "unrelated symlink escaped validation");
+    fs::remove_file(unrelated).unwrap();
+    let authored = node.join("node.md");
+    fs::remove_file(&authored).unwrap();
+    assert!(Store::read(dir.path()).is_err(), "artifacts do not authorize a source-less owner");
+    assert_eq!(fs::read(artifacts.join("budget.csv")).unwrap(), b"item,quantity\nwidget,20\n");
 }
 
 #[test]
