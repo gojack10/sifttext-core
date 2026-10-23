@@ -499,3 +499,72 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         n.records.len()
     );
 }
+
+#[test]
+fn ordinary_git_acceleration_is_explicit_and_preserves_dirty_visibility() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let repo = root.join("repo");
+    fs::create_dir(&repo).unwrap();
+    let run = |bin: &str, args: &[&str]| {
+        Command::new(bin)
+            .args(args)
+            .current_dir(&repo)
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", &root)
+            .env("XDG_CONFIG_HOME", root.join(".config"))
+            .output()
+            .unwrap()
+    };
+    let git = |args: &[&str]| {
+        let out = run("git", args);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    git(&["init"]);
+    fs::write(repo.join("tracked.md"), "original\n").unwrap();
+    git(&["add", "tracked.md"]);
+    git(&["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "commit", "-m", "fixture: original"]);
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/git-acceleration.sh");
+    let opt_in = || run("sh", &[text(&script), "enable", text(&repo), "--all-git-clients-reviewed"]);
+    let before = fs::read(repo.join(".git/config")).unwrap();
+    assert!(!run("sh", &[text(&script), "enable", text(&repo)]).status.success());
+    assert_eq!(fs::read(repo.join(".git/config")).unwrap(), before);
+    // Unsupported hosts/builds must refuse without modifying the repository.
+    if !cfg!(target_os = "macos") || !git(&["version", "--build-options"]).contains("feature: fsmonitor--daemon") {
+        assert!(!opt_in().status.success());
+        assert_eq!(fs::read(repo.join(".git/config")).unwrap(), before);
+        return;
+    }
+    git(&["config", "core.fsmonitor", "/nonexistent-custom-monitor"]);
+    let custom = fs::read(repo.join(".git/config")).unwrap();
+    assert!(!opt_in().status.success());
+    assert_eq!(fs::read(repo.join(".git/config")).unwrap(), custom);
+    git(&["config", "--unset", "core.fsmonitor"]);
+    // Stop only this fixture's daemon, including on assertion failure.
+    struct Stop(PathBuf);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            let _ = Command::new("git").arg("-C").arg(&self.0)
+                .args(["-c", "core.fsmonitor=false", "fsmonitor--daemon", "stop"])
+                .env_clear()
+                .env("PATH", std::env::var_os("PATH").unwrap())
+                .env("HOME", &self.0)
+                .output();
+        }
+    }
+    let _stop = Stop(repo.clone());
+    fs::write(repo.join("tracked.md"), "real unfinished edit\n").unwrap();
+    fs::write(repo.join("sibling.md"), "new authored file\n").unwrap();
+    let staged = git(&["ls-files", "--stage"]);
+    let enabled = opt_in();
+    assert!(enabled.status.success(), "{}", String::from_utf8_lossy(&enabled.stderr));
+    let status = String::from_utf8(enabled.stdout).unwrap();
+    assert!(status.contains(" M tracked.md\n") && status.contains("?? sibling.md\n"), "{status}");
+    assert_eq!(git(&["ls-files", "--stage"]), staged);
+    assert_eq!(fs::read_to_string(repo.join("tracked.md")).unwrap(), "real unfinished edit\n");
+    let configured = fs::read(repo.join(".git/config")).unwrap();
+    assert!(opt_in().status.success());
+    assert_eq!(fs::read(repo.join(".git/config")).unwrap(), configured);
+}

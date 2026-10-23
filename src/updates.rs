@@ -1154,6 +1154,61 @@ fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
     update_config(home)
 }
 
+/// Inspect only the last recorded update journal. Never take/create the update lock, recover,
+/// fetch releases, inspect the knowledge home, or infer publication/activation readiness.
+fn local_status(root: &Path) -> Result<Value> {
+    use std::io::Read;
+    use std::os::unix::fs::MetadataExt;
+
+    crate::real_dir(root)?;
+    require(root.is_absolute() && fs::canonicalize(root)? == root, "use the canonical installation path")?;
+    // Open the one allowed state file without following a raced link or blocking on a FIFO.
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(root.join("state.json"))?;
+    let meta = file.metadata()?;
+    require(meta.is_file() && meta.nlink() == 1 && meta.len() <= 1_048_576, "unsafe update state file")?;
+    let mut bytes = Vec::new();
+    file.take(1_048_577).read_to_end(&mut bytes)?;
+    require(bytes.len() <= 1_048_576, "oversized update state file")?;
+    let state: State = serde_json::from_slice(&bytes)
+        .map_err(|_| "invalid update state.json; local inspection unavailable")?;
+    // State is atomically replaced by the updater, but these separate observations cannot be
+    // a transaction with a concurrent writer. Marker presence is not validated recovery input.
+    let activation_marker_present = match fs::symlink_metadata(root.join("activation.json")) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    let mut status = json!({
+        "status":"recorded_only",
+        "inspection":"local_read_only",
+        "consistency":"not_atomic_snapshot",
+        "update_check":"not_performed",
+        "publication_state":"not_inspected",
+        "note":"Recorded update journal only; launcher, knowledge HEAD, settings and lock ownership are not checked. This is not permission to publish, resume or remove locks.",
+        "home":state.home,
+        "application":state.application,
+        "knowledge":state.knowledge,
+        "activation_marker_present":activation_marker_present,
+    });
+    if let Some(previous) = state.previous {
+        status["rollback_application"] = json!(previous.application);
+        status["rollback_knowledge"] = json!(previous.knowledge);
+    }
+    if let Some(pending) = state.pending {
+        status["worktree"] = json!(pending.draft);
+        status["pending_operation"] = json!(match pending.plan {
+            UpdatePlan::Release(_) => "update",
+            UpdatePlan::Rollback(_) => "rollback",
+        });
+        status["pending_commit"] = json!(pending.commit);
+        status["pending_repair_node"] = json!(pending.repair_node);
+    }
+    Ok(status)
+}
+
 pub fn update(root: &Path, mode: &str) -> Result<Value> {
     update_with_receipt_preflight(root, mode, |_| Ok(()))
 }
@@ -1163,6 +1218,9 @@ pub fn update_with_receipt_preflight(
     mode: &str,
     mut preflight: impl FnMut(&Value) -> Result<()>,
 ) -> Result<Value> {
+    if mode == "--local-status" {
+        return local_status(root);
+    }
     let _lock = lock(root, false)?;
     let mut state: State = load(&root.join("state.json"))?;
     if mode == "--config" {
@@ -2612,6 +2670,135 @@ mod tests {
         assert!(String::from_utf8_lossy(&output.stderr).contains("no update is pending"));
         assert_eq!(fs::read(root.join("state.json")).unwrap(), saved);
     }
+    #[test]
+    fn local_status_cli_is_read_only_during_shared_and_exclusive_operations() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::Instant;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let mut s = state(); // The home need not exist: inspection must never enter it.
+        s.previous = Some(Recovery {
+            application: "releases/v0".into(),
+            application_sha256: "d".repeat(64),
+            knowledge: "e".repeat(64),
+            baseline: None,
+            update_commit: None,
+        });
+        s.pending = Some(Pending {
+            plan: UpdatePlan::Rollback(s.previous.clone().unwrap()),
+            application: "releases/v0".into(),
+            draft: root.join("absent-draft"),
+            base: "fixture-base".into(),
+            upstream: "fixture-upstream".into(),
+            commit: None,
+            changed: vec!["private-journal-detail".into()],
+            repair_node: None,
+        });
+        persist(&root.join("state.json"), &s).unwrap();
+        let before = fs::read(root.join("state.json")).unwrap();
+        let modified = fs::metadata(root.join("state.json")).unwrap().modified().unwrap();
+        let bin = root.join("mock-bin");
+        fs::create_dir(&bin).unwrap();
+        // Any attempted download is a test failure without contacting a remote service.
+        fs::write(bin.join("curl"), "#!/bin/sh\nprintf attempted > \"$SIFTTEXT_INSTALL_ROOT/network-attempt\"\nexit 91\n").unwrap();
+        fs::set_permissions(bin.join("curl"), fs::Permissions::from_mode(0o700)).unwrap();
+        let invoke = |args: &[&str]| {
+            let started = Instant::now();
+            let result = Command::new(crate::native_bin("sifttext"))
+                .args(args)
+                .env("PATH", &bin)
+                .env("SIFTTEXT_INSTALL_ROOT", &root)
+                .env_remove("SIFTTEXT_NO_UPDATE")
+                .output().unwrap();
+            assert!(started.elapsed().as_secs_f64() < 5.0, "local diagnostic or busy refusal stalled");
+            result
+        };
+        let inspect = || {
+            let output = invoke(&["update", "--local-status"]);
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert!(!stdout.contains("private-journal-detail") && !stdout.contains(&"d".repeat(64)), "{stdout}");
+            let shown = crate::outlines::decode_lean(&stdout).unwrap();
+            assert_eq!(shown["status"], "recorded_only");
+            assert_eq!(shown["consistency"], "not_atomic_snapshot");
+            assert_eq!(shown["update_check"], "not_performed");
+            assert_eq!(shown["publication_state"], "not_inspected");
+            assert_eq!(shown["pending_operation"], "rollback");
+            shown
+        };
+        assert_eq!(inspect()["activation_marker_present"], false);
+        assert!(!root.join("update.lock").exists(), "inspection created a lock");
+        let shared = lock(&root, true).unwrap(); // Exact mutex/lifetime used by ordinary operations.
+        assert_eq!(inspect()["application"], "releases/v1");
+        for args in [&["update"][..], &["update", "--status"], &["update", "--resume"], &["update", "--rebuild"]] {
+            let refused = invoke(args);
+            assert!(!refused.status.success());
+            assert!(String::from_utf8_lossy(&refused.stderr).contains("update busy"));
+        }
+        let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let home_parent = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(home_parent.path()).unwrap().join("home");
+        assert!(initialize(&policy, &root, &home).unwrap_err().to_string().contains("update busy"));
+        assert!(!home.exists());
+        assert_eq!(fs::read(root.join("state.json")).unwrap(), before);
+        assert_eq!(fs::metadata(root.join("state.json")).unwrap().modified().unwrap(), modified);
+        drop(shared);
+        let exclusive = lock(&root, false).unwrap();
+        assert_eq!(inspect()["application"], "releases/v1");
+        // Simulate the real writer's atomic file replacement, separately from marker creation.
+        s.application = "releases/v2".into();
+        persist(&root.join("state.json"), &s).unwrap();
+        fs::write(root.join("activation.json"), "not parsed by local inspection").unwrap();
+        let written = fs::read(root.join("state.json")).unwrap();
+        let shown = inspect();
+        assert_eq!(shown["application"], "releases/v2");
+        assert_eq!(shown["activation_marker_present"], true);
+        assert_eq!(fs::read(root.join("state.json")).unwrap(), written);
+        assert!(lock(&root, false).is_err(), "inspection removed the writer's exclusion");
+        assert!(!root.join("network-attempt").exists());
+        assert!(!root.join("last_manifest.json").exists());
+        let mut names = fs::read_dir(&root).unwrap().map(|e| e.unwrap().file_name()).collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, ["activation.json", "mock-bin", "state.json", "update.lock"].map(std::ffi::OsString::from));
+        drop(exclusive);
+    }
+
+    #[test]
+    fn local_status_refuses_missing_invalid_and_unsafe_state_without_creating_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let missing = root.join("absent-install");
+        assert!(update(&missing, "--local-status").is_err());
+        assert!(!missing.exists());
+        assert!(update(&root, "--local-status").is_err());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+        let path = root.join("state.json");
+        fs::write(&path, br#""credential-like-secret""#).unwrap();
+        let error = update(&root, "--local-status").unwrap_err().to_string();
+        assert!(error.contains("invalid update state.json") && !error.contains("credential-like-secret"));
+        assert_eq!(fs::read(&path).unwrap(), br#""credential-like-secret""#);
+        fs::remove_file(&path).unwrap();
+        let private = root.join("private");
+        fs::write(&private, "credential-like-secret").unwrap();
+        symlink(&private, &path).unwrap();
+        assert!(update(&root, "--local-status").is_err());
+        fs::remove_file(&path).unwrap();
+        fs::hard_link(&private, &path).unwrap();
+        assert!(update(&root, "--local-status").is_err());
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(update(&root, "--local-status").is_err());
+        assert_eq!(fs::read(&private).unwrap(), b"credential-like-secret");
+        assert!(!root.join("update.lock").exists());
+        let unset = Command::new(crate::native_bin("sifttext"))
+            .args(["update", "--local-status"])
+            .env_remove("SIFTTEXT_INSTALL_ROOT")
+            .output().unwrap();
+        assert!(!unset.status.success());
+        assert!(String::from_utf8_lossy(&unset.stderr).contains("managed installation launcher"));
+    }
+
     #[test]
     fn shared_operation_excludes_activation_and_state_writes_are_atomic() {
         let dir = tempfile::tempdir().unwrap();

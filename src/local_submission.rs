@@ -29,22 +29,195 @@ struct Pending {
     completed_head: Option<String>,
 }
 
-fn lock(path: &Path) -> Result<fs::File> {
+fn lock(path: &Path, wait: bool) -> Result<fs::File> {
     let file = fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .mode(0o600)
         .open(path)?;
     use std::os::unix::fs::MetadataExt;
     require(
         file.metadata()?.is_file() && file.metadata()?.nlink() == 1,
         "unsafe save lock",
     )?;
-    file.try_lock()
-        .map_err(|e| format!("save busy; retain draft and retry: {e}"))?;
+    if wait {
+        file.lock()?;
+    } else {
+        file.try_lock()
+            .map_err(|e| format!("save busy; retain draft and retry: {e}"))?;
+    }
     Ok(file)
+}
+
+// Common Git metadata survives worktree removal. Never unlink these lock files:
+// a waiter must acquire the same inode even after the submitted draft disappears.
+fn save_root(repo: &Path) -> Result<PathBuf> {
+    let repo = fs::canonicalize(repo)?;
+    let common = PathBuf::from(reader_git(
+        &repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?);
+    crate::real_dir(&common)?;
+    require(fs::canonicalize(&common)? == common, "noncanonical Git metadata")?;
+    let root = common.join("sifttext-saves");
+    if let Err(error) = fs::create_dir(&root)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(error.into());
+    }
+    crate::real_dir(&root)?;
+    Ok(root)
+}
+
+fn draft_key(draft: &Path) -> Result<String> {
+    use std::path::Component;
+    require(
+        draft.is_absolute()
+            && draft.components().all(|c| matches!(c, Component::RootDir | Component::Normal(_))),
+        "draft must be an absolute canonical path",
+    )?;
+    // Resolve parent aliases, not the last component: a completed draft path
+    // reused as a symlink must retain the original journal/lock identity.
+    let draft = fs::canonicalize(draft.parent().ok_or("missing draft parent")?)?
+        .join(draft.file_name().ok_or("missing draft name")?);
+    Ok(format!("{:x}", Sha256::digest(draft.as_os_str().as_encoded_bytes())))
+}
+
+// Discoverable without .git or the Store: recursive Git removal can unlink
+// .git before removing the root. This UID-private, per-path gate is always
+// acquired first, including by genuine standalone stores. Never unlink gates
+// or their directory (even after cleanup); waiters retain the same inode.
+// /tmp is intentional, not caller-specific TMPDIR/HOME. Clearing this internal
+// namespace requires quiescing all native mutators for this UID first.
+fn lifecycle_root() -> Result<PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    let parent = fs::canonicalize("/tmp")?;
+    let metadata = fs::symlink_metadata(&parent)?;
+    require(metadata.is_dir() && metadata.uid() == 0 && metadata.mode() & 0o1000 != 0,
+        "unsafe lifecycle gate parent")?;
+    let root = parent.join(format!("sifttext-lifecycle-{}", unsafe { libc::geteuid() }));
+    if let Err(error) = fs::DirBuilder::new().mode(0o700).create(&root)
+        && error.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(error.into());
+    }
+    check_lifecycle_directory(&root)?;
+    Ok(root)
+}
+
+fn check_lifecycle_directory(root: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(root)?;
+    require(metadata.is_dir() && metadata.uid() == unsafe { libc::geteuid() }
+        && metadata.mode() & 0o777 == 0o700 && fs::canonicalize(root)? == root,
+        "unsafe lifecycle gate directory")
+}
+
+pub(super) fn lifecycle_path(path: &Path) -> Result<PathBuf> {
+    let path = std::path::absolute(path)?;
+    // Path components strip trailing slash/dot syntax. Resolve parent aliases,
+    // never a final symlink: validation must use this same gate spelling.
+    Ok(match path.file_name() {
+        Some(name) => fs::canonicalize(path.parent().ok_or("missing root parent")?)?.join(name),
+        None => fs::canonicalize(&path)?,
+    })
+}
+
+pub(super) fn lifecycle_lock(path: &Path, wait: bool) -> Result<fs::File> {
+    use std::os::unix::fs::MetadataExt;
+    let path = lifecycle_path(path)?;
+    let key = format!("{:x}", Sha256::digest(path.as_os_str().as_encoded_bytes()));
+    let root = lifecycle_root()?;
+    let lock_path = root.join(format!("{key}.lock"));
+    let file = lock(&lock_path, wait)?;
+    let metadata = file.metadata()?;
+    let named = fs::symlink_metadata(&lock_path)?;
+    require(metadata.uid() == unsafe { libc::geteuid() }
+        && metadata.mode() & 0o777 == 0o600
+        && (metadata.dev(), metadata.ino()) == (named.dev(), named.ino()),
+        "unsafe lifecycle gate file")?;
+    Ok(file)
+}
+
+// A retained bit also fails closed after interrupted partial deletion. A path
+// once used by Git is not silently reclassified as a fresh standalone store.
+pub(super) fn mark_git_lifecycle(file: &mut fs::File) -> Result<()> {
+    if file.metadata()?.len() == 0 {
+        file.write_all(b"G")?;
+        file.sync_all()?;
+    }
+    Ok(())
+}
+
+pub(super) fn draft_lock(repo: &Path, draft: &Path, wait: bool) -> Result<fs::File> {
+    lock(&save_root(repo)?.join(format!("{}.lock", draft_key(draft)?)), wait)
+}
+
+pub(super) fn home_lock(home: &Path, wait: bool) -> Result<fs::File> {
+    lock(&save_root(home)?.join("home.lock"), wait)
+}
+
+// Only this module can construct a lease. Checked publication borrows it rather
+// than recursively acquiring the same lock; completion retains it through removal.
+pub(crate) struct DraftLease {
+    _lifecycle: fs::File,
+    _file: fs::File,
+    _home_file: Option<fs::File>,
+    root: PathBuf,
+    key: String,
+}
+impl DraftLease {
+    pub(crate) fn acquire(repo: &Path, draft: &Path) -> Result<Self> {
+        // A concurrent fork can briefly retain another thread's CLOEXEC file
+        // descriptions until exec. Tolerate only that bounded admission handoff;
+        // scratch recovery still uses a single nonwaiting lifecycle_lock.
+        let start = std::time::Instant::now();
+        loop {
+            match Self::acquire_once(repo, draft) {
+                Err(error) if error.to_string().contains("save busy") && start.elapsed() < std::time::Duration::from_millis(50) => std::thread::sleep(std::time::Duration::from_millis(2)),
+                result => return result,
+            }
+        }
+    }
+
+    fn acquire_once(repo: &Path, draft: &Path) -> Result<Self> {
+        let mut lifecycle = lifecycle_lock(draft, false)?;
+        let root = save_root(repo)?;
+        let key = draft_key(draft)?;
+        let file = lock(&root.join(format!("{key}.lock")), false)?;
+        if fs::symlink_metadata(draft.join(".git")).is_ok() {
+            mark_git_lifecycle(&mut lifecycle)?;
+        }
+        // The low-level API also accepts a branch-owned primary worktree as a
+        // draft. Its session operations use home.lock, unlike linked drafts.
+        let home_file = if fs::symlink_metadata(draft).is_ok_and(|m| m.is_dir())
+            && fs::symlink_metadata(draft.join(".git")).is_ok()
+            && Path::new(&reader_git(draft, &["rev-parse", "--absolute-git-dir"])?)
+                == root.parent().ok_or("missing common Git directory")?
+        {
+            Some(lock(&root.join("home.lock"), false)?)
+        } else {
+            None
+        };
+        Ok(Self { _lifecycle: lifecycle, _file: file, _home_file: home_file, root, key })
+    }
+
+    pub(crate) fn custody(&self) -> Result<checked_publication::Custody> {
+        let mut files = vec![&self._lifecycle, &self._file];
+        if let Some(home) = &self._home_file { files.push(home); }
+        checked_publication::Custody::new(&files)
+    }
+
+    pub(crate) fn check(&self, repo: &Path, draft: Option<&Path>) -> Result<()> {
+        require(
+            draft.map(draft_key).transpose()?.as_deref() == Some(self.key.as_str())
+                && save_root(repo)? == self.root,
+            "publication lease does not match submitted draft",
+        )
+    }
 }
 
 fn persist(path: &Path, pending: &Pending) -> Result<()> {
@@ -89,18 +262,18 @@ fn submit_inner(
         "unsupported home accepted ref",
     )?;
     let home = &request.repo;
-    reader_state(home)?; // Fail before publication if the normal home has user edits.
     let draft = request.draft.as_ref().ok_or("missing draft")?;
     require(draft.is_absolute(), "draft must be absolute")?;
+    if fs::symlink_metadata(draft).is_ok_and(|metadata| metadata.is_dir()) {
+        checked_publication::protect_local_artifacts(draft)?;
+    }
     let commit = request.commit.as_ref().ok_or("missing submitted commit")?;
     let base = request.base.as_ref().ok_or("missing submitted base")?;
-    let root = home.join(".git/sifttext-saves");
-    if !root.try_exists()? {
-        fs::create_dir(&root)?;
-    }
-    crate::real_dir(&root)?;
-    let key = format!("{:x}", Sha256::digest(draft.as_os_str().as_encoded_bytes()));
-    let _draft_lock = lock(&root.join(format!("{key}.lock")))?;
+    let draft_lease = DraftLease::acquire(home, draft)?;
+    let _custody = draft_lease.custody()?;
+    reader_state(home)?; // Recheck after acquiring custody, before publication.
+    let root = save_root(home)?;
+    let key = draft_key(draft)?;
     let journal = root.join(format!("{key}.json"));
     let mut pending: Pending = if journal.try_exists()? {
         serde_json::from_slice(&crate::read_regular(&journal)?)?
@@ -180,9 +353,10 @@ fn submit_inner(
             persist(&journal, &pending)
         };
         let receipt = if let Some((mode, rules, reviewer)) = review.as_mut() {
-            checked_publication::save_prepared_reviewed(
+            checked_publication::save_prepared_reviewed_leased(
                 policy,
                 request,
+                &draft_lease,
                 *mode,
                 *rules,
                 previous_heads
@@ -192,9 +366,10 @@ fn submit_inner(
                 record,
             )
         } else {
-            checked_publication::save_prepared(
+            checked_publication::save_prepared_leased(
                 policy,
                 request,
+                &draft_lease,
                 previous_heads
                     .as_ref()
                     .map(|(from, to)| (from.as_str(), to.as_str())),
@@ -249,7 +424,8 @@ fn submit_inner(
         .ok_or("missing checked version")?;
     // Save preparation stays concurrent; serialize only normal-home finishing.
     let finish = || -> Result<Value> {
-        let _home_lock = lock(&root.join("home.lock"))?;
+        let home_lock = home_lock(home, false)?;
+        let _home_custody = checked_publication::Custody::new(&[&home_lock])?;
         let before = reader_state(home)?;
         let advanced = advance_checked(policy, home, &before, target, version, None, || Ok(()))?;
         require(
@@ -343,20 +519,8 @@ fn submit_inner(
             )?;
         }
         if missing {
-            // This recovery's temporary checked view is ours, never another draft.
-            reader_git(
-                home,
-                &[
-                    "worktree",
-                    "remove",
-                    receipt
-                        .view
-                        .as_ref()
-                        .ok_or("missing recovery view")?
-                        .to_str()
-                        .ok_or("non-UTF-8 recovery view")?,
-                ],
-            )?;
+            let identity = fs::symlink_metadata(receipt.view.as_ref().ok_or("missing recovery view")?)?;
+            checked_publication::remove_owned_view(home, &receipt, &identity)?;
         }
         // ponytail: retain completed journals; GC needs an explicit retry-retention contract.
         // Retain completed custody as an idempotency tombstone. Losing stdout after

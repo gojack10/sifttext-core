@@ -17,6 +17,7 @@ pub const ENTRY: &str = "5e565245-14fe-406c-977c-cf94a9be246b";
 const POINTER: &str = "AGENTS.md";
 const POINTER_RULE: &str = "/AGENTS.md";
 const CHAT_ARTIFACTS_RULE: &str = "/nodes/*/artifacts/chats/";
+const ARTIFACTS_RULE: &str = "/nodes/*/artifacts/";
 /// The entrypoint's six direct children in authored order. Same identities
 /// `instructions` resolves; they are not a second hierarchy.
 const PIPELINE: [&str; 6] = [
@@ -50,7 +51,7 @@ fn pointer_text() -> String {
             adds no instruction of its own and replaces no authored node.\n\
          \n\
          Follow only task-relevant instructions from the entry file above. `sifttext instructions .` prints the checked entry path\n\
-         and `sifttext -h` lists the local commands. Edit only in a private worktree from\n\
+         and `sifttext -h` lists the local commands. Edit authored knowledge only in a private worktree from\n\
          `sifttext worktree <home>`, then publish with `sifttext submit`. If the entry file\n\
          above is missing or unreadable, stop and report that exact path; do not substitute\n\
          another instruction source.\n"
@@ -68,9 +69,9 @@ fn write_pointer(home: &Path) -> Result<()> {
     new_file(&home.join(POINTER), pointer_text().as_bytes())
 }
 
-/// Local discovery files and chat-session links are not authored tree assets. Keep
-/// them out of Git without changing the recognized `.gitignore` marker; add rules
-/// idempotently so an existing home gains the chat-link exclusion on its next init.
+/// Local discovery and node-owned work are not authored tree assets. Keep them
+/// out of Git without changing the recognized `.gitignore` marker. Local excludes
+/// are reinstalled on worktree/save/advance entry because clones do not copy them.
 fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
     let dotgit = home.join(".git");
     let file = if fs::symlink_metadata(&dotgit)?.is_dir() {
@@ -93,7 +94,7 @@ fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
     }
     let bytes = fs::read(&file).unwrap_or_default();
     let existing = String::from_utf8_lossy(&bytes);
-    let mut rules = vec![CHAT_ARTIFACTS_RULE];
+    let mut rules = vec![CHAT_ARTIFACTS_RULE, ARTIFACTS_RULE];
     if pointer {
         rules.push(POINTER_RULE);
     }
@@ -221,26 +222,22 @@ fn git_config_value(path: &Path, key: &str) -> Result<String> {
 
 // Reader movement must not run inherited filters, hooks, fsmonitor or lazy fetch.
 pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
-    git_output(
-        git_command(path)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_NO_REPLACE_OBJECTS", "1")
-            .env("GIT_NO_LAZY_FETCH", "1")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .args([
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.attributesFile=/dev/null",
-                "-c",
-                "merge.autoStash=false",
-                "-c",
-                "rerere.enabled=false",
-            ])
-            .args(args)
-            .output()?,
-    )
+    let mut cmd = git_command(path);
+    cmd.env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_NO_REPLACE_OBJECTS", "1")
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "-c", "core.fsmonitor=false",
+            "-c", "core.attributesFile=/dev/null",
+            "-c", "merge.autoStash=false",
+            "-c", "rerere.enabled=false",
+            "-c", "gc.auto=0",
+            "-c", "maintenance.auto=false",
+        ])
+        .args(args);
+    git_output(crate::checked_publication::run_command(cmd)?)
 }
 
 fn git_output(out: std::process::Output) -> Result<String> {
@@ -855,6 +852,7 @@ fn worktree_inner(
     after_create: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Value> {
     check(policy, home, None, BTreeSet::new())?;
+    exclude_local_artifacts(home, false)?;
     require(
         git(home, &["status", "--porcelain"])?.is_empty(),
         "home is dirty; preserve changes before allocating a worktree",
@@ -898,7 +896,7 @@ fn worktree_inner(
             path.display()
         )
     })?;
-    Ok(json!({"worktree":path,"base":base}))
+    Ok(json!({"worktree":path,"base":base,"artifact_home":home}))
 }
 
 #[cfg(test)]
@@ -926,7 +924,7 @@ fn worktree_receipt_is_minimal_and_partial_setup_preserves_owned_drafts() {
     let policy = Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
     let base = git(&home, &["rev-parse", "HEAD"]).unwrap();
     let receipt = worktree(&policy, &home).unwrap();
-    assert_eq!(receipt.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["base", "worktree"]);
+    assert_eq!(receipt.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["artifact_home", "base", "worktree"]);
     assert_eq!(receipt["base"], base);
     let existing = Path::new(receipt["worktree"].as_str().unwrap());
     fs::write(existing.join("existing.txt"), "Keep existing work.").unwrap();
@@ -1031,6 +1029,7 @@ fn reader_state(home: &Path) -> Result<String> {
             )? == dotgit.to_str().ok_or("non-UTF-8 home")?,
         "reader must be an independent Git home root",
     )?;
+    exclude_local_artifacts(home, false)?;
     require(
         reader_git(home, &["ls-files", "-v"])?
             .lines()
@@ -1168,6 +1167,8 @@ fn advance_inner(
     pause: Option<&index::PauseBeforeAccept>,
     before_merge: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
+    let home_lock = submission::home_lock(home, false)?;
+    let _custody = crate::checked_publication::Custody::new(&[&home_lock])?;
     let before = reader_state(home)?;
     let recovered = crate::checked_publication::submit(
         policy,
@@ -1250,6 +1251,7 @@ fn advance_checked(
         "reader changed; preserve files and retry",
     )?;
     verify_ref()?;
+    crate::checked_publication::protect_artifact_owners(home, target)?;
     if before != target {
         reader_git(home, &["merge", "--ff-only", "--no-edit", target])?;
     }
@@ -1720,36 +1722,58 @@ fn session_archive_lock(root: &Path) -> Result<fs::File> {
     Ok(lock)
 }
 
-fn session_attachment_lock(home: &Path, node_id: &str) -> Result<fs::File> {
-    use std::os::unix::fs::MetadataExt;
+pub(crate) use submission::DraftLease;
 
-    let state = home.join(".sifttext");
-    if let Err(error) = fs::create_dir(&state)
-        && error.kind() != std::io::ErrorKind::AlreadyExists
-    {
-        return Err(error.into());
+pub(crate) fn publication_gate(view: &Path) -> Result<fs::File> {
+    let mut gate = submission::lifecycle_lock(view, false)?;
+    submission::mark_git_lifecycle(&mut gate)?;
+    Ok(gate)
+}
+
+fn session_attachment_lock(home: &Path) -> Result<(PathBuf, (fs::File, Option<fs::File>))> {
+    // Before .git classification, and retained through every Store mutation.
+    // A cleanup waiter revalidates before creating even standalone lock dirs.
+    let home = submission::lifecycle_path(home)?;
+    let mut lifecycle = submission::lifecycle_lock(&home, true)?;
+    crate::real_dir(&home)?;
+    let canonical_home = fs::canonicalize(&home)?;
+    let home = canonical_home.as_path();
+    let versioned = match fs::symlink_metadata(home.join(".git")) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    if versioned {
+        submission::mark_git_lifecycle(&mut lifecycle)?;
+        let common = PathBuf::from(reader_git(
+            home,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?);
+        let own = PathBuf::from(reader_git(home, &["rev-parse", "--absolute-git-dir"])?);
+        let lock = if own == common {
+            submission::home_lock(home, true)?
+        } else {
+            submission::draft_lock(home, home, true)?
+        };
+        // The directory/registration may have disappeared while waiting. Do not
+        // recreate a removed draft or reuse its stale store/sidecar snapshot.
+        crate::real_dir(home)?;
+        require(
+            reader_git(home, &["rev-parse", "--absolute-git-dir"])?
+                == own.to_str().ok_or("non-UTF-8 Git directory")?
+                && reader_git(home, &["rev-parse", "--show-toplevel"])?
+                    == home.to_str().ok_or("non-UTF-8 home")?
+                && reader_git(home, &["worktree", "list", "--porcelain", "-z"])?
+                    .split('\0')
+                    .any(|row| row == format!("worktree {}", home.display())),
+            "session worktree changed while waiting",
+        )?;
+        return Ok((canonical_home, (lifecycle, Some(lock))));
     }
-    crate::real_dir(&state)?;
-    let locks = state.join("locks");
-    if let Err(error) = fs::create_dir(&locks)
-        && error.kind() != std::io::ErrorKind::AlreadyExists
-    {
-        return Err(error.into());
-    }
-    crate::real_dir(&locks)?;
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(locks.join(format!("session-attach-{node_id}.lock")))?;
-    require(
-        lock.metadata()?.is_file() && lock.metadata()?.nlink() == 1,
-        "unsafe session attachment lock",
-    )?;
-    lock.lock()?;
-    Ok(lock)
+    require(lifecycle.metadata()?.len() == 0, "Git session root disappeared; retain files for recovery")?;
+    // Genuine standalone stores need only the per-root gate. No local lock
+    // directory is needed, and no old lock residue is deleted or allowlisted.
+    Ok((canonical_home, (lifecycle, None)))
 }
 
 pub fn attach_session(
@@ -1762,6 +1786,8 @@ pub fn attach_session(
     attach_session_with_gate(home, node_id, descriptor, topic, archive_root, |_| Ok(()))
 }
 
+/// The gate runs under session custody; it must not reenter attachment,
+/// restore or publication for the same store.
 pub fn attach_session_with_gate(
     home: &Path,
     node_id: &str,
@@ -1783,7 +1809,8 @@ pub fn attach_session_with_gate(
                     && descriptor["archive_key"].as_str().is_some())),
         "valid session descriptor required",
     )?;
-    let store = Store::read(home)?;
+    let (home, _attachment_lock) = session_attachment_lock(home)?;
+    let store = Store::read(&home)?;
     require(store.nodes.contains_key(node_id), "session node is absent")?;
     let home = store.path;
     let available = descriptor["availability"] == "available";
@@ -1794,7 +1821,6 @@ pub fn attach_session_with_gate(
     };
     let node = home.join("nodes").join(node_id);
     crate::real_dir(&node)?;
-    let _attachment_lock = session_attachment_lock(&home, node_id)?;
     let sidecar = node.join("session-sources.json");
     let mut records: Vec<Value> = if sidecar.exists() {
         serde_json::from_slice(&crate::read_regular(&sidecar)?)?
@@ -2018,7 +2044,8 @@ pub fn backup_session_archive(home: &Path) -> Result<Value> {
 
 pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> {
     require(archive_root.is_absolute(), "archive_root must be absolute")?;
-    let settings = session_retention_settings(home)?;
+    let (home, _attachment_lock) = session_attachment_lock(home)?;
+    let settings = session_retention_settings(&home)?;
     let (enabled, _, backup_enabled, remote) = retention_fields(&settings)?;
     let cloned = if !archive_root.exists() {
         require(
@@ -2066,7 +2093,7 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
         )?;
         git(&root, &["merge", "--ff-only", "FETCH_HEAD"])?;
     }
-    let store = Store::read(home)?;
+    let store = Store::read(&home)?;
     let home = store.path;
     // A home that arrived by clone or pull carries no `.git/info/exclude` rules, so
     // re-apply them before writing private links; otherwise they surface as untracked

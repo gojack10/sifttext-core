@@ -40,7 +40,9 @@ sifttext logout                           Revoke remote login; always remove loc
 sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
 sifttext update [-y]                       Check/apply official updates; -y allows >15000 tokens
-sifttext update --status                    Check releases; show recorded identities and pending work
+sifttext update --status                    Check releases (network/writes; needs exclusive update lock)
+sifttext update --local-status              Read recorded update state only; no lock/network/writes
+                                          Not an atomic snapshot or knowledge-publication clearance
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext update --rebuild                   Rebuild the selected local source and retain its pin
@@ -60,7 +62,7 @@ sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
                                           Check/save in draft, refresh HOME, remove completed draft
 sifttext accepted REPO [-y]                Checked separate view; does not advance normal home
 sifttext advance HOME                      Explicit ff-only clean home reader + derived refresh
-sifttext worktree HOME                     Allocate a private branch/worktree; prints its path
+sifttext worktree HOME                     Allocate a private draft; prints worktree and durable artifact_home
 sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
                                           Create a tree root or child; never commits
 sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
@@ -81,7 +83,8 @@ sifttext search STORE QUERY [UNDER_UUID] [-y]
 sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version LEAN; -y allows >15000 tokens
 sifttext -h                               This reference
 
-Read node.md with ordinary file tools. Edit only your private worktree.
+Read node.md with ordinary file tools. Edit authored knowledge only in your private worktree.
+Task files belong in the durable artifact_home; follow Knowledge Layout's Node artifacts section.
 Git publication is explicit: inspect, validate the exact candidate, commit,
 then submit to combine accepted main, refresh the home and remove the saved draft.
 After interruption, preserve the original submit arguments and retry that request.
@@ -155,6 +158,7 @@ fn run() -> Result<()> {
             [_, mode]
                 if [
                     "--status",
+                    "--local-status",
                     "--resume",
                     "--rollback",
                     "--config",

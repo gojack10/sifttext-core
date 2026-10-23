@@ -121,6 +121,14 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
     let archive = tempfile::tempdir().unwrap();
     let relocated = tempfile::tempdir().unwrap();
     fixture(home.path());
+    // Relative input through a parent alias remains a genuine standalone root;
+    // slash/dot suffixes must not be rejected wholesale.
+    let alias_dir = tempfile::tempdir_in(".").unwrap();
+    let parent_alias = alias_dir.path().join("parent");
+    std::os::unix::fs::symlink(home.path().parent().unwrap(), &parent_alias).unwrap();
+    let relative_home = parent_alias.strip_prefix(std::env::current_dir().unwrap()).unwrap()
+        .join(home.path().file_name().unwrap());
+    assert!(!relative_home.is_absolute());
     let key = "sessions/session-1.jsonl";
     let source = archive.path().join(key);
     fs::create_dir_all(source.parent().unwrap()).unwrap();
@@ -137,7 +145,7 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
         "cutoff_entry_id": "entry-1"
     });
     let attached = local::attach_session(
-        home.path(),
+        Path::new(&format!("{}/", relative_home.display())),
         NODE,
         &descriptor,
         "sample topic",
@@ -155,7 +163,7 @@ fn attach_and_restore_rebuilds_link_after_archive_relocation() {
     fs::create_dir_all(moved.parent().unwrap()).unwrap();
     fs::write(&moved, "synthetic session\n").unwrap();
     assert_eq!(
-        local::restore_session_links(home.path(), relocated.path()).unwrap()["links"],
+        local::restore_session_links(Path::new(&format!("{}/.", relative_home.display())), relocated.path()).unwrap()["links"],
         1
     );
     assert_eq!(
@@ -345,6 +353,7 @@ fn concurrent_same_node_attachments_preserve_every_record_and_link() {
     let home = tempfile::tempdir().unwrap();
     let archive = tempfile::tempdir().unwrap();
     fixture(home.path());
+    git(home.path(), &["init", "-q", "-b", "main"]);
     let count = 8;
     let start = Arc::new(Barrier::new(count));
     let workers: Vec<_> = (0..count)
@@ -461,7 +470,7 @@ fn checked_publication_keeps_source_descriptors_but_not_local_chat_links() {
     );
 
     fixture(&draft);
-    let descriptor = serde_json::to_vec(&json!([{
+    let source_descriptor = json!({
         "schema_version": 1,
         "harness": "pi",
         "session_id": "00000000-0000-4000-8000-000000000001",
@@ -471,15 +480,15 @@ fn checked_publication_keeps_source_descriptors_but_not_local_chat_links() {
         "branch_entry_ids": ["entry-1"],
         "leaf_id": "entry-1",
         "cutoff_entry_id": "entry-1"
-    }]))
-    .unwrap();
+    });
     let descriptor_path = format!("nodes/{NODE}/session-sources.json");
-    fs::write(draft.join(&descriptor_path), &descriptor).unwrap();
-    let archive = temp.path().join("archive.jsonl");
+    let archive_root = temp.path().join("archive");
+    let archive = archive_root.join(source_descriptor["archive_key"].as_str().unwrap());
+    fs::create_dir_all(archive.parent().unwrap()).unwrap();
     fs::write(&archive, "synthetic source\n").unwrap();
+    local::attach_session(&draft, NODE, &source_descriptor, "synthetic topic", &archive_root).unwrap();
+    let descriptor = fs::read(draft.join(&descriptor_path)).unwrap();
     let chats = draft.join(format!("nodes/{NODE}/artifacts/chats"));
-    fs::create_dir_all(&chats).unwrap();
-    std::os::unix::fs::symlink(&archive, chats.join("pi-synthetic-topic.jsonl")).unwrap();
     let exclude = git(
         &draft,
         &[
