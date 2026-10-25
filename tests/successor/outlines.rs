@@ -182,7 +182,7 @@ fn publication_moves_only_its_owned_content_and_keeps_resolved_guard() {
     let mut nodes = vec![json!({
         "id": id(1), "name": "Root", "status": "resolved",
         "micro_summary": "Summary", "children": [],
-        "content": "Body", "crystallization": "ignored hydrated field"
+        "content": "Body", "unused": "ignored hydrated field"
     })];
     let original = nodes.clone();
     let expected = outlines::Publication::prepare(&store, &nodes, "v1")

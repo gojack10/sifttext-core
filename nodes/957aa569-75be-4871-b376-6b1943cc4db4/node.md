@@ -73,7 +73,7 @@ Operation: add this instruction to the empty scope.
 
 ### Fictional example: replacing an ambiguous instruction
 
-Destination: Validate Daily Export → crystallization.
+Destination: Validate Daily Export → content.
 Operation: replace the second sentence.
 
 ```diff

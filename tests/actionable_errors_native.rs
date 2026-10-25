@@ -69,7 +69,7 @@ fn refusal(home: &Path, store: &Path, args: &[&str], expected: &[&str]) {
         "graph_mode",
         "e8234ea5-3467-4f2b-8ca2-2bcc5cc80d11",
         "capture_or_graph_invalid",
-        "crystallization_tokens",
+        "content_tokens",
         "before_version:_",
     ] {
         assert!(!text.contains(forbidden), "leaked {forbidden}: {text}");

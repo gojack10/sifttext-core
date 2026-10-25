@@ -40,8 +40,8 @@ fn report() -> Report {
 fn only_problems_and_nonduplicate_locators_reach_the_cli() {
     let mut r = report();
     r.rows = vec![
-        row(Some("a"), "crystallization_tokens", Some(4)),
-        row(Some("b"), "crystallization_over_limit", Some(CEILING + 1)),
+        row(Some("a"), "content_tokens", Some(4)),
+        row(Some("b"), "content_over_limit", Some(CEILING + 1)),
         row(Some("b"), "status_transition_or_reason", None),
         row(Some("b"), "status_transition_or_reason", None),
         row(Some("c"), "status_transition_or_reason", None),
@@ -52,12 +52,12 @@ fn only_problems_and_nonduplicate_locators_reach_the_cli() {
     assert_eq!(
         cli["rows"][0],
         serde_json::json!({
-        "id":"b", "check":"crystallization_over_limit", "tokens":5001, "limit":5000})
+        "id":"b", "check":"content_over_limit", "tokens":5001, "limit":5000})
     );
     assert_eq!(cli["before_version"], "baseline");
     assert_eq!(full["rows"].as_array().unwrap().len(), 5);
     assert_eq!(full["rows"][0]["rule"], "internal-rule");
-    assert!(r.lean().unwrap().contains("crystallization_tokens"));
+    assert!(r.lean().unwrap().contains("content_tokens"));
     assert_eq!(serde_json::to_value(&r).unwrap(), full);
 }
 
@@ -65,9 +65,9 @@ fn only_problems_and_nonduplicate_locators_reach_the_cli() {
 fn nested_publication_uses_the_same_failure_projection_without_changing_raw_reports() {
     let mut r = report();
     r.rows = vec![
-        row(Some("a"), "crystallization_tokens", Some(4)),
-        row(Some("b"), "crystallization_tokens", Some(CEILING + 1)),
-        row(Some("b"), "crystallization_over_limit", Some(CEILING + 1)),
+        row(Some("a"), "content_tokens", Some(4)),
+        row(Some("b"), "content_tokens", Some(CEILING + 1)),
+        row(Some("b"), "content_over_limit", Some(CEILING + 1)),
     ];
     let raw = serde_json::to_value(&r).unwrap();
     let lean = r.lean().unwrap();
@@ -89,7 +89,7 @@ fn nested_publication_uses_the_same_failure_projection_without_changing_raw_repo
     assert_eq!(
         output["validation"]["rows"],
         serde_json::json!([
-            {"id":"b", "check":"crystallization_over_limit", "tokens":5001, "limit":5000}
+            {"id":"b", "check":"content_over_limit", "tokens":5001, "limit":5000}
         ])
     );
     assert!(output["validation"].get("nodes").is_none());
@@ -99,7 +99,7 @@ fn nested_publication_uses_the_same_failure_projection_without_changing_raw_repo
     assert_eq!(serde_json::to_value(&r).unwrap(), raw);
     assert_eq!(receipt["validation"], raw);
     assert_eq!(r.lean().unwrap(), lean);
-    assert!(lean.contains("crystallization_tokens"));
+    assert!(lean.contains("content_tokens"));
 }
 
 #[test]

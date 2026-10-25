@@ -2,7 +2,7 @@
 //
 // One authored node's four covered fields in, the two text fields a searchable document carries
 // out: `title` is the authored `name` and `body` is the authored `micro_summary`, `scope` and
-// `crystallization` joined by LF in that order. That is the whole mapping. It is the same projection
+// `content` joined by LF in that order. That is the whole mapping. It is the same projection
 // the maintained acceptance contract and the external search expectation use, so a candidate text
 // document and a real indexed node agree by construction rather than by a second spelling.
 //
@@ -19,9 +19,9 @@
 // Only two validity rules belong to this projection, because the searchable surface cannot carry a
 // node whose display title or summary text is blank: authored `name` and `micro_summary` must be
 // nonblank. Blank means empty or entirely Unicode whitespace, and it is rejected rather than
-// repaired. `scope` and `crystallization` may legitimately be empty strings, so an empty one of
+// repaired. `scope` and `content` may legitimately be empty strings, so an empty one of
 // those still contributes its separator. This helper does not decide status-specific validity of
-// `crystallization`, does not accept a complete authored store, and does not certify that the record
+// `content`, does not accept a complete authored store, and does not certify that the record
 // it was handed is a valid node: a caller that has already validated the store normalizes an absent
 // optional authored `scope` to the empty string before asking for a projection, and that
 // normalization is not this helper's business.
@@ -38,7 +38,7 @@ pub struct Fields<'a> {
     pub name: &'a str,
     pub micro_summary: &'a str,
     pub scope: &'a str,
-    pub crystallization: &'a str,
+    pub content: &'a str,
 }
 
 /// One searchable document: exactly the `title` and `body` text an index consumes per node.
@@ -48,7 +48,7 @@ pub struct Document<'a> {
     pub body: String,
 }
 
-/// `name` becomes `title`; `micro_summary`, `scope` and `crystallization` become `body`, joined by
+/// `name` becomes `title`; `micro_summary`, `scope` and `content` become `body`, joined by
 /// LF in that order. Errs only on a blank authored `name` or `micro_summary`.
 pub fn project<'a>(fields: Fields<'a>) -> Result<Document<'a>, &'static str> {
     if is_blank(fields.name) {
@@ -59,7 +59,7 @@ pub fn project<'a>(fields: Fields<'a>) -> Result<Document<'a>, &'static str> {
     }
     Ok(Document {
         title: fields.name,
-        body: [fields.micro_summary, fields.scope, fields.crystallization].join("\n"),
+        body: [fields.micro_summary, fields.scope, fields.content].join("\n"),
     })
 }
 

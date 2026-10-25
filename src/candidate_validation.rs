@@ -371,7 +371,7 @@ impl Report {
         let mut value = json!({
             "status": self.status, "version": self.version, "before_version": self.before_version,
             "nodes": self.nodes, "ceiling": CEILING, "encoding": "o200k_base",
-            "tokenizer_version": "tiktoken-rs/0.6.0;ordinary;crystallization/v1",
+            "tokenizer_version": "tiktoken-rs/0.6.0;ordinary;content/v1",
             "commit_rule": COMMIT_RULE, "decomposition_rule": DECOMPOSITION_RULE,
             "rows": self.rows,
         });
@@ -473,7 +473,7 @@ pub(crate) fn customer_report(value: &mut serde_json::Value) {
     let rows = rows
         .iter()
         .filter_map(|row| {
-            if row["check"] == "crystallization_tokens"
+            if row["check"] == "content_tokens"
                 || (row["check"] == "validation_unavailable" && failure.is_some())
                 || (row["check"] == "structural_invalid" && problem.is_some())
                 || (row["id"].is_null()
@@ -491,7 +491,7 @@ pub(crate) fn customer_report(value: &mut serde_json::Value) {
             }
             if fields
                 .get("check")
-                .is_some_and(|v| v == "crystallization_over_limit")
+                .is_some_and(|v| v == "content_over_limit")
             {
                 fields.insert("limit".into(), json!(CEILING));
             }
@@ -834,7 +834,7 @@ fn check(
         let tokens = tokenizer.lock().encode_ordinary(&node.content).len();
         report.rows.push(Row {
             id: Some(id.clone()),
-            check: "crystallization_tokens",
+            check: "content_tokens",
             rule: CEILING_RULE,
             tokens: Some(tokens),
             source: None,
@@ -844,7 +844,7 @@ fn check(
         if tokens > CEILING {
             report.reject(
                 Some(id),
-                "crystallization_over_limit",
+                "content_over_limit",
                 CEILING_RULE,
                 Some(tokens),
             );

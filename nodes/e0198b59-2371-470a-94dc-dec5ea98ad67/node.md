@@ -11,7 +11,7 @@ Native `see_also` is a JSON array of `{"target":"UUID","reason":"Nonblank relati
 
 The distinction matters:
 
-- **Inline links** (in scope or crystallization) are part of the narrative. "This depends on Authentication Flow" — the link is load-bearing, the text does not make sense without it.
+- **Inline links** (in scope or content) are part of the narrative. "This depends on Authentication Flow" — the link is load-bearing, the text does not make sense without it.
 - **See also edges** record relationships in the native index. A reason such as "Required input before editing" describes a dependency; "Background comparison" describes optional context. A citation in the body does not create either edge.
 
 When to use see_also:

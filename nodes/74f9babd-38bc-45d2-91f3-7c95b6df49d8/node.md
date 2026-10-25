@@ -13,12 +13,12 @@ The parent-child contract: every child's scope should be a subset of the parent'
 
 When to create a child:
 - The node's scope covers multiple distinct sub-topics
-- The crystallization is getting too long and covers different concerns
+- The content is getting too long and covers different concerns
 - You want to track status on individual pieces (one child resolved, another in progress)
 - A language model would benefit from focusing on one piece at a time rather than the whole
 
 When NOT to create a child:
-- The content is short enough to live in the parent's crystallization
+- The content is short enough to live in the parent's content
 - You are creating a child just for organizational neatness, not because the scope is genuinely too broad
 - The "child" is actually a separate concern that belongs in a different branch (make it a sibling or a node elsewhere, and link)
 

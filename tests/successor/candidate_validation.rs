@@ -163,7 +163,7 @@ fn candidate_ceiling_is_body_only_complete_and_index_version_compatible() {
     assert!(
         r.rows
             .iter()
-            .any(|r| r.check == "crystallization_over_limit"
+            .any(|r| r.check == "content_over_limit"
                 && r.tokens == Some(5001)
                 && r.id == Some(id(1)))
     );

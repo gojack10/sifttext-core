@@ -16,4 +16,4 @@ Use deferred when:
 
 Deferred is different from not_examined. A not_examined node was never started. A deferred node was started or at least scoped, and a conscious decision was made to pause it.
 
-When you defer a node, it helps to note why in the crystallization: "Deferred until Q3 when the API is stable" gives future-you (or a language model) the context to know when to revisit.
+When you defer a node, it helps to note why in the content: "Deferred until Q3 when the API is stable" gives future-you (or a language model) the context to know when to revisit.

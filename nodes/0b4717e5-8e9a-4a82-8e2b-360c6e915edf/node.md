@@ -11,6 +11,6 @@ Discarded means this node was considered and deliberately rejected. The idea, ap
 
 Discarded nodes are kept, not deleted. They are institutional memory. They prevent the same dead end from being re-explored by a future collaborator or language model.
 
-When you discard a node, write why in the crystallization. "Discarded because the API does not support batch operations" is far more useful than a node that simply disappears. The reason is the value.
+When you discard a node, write why in the content. "Discarded because the API does not support batch operations" is far more useful than a node that simply disappears. The reason is the value.
 
 Discarded is different from deferred. Deferred means "not now, but later." Discarded means "not ever, and here is why."

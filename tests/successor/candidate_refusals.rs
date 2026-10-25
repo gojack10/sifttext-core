@@ -109,7 +109,7 @@ fn candidate_refusals_valid_and_content_rejections_preserve_exact_source() {
     assert!(
         r.rows
             .iter()
-            .any(|r| r.check == "crystallization_over_limit" && r.tokens == Some(5001))
+            .any(|r| r.check == "content_over_limit" && r.tokens == Some(5001))
     );
     node(t.path(), "in_progress", SECRET);
     // A complete capture with no placement is rejected by actual compiled Bend.

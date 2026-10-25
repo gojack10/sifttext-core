@@ -40,7 +40,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
     let id = "00000000-0000-4000-8000-000000000001";
     let node = |id: &str| {
         format!(
-            "---\nid: \"{id}\"\nname: \"Synthetic check\"\nmicro_summary: \"日本語🦀\"\nstatus: \"in_progress\"\nsee_also: []\n---\nSmall crystallization.\n"
+            "---\nid: \"{id}\"\nname: \"Synthetic check\"\nmicro_summary: \"日本語🦀\"\nstatus: \"in_progress\"\nsee_also: []\n---\nSmall content.\n"
         )
     };
     let add = |home: &std::path::Path, id: &str| {
@@ -125,7 +125,7 @@ fn check_gates_large_reports_without_changing_validation_or_sources() {
         .len();
     eprintln!("OUTPUT_TOKENS check_single_refusal_904={tokens}");
     assert!(tokens < 300, "single refusal grew: {tokens}");
-    assert!(!diagnostics.contains("crystallization_tokens"));
+    assert!(!diagnostics.contains("content_tokens"));
     assert!(!diagnostics.contains("source\t"));
     assert!(!diagnostics.contains("rule"));
     assert_eq!(

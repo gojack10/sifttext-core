@@ -38,7 +38,7 @@ fn forest() -> Value {
     branch["scope"] = json!("NOT IN AN OUTLINE");
     branch["ruled_out"] = json!("NOT IN THE CORE");
     let mut plain = node(B, "Plain", "resolved", &[]);
-    plain["crystallization"] = json!("Checked answer, kept out of every view.");
+    plain["content"] = json!("Checked answer, kept out of every view.");
     let root = node(R, "Root", "in_progress", &[B, A]);
     json!([
         node(OUTSIDE, "other root", "in_progress", &[LEAF]),
@@ -443,9 +443,9 @@ fn invalid_store_identity_and_version_are_rejected_not_repaired() {
         rejection(
             R,
             &replace(&forest(), B, json!({"id": B, "name": "Plain", "status": "resolved",
-                "micro_summary": "Plain summary.", "children": [], "crystallization": "  "}))
+                "micro_summary": "Plain summary.", "children": [], "content": "  "}))
         )
-        .contains("resolved with blank crystallization")
+        .contains("resolved with blank content")
     );
     assert!(
         rejection(R, &push(forest(), node(B, "Plain again", "in_progress", &[])))

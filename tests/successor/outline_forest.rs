@@ -53,7 +53,7 @@ fn forest() -> Value {
     stuck["scope"] = json!("NOT IN AN OUTLINE");
     stuck["ruled_out"] = json!("NOT IN THE CORE");
     let mut resolved = node(B, "Resolved", "resolved", &[]);
-    resolved["crystallization"] = json!("Checked answer, kept out of every view.");
+    resolved["content"] = json!("Checked answer, kept out of every view.");
     let root = node(R, "Root", "in_progress", &[A, B, WIDE]);
     json!([
         node(LEAF, "Leaf", "not_examined", &[]),
@@ -85,7 +85,7 @@ fn moved() -> Value {
         &nodes,
         B,
         json!({"id": B, "name": "Resolved", "status": "resolved", "micro_summary": "Resolved summary.",
-               "children": [LEAF], "crystallization": "Checked answer, kept out of every view."}),
+               "children": [LEAF], "content": "Checked answer, kept out of every view."}),
     )
 }
 
@@ -537,7 +537,7 @@ fn every_status_and_active_reason_is_retained_in_its_own_bundle() {
         &forest(),
         B,
         json!({"id": B, "name": "Resolved", "status": "resolved", "micro_summary": "Resolved summary.",
-               "children": [], "crystallization": "Answered.", "blocker": "INACTIVE BLOCKER",
+               "children": [], "content": "Answered.", "blocker": "INACTIVE BLOCKER",
                "discard_reason": "INACTIVE DISCARD", "deferred_reason": "INACTIVE DEFERRED"}),
     );
     let rebuilt = batch(VERSION, &noisy);
@@ -791,13 +791,13 @@ fn one_invalid_node_rejects_the_whole_batch_without_a_partial_artifact_set() {
             ),
         ),
         (
-            "blank resolved crystallization",
+            "blank resolved content",
             replace(
                 &forest(),
                 B,
                 json!({"id": B, "name": "Resolved", "status": "resolved",
                        "micro_summary": "Resolved summary.", "children": [],
-                       "crystallization": ""}),
+                       "content": ""}),
             ),
         ),
     ];
@@ -809,7 +809,7 @@ fn one_invalid_node_rejects_the_whole_batch_without_a_partial_artifact_set() {
             }
             "blank discard reason" => assert!(error.contains("discard_reason"), "{label}: {error}"),
             _ => assert!(
-                error.contains("resolved with blank crystallization"),
+                error.contains("resolved with blank content"),
                 "{label}: {error}"
             ),
         }

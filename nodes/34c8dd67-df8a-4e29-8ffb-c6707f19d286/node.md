@@ -7,7 +7,7 @@ see_also: []
 scope: "Status value. Done. The question is answered, the decision is made, the work is complete."
 warnings: ""
 ---
-Resolved means this node is done. The question has been answered, the decision has been made, or the work is complete. The crystallization contains the final state.
+Resolved means this node is done. The question has been answered, the decision has been made, or the work is complete. The content contains the final state.
 
 A resolved node is not frozen. You can reopen it if circumstances change. But resolving it signals to everyone (and every language model) that this piece is settled and can be relied upon.
 

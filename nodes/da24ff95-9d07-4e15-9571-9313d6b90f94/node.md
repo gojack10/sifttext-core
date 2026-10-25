@@ -62,7 +62,7 @@ Direct parentage and ordered children are already available through native child
 
 Hard rule: do not add links to direct parents or direct children. If prose needs the parent or children, refer structurally: "read parent", "read children", "the parent owns this invariant", or "the child named X contains the probe." The structure carries identity; a link duplicates it.
 
-Parent crystallization must not enumerate its children. Child crystallization must not link back to its parent. Remove child lists, parent links, comprehensive child link directories, and manual tables of contents from prose.
+Parent content must not enumerate its children. Child content must not link back to its parent. Remove child lists, parent links, comprehensive child link directories, and manual tables of contents from prose.
 
 An ordered mandatory/conditional reading or execution sequence for an instruction pipeline is operational behavior, not a redundant directory of children. Preserve the necessary sequence while avoiding a copied child inventory. Use structural child names for one-hop references; do not create redundant parent/child links.
 
@@ -72,16 +72,16 @@ Apply the parentage test above. Distinguish a contribution or answer to a govern
 
 ### 5. Verify field placement
 
-Content must go in the correct vitals field — not all dumped into crystallization.
+Place information in the appropriate field rather than putting everything in `content`.
 
 - **see_also** — explicit graph references with target UUID and reason; include required dependencies where appropriate
 - **discarded nodes** — independently meaningful rejected approaches, with `discard_reason`
 - **warnings** — guardrails, things to never do or always check
-- **crystallization** — the node-owned answer or current checkpoint, its rationale, evidence, limitations, and continuation; not a running transcript of unrelated work
+- **content** — the node-owned answer or current checkpoint, its rationale, evidence, limitations, and continuation; not a running transcript of unrelated work
 - **scope** — what question the node explores
 - **micro_summary** — stable-purpose navigation context, not current progress or the next assignment
 
-Use dedicated Vitals fields for their navigation and guardrail roles. A brief warning may also appear in crystallization when needed to understand the answer; its detailed evidence remains with its owner. Remove duplicated detailed state, not useful synthesis or necessary qualifications.
+Use dedicated Vitals fields for their navigation and guardrail roles. A brief warning may also appear in content when needed to understand the answer; its detailed evidence remains with its owner. Remove duplicated detailed state, not useful synthesis or necessary qualifications.
 
 ### 6. Fix diff clarity
 
@@ -143,7 +143,7 @@ If this requires source-chat reconstruction, an unexpanded diagram or guessed wo
 
 Apply the two-stage outline-then-owner navigation check above to the affected area. Record which owners the outline exposes and which node reads supply the required decision or action. Compare those owners with the known obligations in the changed content. Repair a missing owner, a misleading summary or a stale body at its source; a statement that the tree is complete is not evidence. Check what the reader needs and what it can safely skip.
 
-Run the complete native candidate check before and after persistence/reconciliation; it counts Markdown crystallization bodies with `o200k_base` and rejects more than 5000 tokens per body. This is not a count of all metadata fields. Ordinary Git commit alone is not this gate. Report generated link/context overhead separately; do not repair it by deleting necessary authored content or navigation. Apply the existing semantic checks as well: a passing count alone does not prove proper decomposition or sufficient context.
+Run the complete native candidate check before and after persistence/reconciliation; it counts Markdown content bodies with `o200k_base` and rejects more than 5000 tokens per body. This is not a count of all metadata fields. Ordinary Git commit alone is not this gate. Report generated link/context overhead separately; do not repair it by deleting necessary authored content or navigation. Apply the existing semantic checks as well: a passing count alone does not prove proper decomposition or sufficient context.
 
 ### Observation-first check (2026-09-15)
 
@@ -151,4 +151,4 @@ For affected planned implementation work, identify the input/scenario, real obse
 
 ## Legacy rejected-approach note
 
-Parent crystallization child enumeration (TOC-in-prose). Trees have structural navigation via children/parent; comprehensive child lists or child link directories in crystallization create DRY violations. Correct pattern: sparse inline references only when the parent's reasoning genuinely depends on the child.
+Parent content child enumeration (TOC-in-prose). Trees have structural navigation via children/parent; comprehensive child lists or child link directories in content create DRY violations. Correct pattern: sparse inline references only when the parent's reasoning genuinely depends on the child.

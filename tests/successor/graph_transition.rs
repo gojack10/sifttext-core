@@ -549,7 +549,7 @@ fn compiled_native_transition_contract() {
         report
             .rows
             .iter()
-            .any(|r| r.check == "crystallization_over_limit")
+            .any(|r| r.check == "content_over_limit")
     );
 
     // A compiled artifact changed after compilation cannot provide a verdict.

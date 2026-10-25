@@ -12,7 +12,7 @@ Every node has a status that indicates where it is in its lifecycle. Status help
 The six native statuses describe a lifecycle:
 
 - **Not Examined** — the starting state. This node exists but has not been worked on yet.
-- **In Progress** — actively being worked on. Scope is defined, crystallization is evolving.
+- **In Progress** — actively being worked on. Scope is defined, content is evolving.
 - **Resolved** — the node's own acceptance claim is proven; its nonblank body records the answer and evidence, and it has no active direct child.
 - **Stuck** — active work blocked by a named external condition; author a nonblank `blocker`.
 - **Deferred** — intentionally set aside for later. Not abandoned, but not active.

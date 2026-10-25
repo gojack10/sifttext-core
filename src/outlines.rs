@@ -328,11 +328,7 @@ impl Publication {
     ) -> Result<Self> {
         let typed: Vec<Node> = nodes
             .iter()
-            .map(|row| {
-                let mut row = row.clone();
-                row["crystallization"] = row["content"].take();
-                serde_json::from_value(row)
-            })
+            .map(|row| serde_json::from_value(row.clone()))
             .collect::<std::result::Result<_, _>>()?;
         let forest = Forest::new(&typed)?;
         let processing = processing_identity();

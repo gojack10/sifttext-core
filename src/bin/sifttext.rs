@@ -89,7 +89,7 @@ Git publication is explicit: inspect, validate the exact candidate, commit,
 then submit to combine accepted main, refresh the home and remove the saved draft.
 After interruption, preserve the original submit arguments and retry that request.
 No fixed node-count ceiling; checked resource bounds, 1 MiB authored files,
-5000-token crystallization ceiling. Default KB is separate from editable homes.
+5000-token content ceiling. Default KB is separate from editable homes.
 No hosted account, MCP, model provider, or Dark Factory required.";
 
 fn run() -> Result<()> {

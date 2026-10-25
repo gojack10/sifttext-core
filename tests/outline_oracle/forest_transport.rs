@@ -82,7 +82,7 @@ fn forest_observer_rejects_invalid_requests_without_partial_success() {
         ("blank outside reason", patch(7, json!({"blocker":" "}))),
         (
             "blank outside resolved",
-            patch(14, json!({"crystallization":""})),
+            patch(14, json!({"content":""})),
         ),
         (
             "duplicate identity",

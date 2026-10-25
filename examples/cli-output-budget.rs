@@ -47,7 +47,7 @@ fn report(n: usize) -> Report {
         rows: (0..n)
             .map(|i| Row {
                 id: Some(id(i)),
-                check: "crystallization_tokens",
+                check: "content_tokens",
                 rule: "302b4549-ef27-4ab7-a9a7-7f240ffe058e",
                 tokens: Some(5000),
                 source: None,
@@ -74,7 +74,7 @@ fn main() {
             &(r.lean().unwrap() + "\n"),
         );
         count(&format!("check CLI N={n}"), &(r.cli_lean().unwrap() + "\n"));
-        assert!(!r.cli_lean().unwrap().contains("crystallization_tokens"));
+        assert!(!r.cli_lean().unwrap().contains("content_tokens"));
         let mut receipt = json!({"status":"current", "check":"accepted_checked_revision",
             "candidate":sifttext_file_graph::sha256(b"commit")[..40], "version":r.version,
             "view":"/tmp/example/checked-view", "validation":r,
@@ -93,7 +93,7 @@ fn main() {
         r.status = "rejected";
         r.rows.push(Row {
             id: Some(id(0)),
-            check: "crystallization_over_limit",
+            check: "content_over_limit",
             rule: "302b4549-ef27-4ab7-a9a7-7f240ffe058e",
             tokens: Some(5001),
             source: None,

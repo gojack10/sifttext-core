@@ -46,7 +46,7 @@ Use these checks on the actual landed result, without assuming a defect exists:
 
 Apply the Frontier Completeness Gate in [[Forcing Pass|da24ff95-9d07-4e15-9571-9313d6b90f94]] to landed affected outcomes. Accepted commitments need evidence or explicit unfinished/deferred owners. Inspect the actual outline, then the selected owner bodies: recover grounds, current conclusion, authority and next action or unresolved choice. An outline name or status alone is not enough.
 
-Retain Worktree Publication's complete native candidate checks, fixed baseline, explicit status requests and checked submission/recovery boundary. After a repair, repeat applicable normalization and complete candidate checks; preserve drafts and original recovery arguments on refusal or interruption. The native size gate is the declared 5000 o200k_base crystallization-body ceiling, not a substituted hosted all-field counter. Native checks do not judge truth, supply permission or prove behavior.
+Retain Worktree Publication's complete native candidate checks, fixed baseline, explicit status requests and checked submission/recovery boundary. After a repair, repeat applicable normalization and complete candidate checks; preserve drafts and original recovery arguments on refusal or interruption. The native size gate is the declared 5000 o200k_base content-body ceiling, not a substituted hosted all-field counter. Native checks do not judge truth, supply permission or prove behavior.
 
 ## Repair and finish
 

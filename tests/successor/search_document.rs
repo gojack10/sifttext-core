@@ -4,7 +4,7 @@
 // The independent acceptance oracle stays the registered external check, which spawns the real
 // native observer and compares its exact JSON output, or requires a nonzero exit for its invalid
 // requests. Nothing below is a fixture answer or a copy of one: every expectation is read off the
-// maintained contract (`title` = `name`; `micro_summary`, `scope` and `crystallization` joined by LF
+// maintained contract (`title` = `name`; `micro_summary`, `scope` and `content` joined by LF
 // in that order) and off the four-field coverage the governing search owner preserves.
 //
 // This file is compiled as the test module of `src/bin/search-document-observe.rs`, which owns the
@@ -21,13 +21,13 @@ fn fields<'a>(
     name: &'a str,
     micro_summary: &'a str,
     scope: &'a str,
-    crystallization: &'a str,
+    content: &'a str,
 ) -> Fields<'a> {
     Fields {
         name,
         micro_summary,
         scope,
-        crystallization,
+        content,
     }
 }
 
@@ -36,10 +36,10 @@ fn projected(
     name: &str,
     micro_summary: &str,
     scope: &str,
-    crystallization: &str,
+    content: &str,
 ) -> (String, String) {
     let document =
-        project(fields(name, micro_summary, scope, crystallization)).expect("valid authored text");
+        project(fields(name, micro_summary, scope, content)).expect("valid authored text");
     (document.title.to_owned(), document.body)
 }
 
@@ -74,7 +74,7 @@ fn body(supplied: &str) -> String {
 
 /// One complete four-field request, valid on its own.
 fn complete() -> Value {
-    json!({"name": "name", "micro_summary": "summary", "scope": "", "crystallization": "body"})
+    json!({"name": "name", "micro_summary": "summary", "scope": "", "content": "body"})
 }
 
 /// A complete request with one covered field removed.
@@ -120,7 +120,7 @@ fn title_is_the_name_and_body_is_the_three_texts_joined_by_line_feed() {
         projected("Title only", "summary", "scope", "body"),
         ("Title only".into(), "summary\nscope\nbody".into())
     );
-    // The order is fixed: summary, then scope, then crystallization. A reordered join puts the
+    // The order is fixed: summary, then scope, then content. A reordered join puts the
     // question where the answer belongs, and any other separator fails the same assertion.
     let (_, body) = projected("N", "ONE", "TWO", "THREE");
     assert_eq!(body, "ONE\nTWO\nTHREE");
@@ -251,7 +251,7 @@ fn the_projection_is_pure_and_adds_nothing_of_its_own() {
     assert!(!first.body.starts_with('\n'));
     assert!(!first.body.ends_with("\n\n"));
     // The helper borrows its inputs and leaves them untouched.
-    assert_eq!(supplied.crystallization, "C");
+    assert_eq!(supplied.content, "C");
     assert_eq!(supplied.scope, "S");
 }
 
@@ -331,14 +331,14 @@ fn rejection_names_the_offending_field_and_leaves_no_partial_document() {
 }
 
 #[test]
-fn an_empty_crystallization_is_represented_not_approved() {
+fn an_empty_content_is_represented_not_approved() {
     // This surface takes no status, so an empty answer is a possibly unresolved record. It must not
     // be treated as an invalid store here, and must not gain a fabricated answer either.
     let (title, body) = projected("Unresolved empty answer", "summary", "question", "");
     assert_eq!(title, "Unresolved empty answer");
     assert_eq!(body, "summary\nquestion\n");
     assert_eq!(
-        document(&request(&typed("crystallization", json!("")))),
+        document(&request(&typed("content", json!("")))),
         json!({"title": "name", "body": "summary\n\n"})
     );
 }
@@ -347,16 +347,16 @@ fn an_empty_crystallization_is_represented_not_approved() {
 
 #[test]
 fn a_valid_response_is_exactly_title_then_body() {
-    let supplied = r#"{"name":"N","micro_summary":"M","scope":"S","crystallization":"C"}"#;
+    let supplied = r#"{"name":"N","micro_summary":"M","scope":"S","content":"C"}"#;
     assert_eq!(raw(supplied), r#"{"title":"N","body":"M\nS\nC"}"#);
     assert_eq!(document(supplied), json!({"title": "N", "body": "M\nS\nC"}));
     // Request key order is irrelevant; the projection order comes from the fields, not the wire.
-    let reordered = r#"{"crystallization":"C","scope":"S","micro_summary":"M","name":"N"}"#;
+    let reordered = r#"{"content":"C","scope":"S","micro_summary":"M","name":"N"}"#;
     assert_eq!(document(reordered), document(supplied));
     assert_eq!(body(reordered), "M\nS\nC");
     // Surrounding and embedded whitespace in the document text is content, not formatting.
     assert_eq!(
-        raw(r#"  {"name":"N","micro_summary":"M","scope":"S","crystallization":"C"}  "#),
+        raw(r#"  {"name":"N","micro_summary":"M","scope":"S","content":"C"}  "#),
         r#"{"title":"N","body":"M\nS\nC"}"#
     );
 }
@@ -373,13 +373,13 @@ fn malformed_raw_json_is_rejected() {
         "\"N\"",
         "not JSON",
         "{}",
-        r#"{"name":"N","micro_summary":"M","scope":"S","crystallization":"C"} trailing"#,
-        r#"{"name":"N","micro_summary":"M","scope":"S","crystallization":"C"}{}"#,
-        "{\"name\":\"N\",\"micro_summary\":\"M\",\"scope\":\"S\",\"crystallization\":\"C\"}\n{}",
-        r#"{"name":"N","micro_summary":"M","scope":"S","crystallization":"C",}"#,
+        r#"{"name":"N","micro_summary":"M","scope":"S","content":"C"} trailing"#,
+        r#"{"name":"N","micro_summary":"M","scope":"S","content":"C"}{}"#,
+        "{\"name\":\"N\",\"micro_summary\":\"M\",\"scope\":\"S\",\"content\":\"C\"}\n{}",
+        r#"{"name":"N","micro_summary":"M","scope":"S","content":"C",}"#,
         r#"{"name":"N","micro_summary":"M","scope":"S""#,
-        r#"{"name":"unterminated","micro_summary":"M","scope":"S","crystallization":"C"#,
-        "{\"name\":\"N\",\"micro_summary\":\"M\",\"scope\":\"S\",\"crystallization\":\"C\"}}",
+        r#"{"name":"unterminated","micro_summary":"M","scope":"S","content":"C"#,
+        "{\"name\":\"N\",\"micro_summary\":\"M\",\"scope\":\"S\",\"content\":\"C\"}}",
     ] {
         assert!(
             document_json(supplied).is_err(),
@@ -390,7 +390,7 @@ fn malformed_raw_json_is_rejected() {
 
 #[test]
 fn missing_wrong_typed_and_unknown_fields_are_rejected() {
-    for key in ["name", "micro_summary", "scope", "crystallization"] {
+    for key in ["name", "micro_summary", "scope", "content"] {
         assert!(
             document_json(&request(&without(key))).is_err(),
             "accepted a request without {key}"
@@ -401,7 +401,7 @@ fn missing_wrong_typed_and_unknown_fields_are_rejected() {
         typed("name", Value::Null),
         typed("micro_summary", Value::Null),
         typed("scope", Value::Null),
-        typed("crystallization", Value::Null),
+        typed("content", Value::Null),
         // Wrong value types at each of the four covered fields.
         typed("name", json!(17)),
         typed("name", json!(["N"])),
@@ -409,15 +409,14 @@ fn missing_wrong_typed_and_unknown_fields_are_rejected() {
         typed("micro_summary", json!({"text": "summary"})),
         typed("scope", json!({})),
         typed("scope", json!([""])),
-        typed("crystallization", json!([])),
-        typed("crystallization", json!(0)),
+        typed("content", json!([])),
+        typed("content", json!(0)),
         // Anything that is not one of the four covered fields, including a generated or authored
         // field that would otherwise leak into a searchable document.
         plus("warnings", json!("not a searchable input field")),
         plus("status", json!("resolved")),
         plus("title", json!("alternate title")),
         plus("body", json!("alternate body")),
-        plus("content", json!("alternate body")),
         plus("generated_context", json!("must not be searchable")),
         plus("id", json!("10000000-0000-4000-8000-000000000001")),
         plus("see_also", json!([{"target": "x", "reason": "y"}])),
@@ -467,16 +466,16 @@ fn transport_shape_and_authored_validity_are_different_failures() {
 
 #[test]
 fn a_realistic_authored_pair_round_trips_every_byte_through_the_transport() {
-    // Built with JSON escapes rather than a raw string, because the crystallization contains a
+    // Built with JSON escapes rather than a raw string, because the content contains a
     // quote-hash sequence that would otherwise close a single-hash raw literal.
-    let supplied = "{\"name\":\"  Wayfinder\\tΩ  \",\"micro_summary\":\"\\n\\u2003Navigates.\\n\",\"scope\":\"\",\"crystallization\":\"# Heading\\r\\nsee_also: [[A|uuid]]\\u0000\"}";
+    let supplied = "{\"name\":\"  Wayfinder\\tΩ  \",\"micro_summary\":\"\\n\\u2003Navigates.\\n\",\"scope\":\"\",\"content\":\"# Heading\\r\\nsee_also: [[A|uuid]]\\u0000\"}";
     let expected_title = "  Wayfinder\tΩ  ";
     let expected_body = "\n\u{2003}Navigates.\n\n\n# Heading\r\nsee_also: [[A|uuid]]\u{0}";
     assert_eq!(
         document(supplied),
         json!({"title": expected_title, "body": expected_body})
     );
-    // summary, then the empty scope held between two separators, then the crystallization verbatim.
+    // summary, then the empty scope held between two separators, then the content verbatim.
     assert_eq!(
         body(supplied).split('\n').take(5).collect::<Vec<_>>(),
         vec!["", "\u{2003}Navigates.", "", "", "# Heading\r"]

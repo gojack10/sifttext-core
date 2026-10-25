@@ -53,7 +53,7 @@ fn read_returns_exact_bytes_or_one_token_count_notice_without_mutation() {
     let tokenizer = tiktoken_rs::o200k_base_singleton();
     let render = |padding: usize| {
         format!(
-            "---\nid: \"{ID}\"\nname: \"Large Read\"\nmicro_summary: \"Synthetic output boundary\"\nstatus: \"not_examined\"\nsee_also: []\nscope: \"日本語🦀{}\"\n---\nSmall crystallization.\n",
+            "---\nid: \"{ID}\"\nname: \"Large Read\"\nmicro_summary: \"Synthetic output boundary\"\nstatus: \"not_examined\"\nsee_also: []\nscope: \"日本語🦀{}\"\n---\nSmall content.\n",
             " ordinary".repeat(padding)
         )
     };

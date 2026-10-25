@@ -218,7 +218,7 @@ fn native_candidate_cli_ceiling_races_and_checked_git_publication() {
             .iter()
             .any(|r| r["id"] == id(1)
                 && r["tokens"] == 5001
-                && r["check"] == "crystallization_over_limit")
+                && r["check"] == "content_over_limit")
     );
     node(&draft, 2, fields(), "A separate edit");
     native.invoke(json!({"store":draft}), false);

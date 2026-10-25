@@ -21,6 +21,6 @@ That is the 90%. The implementation is the 10% you occasionally need to understa
 
 Most tools optimize for the 10%: code editors, autocompletion, syntax highlighting, linting. These make implementation faster. But implementation was already becoming cheap.
 
-SiftText optimizes for the 90%. The tree captures thinking: decisions, rationale, architecture, ruled-out approaches, design direction, status of every piece. This is the scarce resource. A tree full of well-scoped nodes with clear crystallizations is not just organized notes. It is a thinking infrastructure that makes the next decision faster and better-informed, for you and for any language model you work with.
+SiftText optimizes for the 90%. The tree captures thinking: decisions, rationale, architecture, ruled-out approaches, design direction, status of every piece. This is the scarce resource. A tree full of well-scoped nodes with clear content is not just organized notes. It is a thinking infrastructure that makes the next decision faster and better-informed, for you and for any language model you work with.
 
 The implication: you do not need to be technical to get enormous value from SiftText. If you can think clearly about a problem, describe what matters, and recognize when something is right, you have the skills that matter. The language model handles the rest.

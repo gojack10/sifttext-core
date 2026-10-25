@@ -62,7 +62,7 @@ fn forest() -> Vec<Value> {
             "stuck" => node["blocker"] = json!(if n == 2 {"Wait for input.\nSecond line."} else {"External wait."}),
             "discarded" => node["discard_reason"] = json!(if n == 3 {"Rejected for a stated reason.\nKeep the LF."} else {"No longer worth examining."}),
             "deferred" => node["deferred_reason"] = json!("Resume after the index lands."),
-            "resolved" => node["crystallization"] = json!("Checked answer, never displayed."), _ => ()
+            "resolved" => node["content"] = json!("Checked answer, never displayed."), _ => ()
         }
         if n == 2 || n == 4 { node["warnings"] = json!("Unicode Ω漢字 plus \"quotes\", a \\ backslash and a\ttab.\nA second line."); }
         node
@@ -255,8 +255,7 @@ fn expectations(
             return Err(format!("blank {key}"));
         }
         if status == "resolved"
-            && n.get("crystallization")
-                .unwrap_or(&n["content"])
+            && n["content"]
                 .as_str()
                 .is_none_or(|s| s.trim().is_empty())
         {
@@ -537,7 +536,7 @@ fn assembler_files_match_independent_authored_expectations_and_all_controls() {
         .into_iter().map(|(i,name,status,cs)| {
             let mut n=json!({"id":id(i),"name":name,"status":status,"micro_summary":format!("{name} owns a bounded navigation branch."),
                 "scope":"NEVER IN AN OUTLINE","children":cs.into_iter().map(id).collect::<Vec<_>>()});
-            if status=="resolved" {n["crystallization"]=json!("Answered.");}
+            if status=="resolved" {n["content"]=json!("Answered.");}
             if status=="stuck" {n["blocker"]=json!("Nothing else is reachable from here.");} n
         }).collect::<Vec<_>>();
     let mut baseline = None;
@@ -746,7 +745,7 @@ fn assembler_files_match_independent_authored_expectations_and_all_controls() {
             }
             "refuses-blank-resolved" => {
                 n["status"] = json!("resolved");
-                n["crystallization"] = json!(" ");
+                n["content"] = json!(" ");
             }
             _ => (),
         }

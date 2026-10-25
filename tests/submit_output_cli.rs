@@ -87,7 +87,7 @@ fn rejected_submit_reports_only_the_actionable_token_violation() {
     assert_eq!(
         output["validation"]["rows"],
         serde_json::json!([
-            {"id":id, "check":"crystallization_over_limit", "tokens":CEILING + 1, "limit":CEILING}
+            {"id":id, "check":"content_over_limit", "tokens":CEILING + 1, "limit":CEILING}
         ])
     );
     assert!(output["validation"].get("nodes").is_none());

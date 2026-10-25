@@ -483,7 +483,7 @@ fn structural_cli_git_conflicts_identities_privacy_and_race() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|r| r["tokens"] == 5001 && r["check"] == "crystallization_over_limit")
+            .any(|r| r["tokens"] == 5001 && r["check"] == "content_over_limit")
     );
     node(
         &s,

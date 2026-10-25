@@ -362,7 +362,7 @@ fn project_body(row: &Value) -> Result<String> {
             name: row["name"].as_str().ok_or("missing name")?,
             micro_summary: row["micro_summary"].as_str().ok_or("missing summary")?,
             scope: row["scope"].as_str().unwrap_or(""),
-            crystallization: row["content"].as_str().ok_or("missing content")?,
+            content: row["content"].as_str().ok_or("missing content")?,
         })?
         .body,
     )
@@ -544,7 +544,7 @@ fn project_records(
         if status == Status::Resolved {
             require(
                 !node.content.trim().is_empty(),
-                "blank resolved crystallization",
+                "blank resolved content",
             )?;
         }
         let mut targets = BTreeSet::new();

@@ -9,7 +9,7 @@ warnings: ""
 ---
 A node's scope defines what it is about. It draws the boundary: what belongs in this node and what belongs somewhere else.
 
-A good scope is specific enough that you know what to put here, and clear enough that someone reading it for the first time understands the node's purpose without reading the full crystallization.
+A good scope is specific enough that you know what to put here, and clear enough that someone reading it for the first time understands the node's purpose without reading the full content.
 
 Examples of good scopes:
 - "Evaluate whether to expand into the European market. Three countries shortlisted."

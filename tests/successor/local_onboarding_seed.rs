@@ -121,7 +121,7 @@ fn current_continuity_selects_persistent_bootstrap_and_checked_memory_migration(
             "- A tree groups related nodes.\n",
             "- A node holds knowledge about a question or topic.\n",
             "- Scope states what a node covers.\n",
-            "- A crystallization records a node’s current understanding.\n",
+            "- Content records a node’s current understanding.\n",
             "- SiftText Read recovers relevant knowledge.\n",
             "- SiftText Commit saves knowledge changes.\n\n",
             "At the start of every chat, read and follow the onboarding node below unless you are explicitly told not to use SiftText.\n\n",

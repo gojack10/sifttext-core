@@ -137,7 +137,7 @@ fn publication_graph_transition_runs_on_exact_candidates_without_accepting_bad_b
             .unwrap()
             .rows
             .iter()
-            .any(|r| r.check == "crystallization_over_limit" && r.tokens == Some(5001))
+            .any(|r| r.check == "content_over_limit" && r.tokens == Some(5001))
     );
     assert_eq!(
         git(&repo, &["rev-parse", "main"]),
@@ -204,7 +204,7 @@ fn publication_recovery_without_transition_still_rejects_invalid_accepted_knowle
         assert_eq!(r.check, "candidate_validation_rejected", "{r:?}");
         let expected = match mutation {
             "graph" => "placement_count",
-            "tokens" => "crystallization_over_limit",
+            "tokens" => "content_over_limit",
             "status" => "status_or_reason_type",
             "blank" => "resolved_body_blank",
             _ => unreachable!(),

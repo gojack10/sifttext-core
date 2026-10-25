@@ -50,7 +50,7 @@ fn search_bounds_rendered_returns_and_y_preserves_scope_and_refusals() {
         fs::write(
             node.join("node.md"),
             format!(
-                "---\n{}---\nSmall crystallization.\n",
+                "---\n{}---\nSmall content.\n",
                 fields
                     .as_object()
                     .unwrap()

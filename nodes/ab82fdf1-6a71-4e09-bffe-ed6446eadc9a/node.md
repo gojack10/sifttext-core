@@ -30,7 +30,7 @@ Place alternatives under their common question and developments beneath the work
 
 Useful findings beneath a discarded approach retain their own evidential standing; keep them reachable from continuing work and preserve meaningful rejected attempts with their grounds. Do not move evidence merely because its parent was rejected. A small qualification without an independent lifecycle can remain in its owning body. Native metadata has no `ruled_out` field.
 
-Keep detailed volatile state with its owner rather than copy it into ancestors. Scope owns the bounded question, micro-summary its stable contribution, crystallization its evidence and attributed answer, warnings its actionable guardrails, and `see_also` its explicit indexed references. Preserve unknown fields. Structural order/symlinks own parentage; do not add redundant direct parent/child edges or copied child inventories. An instruction sequence is operational behavior, not a table-of-contents violation.
+Keep detailed volatile state with its owner rather than copy it into ancestors. Scope owns the bounded question, micro-summary its stable contribution, content its evidence and attributed answer, warnings its actionable guardrails, and `see_also` its explicit indexed references. Preserve unknown fields. Structural order/symlinks own parentage; do not add redundant direct parent/child edges or copied child inventories. An instruction sequence is operational behavior, not a table-of-contents violation.
 
 Check both endpoints before a substantive reference and both parents before a move. Every new reference operation must be visible in the delta; do not add links merely to satisfy notation. Prose citations do not create graph edges. Preserve UUIDs and material previous placement during reparenting.
 
@@ -48,6 +48,6 @@ For changed instructions, walk the actual entry, selected dependencies, roles, i
 
 Retain Worktree Publication's fixed baseline, normalization, explicit status requests, complete native candidate checks and checked submission/recovery. Model effective statuses before showing a delta. A changed existing unexamined node activates; a newly created leaf may remain unexamined. Do not add unsupported metadata, change caps, truncate sources or treat a private Git commit as checked publication.
 
-The native size boundary is 5000 `o200k_base` tokens per crystallization body, not the hosted all-field measure. Native checks do not judge truth or confer permission. Keep the integrated reconciliation/readback in Commit Usable Understanding as the finishing contract; this review does not replace it.
+The native size boundary is 5000 `o200k_base` tokens per content body, not the hosted all-field measure. Native checks do not judge truth or confer permission. Keep the integrated reconciliation/readback in Commit Usable Understanding as the finishing contract; this review does not replace it.
 
 Repair supported in-scope defects, including affected current consumers not initially proposed, then recheck changed portions and dependencies. Preserve out-of-scope defects and actual blockers without silently expanding authority. Keep independent authorized work moving. Return the exact reviewed delta to Dialogue for approval where required or to Persistence within an existing grant. Author walkthroughs are not fresh-agent results.

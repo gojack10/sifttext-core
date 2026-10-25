@@ -7,7 +7,7 @@
 //
 // Hierarchy comes only from authored-order `children`. Input array order is never traversal order,
 // and no parent pointer is repeated in a row. Authored fields a row must not carry (scope,
-// crystallization except as a resolved guard, timestamps, parents, backlinks, and any `ruled_out`
+// content except as a resolved guard, timestamps, parents, backlinks, and any `ruled_out`
 // text, which the target Core does not have) are ignored here and never emitted.
 //
 // Library and standalone observers share this projection. Artifact observers use the prepared
@@ -45,7 +45,7 @@ pub struct Node {
     #[serde(default)]
     pub discard_reason: Option<String>,
     #[serde(default)]
-    pub crystallization: Option<String>,
+    pub content: Option<String>,
 }
 
 #[allow(dead_code)] // artifact observers use Forest directly; row observer uses Request/project
@@ -251,8 +251,8 @@ fn validate(node: &Node) -> Result<(), String> {
         ));
     }
     // A resolved node must carry its own answer, even when this view never shows the body.
-    if node.status == Status::Resolved && !text_is_present(node.crystallization.as_deref()) {
-        return Err(format!("node {id} is resolved with blank crystallization"));
+    if node.status == Status::Resolved && !text_is_present(node.content.as_deref()) {
+        return Err(format!("node {id} is resolved with blank content"));
     }
     Ok(())
 }

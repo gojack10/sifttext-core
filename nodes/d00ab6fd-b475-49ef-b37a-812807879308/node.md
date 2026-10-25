@@ -93,9 +93,9 @@ Examples:
 [-][x] Delete existing discarded node
 ```
 
-For each changed node, display its concise name and stable-purpose micro-summary, with explicit answer, alternative and independently testable work children required by the ownership test in Forcing Pass. Distinguish the micro-summary from labelled crystallization, blocker, warning and evidence notes. Do not collapse a question/answer pair merely because it has one child. Display an existing unchanged micro as context, not as an implied write. Read and apply the canonical naming, structure and field contracts through Forcing Pass before presentation.
+For each changed node, display its concise name and stable-purpose micro-summary, with explicit answer, alternative and independently testable work children required by the ownership test in Forcing Pass. Distinguish the micro-summary from labelled content, blocker, warning and evidence notes. Do not collapse a question/answer pair merely because it has one child. Display an existing unchanged micro as context, not as an implied write. Read and apply the canonical naming, structure and field contracts through Forcing Pass before presentation.
 
-When describing a proposed node inline, include terse action notes such as `Add cryst: ...`, `Add warning: ...`, `Discard reason: ...`, or `Update scope: ...`. Keep it compact enough for the human to mold.
+When describing a proposed node inline, include terse action notes such as `Add content: ...`, `Add warning: ...`, `Discard reason: ...`, or `Update scope: ...`. Keep it compact enough for the human to mold.
 
 ### One-Shot Example
 

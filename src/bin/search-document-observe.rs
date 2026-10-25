@@ -2,13 +2,13 @@
 //
 // One JSON request on stdin, one JSON document on stdout plus a final newline. The result is
 // exactly `{title, body}`: `title` is the authored `name` and `body` is the authored
-// `micro_summary`, `scope` and `crystallization` joined by LF in that order, every character of all
+// `micro_summary`, `scope` and `content` joined by LF in that order, every character of all
 // four preserved exactly.
 //
 // The request is exactly four required string keys: `name`, `micro_summary`, `scope` and
-// `crystallization`. Key order does not matter. `name` and `micro_summary` must be nonblank, where
+// `content`. Key order does not matter. `name` and `micro_summary` must be nonblank, where
 // blank means empty or entirely Unicode whitespace; nothing is trimmed to make it nonblank. `scope`
-// and `crystallization` may be empty strings.
+// and `content` may be empty strings.
 //
 // A rejected request writes nothing to stdout and exits nonzero with the reason on stderr. That
 // covers malformed, truncated, empty or trailing-document JSON, a non-object document, a missing or
@@ -18,8 +18,8 @@
 //
 // This is a test/inspection surface only, and the projection it exposes is deliberately not a
 // complete authored-store validator: it does not take a UUID, a tree, a status or any reason field,
-// it does not decide whether `crystallization` is valid for the node's status, and accepting an
-// empty `crystallization` here represents a possibly unresolved record rather than approving a
+// it does not decide whether `content` is valid for the node's status, and accepting an
+// empty `content` here represents a possibly unresolved record rather than approving a
 // resolved store. There is no graph loading, Markdown parsing, SQLite hydration, index refresh,
 // candidate retrieval, ranking, paging, snippet, card, scope, access or working-version behavior, no
 // token computation, no status boost, no persistence, no file access and no service or install
@@ -37,7 +37,7 @@ struct Request {
     name: String,
     micro_summary: String,
     scope: String,
-    crystallization: String,
+    content: String,
 }
 
 fn main() {
@@ -73,7 +73,7 @@ fn document_json(supplied: &str) -> Result<String, String> {
         name: &request.name,
         micro_summary: &request.micro_summary,
         scope: &request.scope,
-        crystallization: &request.crystallization,
+        content: &request.content,
     })?;
     serde_json::to_string(&document).map_err(|error| error.to_string())
 }

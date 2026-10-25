@@ -95,7 +95,7 @@ fn native_submission_enforces_body_token_boundary_despite_forged_sidecar() {
             && line.ends_with(":check\tid\tlaw\trule\tsource\ttarget\ttokens")),
         "{text}"
     );
-    assert!(text.lines().any(|line| line == format!("  crystallization_over_limit\t{}\t_\t302b4549-ef27-4ab7-a9a7-7f240ffe058e\t_\t_\t5001", id(2))), "{text}");
+    assert!(text.lines().any(|line| line == format!("  content_over_limit\t{}\t_\t302b4549-ef27-4ab7-a9a7-7f240ffe058e\t_\t_\t5001", id(2))), "{text}");
     super::submission_parity::assert_rule_rows(text);
     assert!(
         !text.contains(f._dir.path().to_str().unwrap()),

@@ -158,7 +158,7 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
                         name: r["name"].as_str().unwrap(),
                         micro_summary: r["micro_summary"].as_str().unwrap(),
                         scope: r["scope"].as_str().unwrap_or(""),
-                        crystallization: r["content"].as_str().unwrap(),
+                        content: r["content"].as_str().unwrap(),
                     })
                     .map_err(Into::into)
                 })

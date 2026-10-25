@@ -7,7 +7,7 @@ see_also: []
 scope: "How local tree structure evolves from large nodes to focused children, and when a rejected approach needs its own visible owner."
 warnings: ""
 ---
-When you start using SiftText, you'll naturally put a lot on each node. Big crystallizations, brief rejection notes in the body, warnings — everything in one place. This is fine. For small problems, a single well-written node captures everything an agent needs in one hop.
+When you start using SiftText, you'll naturally put a lot on each node. Lots of content, brief rejection notes in the body, warnings — everything in one place. This is fine. For small problems, a single well-written node captures everything an agent needs in one hop.
 
 As your problem grows, fat nodes stop working. A 5,000-token node dilutes the LLM's attention. Important details get buried. Updates require rewriting large blocks of text. The same information gets copy-pasted across nodes.
 
@@ -25,7 +25,7 @@ When you reject an approach, you have two options:
 
 **Brief body note** — "Considered Redis, rejected for ops complexity." Good for one simple, self-contained qualification without an independent lifecycle. Local Core rejects an authored `ruled_out` field; use the body or a discarded child, not hosted metadata.
 
-**Discarded child node** — a full node you explored and then marked discarded. Good when the rejection has substance: you ran experiments, collected data, discovered something worth preserving. The node keeps its own crystallization, links, and history.
+**Discarded child node** — a full node you explored and then marked discarded. Good when the rejection has substance: you ran experiments, collected data, discovered something worth preserving. The node keeps its own content, links, and history.
 
 As problems grow, discarded children become the better default. They're searchable, linkable, and visible in outlines. An agent scanning your tree sees them and knows not to re-explore that path — and can read *why* it failed if the details matter.
 

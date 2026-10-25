@@ -686,7 +686,7 @@ mod capacity {
                 assert!(text.lines().any(|l| l == format!("version:{version}")));
                 assert_eq!(
                     text.lines()
-                        .filter(|l| l.starts_with("  crystallization_tokens\t"))
+                        .filter(|l| l.starts_with("  content_tokens\t"))
                         .count(),
                     size
                 );

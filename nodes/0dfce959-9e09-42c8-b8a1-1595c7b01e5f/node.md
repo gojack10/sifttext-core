@@ -49,7 +49,7 @@ SiftText terms
 - A tree groups related nodes.
 - A node holds knowledge about a question or topic.
 - Scope states what a node covers.
-- A crystallization records a node’s current understanding.
+- Content records a node’s current understanding.
 - SiftText Read recovers relevant knowledge.
 - SiftText Commit saves knowledge changes.
 

@@ -12,7 +12,7 @@ A node is the fundamental unit of a tree. It holds one piece of your thinking.
 Every node has a name (2-5 words identifying what it is about) and a set of fields:
 
 - **Scope** — what this node is about. The boundary of what belongs here.
-- **Crystallization** — what is known. Conclusions, decisions, working notes.
+- **Content** — what is known. Conclusions, decisions, working notes.
 - **Micro-summary** — stable responsibility that helps readers choose this node.
 - **Status** — not examined, in progress, resolved, stuck, deferred, or discarded; required reasons and evidence follow Knowledge Layout.
 - **Warnings** — cautions to check when reading the node; no automatic agent delivery is assumed.

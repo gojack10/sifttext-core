@@ -4,7 +4,7 @@ name: "Persistence Compounds"
 micro_summary: "Argument that trees beat chats because crystallized nodes persist, avoid compounding context errors and accumulate across sessions."
 status: "resolved"
 see_also: []
-scope: "Why trees beat conversations. Chat is ephemeral and degrades. Trees persist and compound. Crystallization as persistent explanation. The ladder problem. Why the 50th session is better than the 1st."
+scope: "Why trees beat conversations. Chat is ephemeral and degrades. Trees persist and compound. Content as persistent explanation. The ladder problem. Why the 50th session is better than the 1st."
 warnings: ""
 ---
 A conversation with a language model is a ladder. Every message is a rung. The model has to reason about the current rung plus everything below it. If a misunderstanding happens on rung 3, it gets re-injected into rung 4, and 5, and 6. Problems compound. Attention dilutes. Eventually the model starts agreeing with you instead of thinking clearly. The conversation is cooked.
@@ -19,7 +19,7 @@ But the real power is what happens over time.
 
 A conversation disappears when you close the tab. A tree persists. What you crystallized last Tuesday is still there next month. A language model working on your tree in March can read decisions you made in January. Your 50th session with a tree has access to everything the first 49 sessions produced.
 
-Crystallization is the mechanism. Once an explanation, decision, or piece of reasoning is written into a node, it persists exactly. You do not re-derive your thinking every session. You do not explain the same thing differently each time. The node holds the canonical version. Both you and any language model can reference it.
+Content is the mechanism. Once an explanation, decision, or piece of reasoning is written into a node, it persists exactly. You do not re-derive your thinking every session. You do not explain the same thing differently each time. The node holds the canonical version. Both you and any language model can reference it.
 
 This means you can completely forget something and recover by reading the tree. The explanation does not live in your head anymore. It lives in the node. The tree is external memory that does not degrade, does not drift, and does not require you to maintain it in your working memory.
 

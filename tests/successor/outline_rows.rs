@@ -235,7 +235,7 @@ fn resolved_and_discarded_branches_stay_visible_with_their_active_text() {
                 "status": "resolved",
                 "micro_summary": "A completed second tree.",
                 "children": [OUTSIDE],
-                "crystallization": "Exact bounded result.",
+                "content": "Exact bounded result.",
                 "scope": "Scope must never appear in a row.",
                 "updated_at": "2026-10-08T00:00:00Z",
             }),
@@ -446,7 +446,7 @@ fn invalid_authored_text_and_unknown_enums_are_rejected() {
         json!({"name": "Sibling", "status": "resolved", "micro_summary": "Sibling.", "children": []}),
     );
     assert!(
-        rejected(request(R, "full", resolved_without_answer)).contains("blank crystallization")
+        rejected(request(R, "full", resolved_without_answer)).contains("blank content")
     );
 
     let blank_answer = with(
@@ -457,10 +457,10 @@ fn invalid_authored_text_and_unknown_enums_are_rejected() {
             "status": "resolved",
             "micro_summary": "Sibling.",
             "children": [],
-            "crystallization": "  ",
+            "content": "  ",
         }),
     );
-    assert!(rejected(request(R, "full", blank_answer)).contains("blank crystallization"));
+    assert!(rejected(request(R, "full", blank_answer)).contains("blank content"));
 
     let unknown_status = with(
         forest(),
