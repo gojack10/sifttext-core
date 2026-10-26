@@ -841,8 +841,11 @@ fn resume(
     )
 }
 /// Agent-facing next step in a release notice. A human decides whether to update.
-const UPDATE_NOTICE_NEXT_ACTION: &str =
-    "Ask the user whether to update SiftText for latest speed and stability fixes.";
+const UPDATE_NOTICE_ASK: &str =
+    "Ask the user to update SiftText for latest speed and stability fixes.";
+/// With a standing grant the agent may update without asking again.
+const UPDATE_NOTICE_STANDING: &str = "Update SiftText for latest speed and stability fixes.";
+const STANDING_GRANT_COMMAND: &str = "sifttext update --grant standing";
 
 fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
     let config = update_config(&state.home)?;
@@ -865,14 +868,22 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
     if !app_changed && state.knowledge == manifest.knowledge.revision {
         return Ok(json!({"status":"current","application":current.version}));
     }
+    let permission = config["permission"].as_str().unwrap_or("ask");
+    let standing = permission == "standing";
     let mut notice = json!({
         "status":"update_available",
         "application":manifest.application.version,
-        "next_action":UPDATE_NOTICE_NEXT_ACTION,
+        "next_action":if standing { UPDATE_NOTICE_STANDING } else { UPDATE_NOTICE_ASK },
         "guide":state.home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
         "command":"sifttext update",
-        "permission":config["permission"]
     });
+    if standing {
+        // An automatic grant needs no confirmation, so the notice omits it and
+        // does not suggest the grant the user already recorded.
+    } else {
+        notice["permission"] = json!(permission);
+        notice["grant_command"] = json!(STANDING_GRANT_COMMAND);
+    }
     if let Some(pinned) = config["pinned"].as_str() {
         notice["pinned"] = json!(pinned);
         if app_changed {
@@ -1317,6 +1328,7 @@ pub fn update_with_receipt_preflight(
                     "next_action",
                     "command",
                     "permission",
+                    "grant_command",
                     "config",
                     "guide",
                 ] {
@@ -1742,8 +1754,8 @@ mod tests {
         assert_eq!(
             crate::lean_render::render(&notice).unwrap(),
             format!(
-                "application:v1\ncommand:sifttext update\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nstatus:update_available",
-                UPDATE_NOTICE_NEXT_ACTION
+                "application:v1\ncommand:sifttext update\ngrant_command:{}\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nstatus:update_available",
+                STANDING_GRANT_COMMAND, UPDATE_NOTICE_ASK
             )
         );
         assert_eq!(
@@ -1802,7 +1814,10 @@ mod tests {
 
         let notice = opportunistic_notice(&current, &state, &manifest).unwrap();
         assert_eq!(notice["status"], "update_available");
-        assert_eq!(notice["permission"], "standing");
+        // A recorded standing grant needs no confirmation and no grant suggestion.
+        assert!(notice.get("permission").is_none());
+        assert!(notice.get("grant_command").is_none());
+        assert_eq!(notice["next_action"], UPDATE_NOTICE_STANDING);
         assert_eq!(notice["command"], "sifttext update");
         assert!(notice.get("config").is_none());
         assert_eq!(
