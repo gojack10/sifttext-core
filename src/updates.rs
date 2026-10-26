@@ -840,6 +840,10 @@ fn resume(
         Some(pending.upstream.clone()),
     )
 }
+/// Agent-facing next step in a release notice. A human decides whether to update.
+const UPDATE_NOTICE_NEXT_ACTION: &str =
+    "Ask the user whether to update SiftText for latest speed and stability fixes.";
+
 fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
     let config = update_config(&state.home)?;
     let app_changed = current.version != manifest.application.version;
@@ -864,7 +868,7 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
     let mut notice = json!({
         "status":"update_available",
         "application":manifest.application.version,
-        "knowledge":manifest.knowledge.revision,
+        "next_action":UPDATE_NOTICE_NEXT_ACTION,
         "guide":state.home.join("nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md"),
         "command":"sifttext update",
         "permission":config["permission"]
@@ -1310,7 +1314,7 @@ pub fn update_with_receipt_preflight(
                 status["update_check"] = notice["status"].clone();
                 for field in [
                     "application",
-                    "knowledge",
+                    "next_action",
                     "command",
                     "permission",
                     "config",
@@ -1738,8 +1742,8 @@ mod tests {
         assert_eq!(
             crate::lean_render::render(&notice).unwrap(),
             format!(
-                "application:v1\ncommand:sifttext update\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nknowledge:{}\npermission:ask\nstatus:update_available",
-                "b".repeat(64)
+                "application:v1\ncommand:sifttext update\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nstatus:update_available",
+                UPDATE_NOTICE_NEXT_ACTION
             )
         );
         assert_eq!(
