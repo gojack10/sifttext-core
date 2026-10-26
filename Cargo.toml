@@ -11,12 +11,19 @@ sha2 = "0.10"
 base64 = "=0.21.7"
 tempfile = "3"
 tiktoken-rs = "=0.6.0"
+# Already locked; encoder-only ordinary counting reuses tiktoken's BPE merger.
+fancy-regex = "=0.13.0"
+rustc-hash = "=1.1.0"
 # Already locked; needed for O_NOFOLLOW/O_NONBLOCK on native file opens.
 libc = "=0.2.190"
 # Already locked transitively; the vendored Leviathan query TOKEN grammar needs it directly.
 regex = "=1.13.1"
 # Exact accepted Leviathan SQLite dependency; no external SQLite service.
-rusqlite = { version = "=0.40.2", features = ["bundled"] }
+rusqlite = { version = "=0.40.2", features = ["bundled", "limits"] }
+
+[build-dependencies]
+# Export this exact locked vocabulary through its public decoder at build time.
+tiktoken-rs = "=0.6.0"
 
 # Full source-stamp hashing stays checked, but need not run unoptimized SHA rounds.
 [profile.dev.package.sha2]

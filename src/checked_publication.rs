@@ -8,9 +8,9 @@ pub(crate) use lifetime::Custody;
 use owned::WorkingView;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
-    io::Write,
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command, Output},
     thread,
@@ -65,32 +65,6 @@ impl Barrier {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ReviewMode {
-    Advisory,
-    Hard,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SemanticVerdict {
-    /// Full candidate commit reviewed by the caller.
-    pub candidate: String,
-    /// SHA-256 of the exact rule bytes reviewed by the caller.
-    pub rules: String,
-    pub passed: bool,
-    #[serde(default)]
-    pub findings: Vec<SemanticFinding>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemanticFinding {
-    pub node: String,
-    pub rule: String,
-    pub reason: String,
-}
-
-type SemanticReviewer<'a> = dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict> + 'a;
-
 #[derive(Debug, Serialize)]
 pub struct Receipt {
     pub status: &'static str,
@@ -112,8 +86,7 @@ pub struct Receipt {
     pub draft_index_available: bool,
     /// Both computed and final exact-candidate graph checks, not proof tokens.
     pub graph_checks: Vec<gate::GraphCheck>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub semantic_findings: Vec<SemanticFinding>,
+    pub semantic_check: &'static str,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifecycle: Vec<owned::Note>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -183,7 +156,7 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
             gate::customer_report(&mut validation);
             failure["validation"] = validation;
         }
-        for key in ["failure_kind", "lifecycle"] {
+        for key in ["failure_kind", "lifecycle", "next_action"] {
             if !value[key].is_null() {
                 failure[key] = value[key].clone();
             }
@@ -196,12 +169,7 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
             output["lifecycle"] = serde_json::to_value(incomplete)?;
         }
     }
-    if let Some(findings) = value
-        .get("semantic_findings")
-        .filter(|v| v.as_array().is_some_and(|v| !v.is_empty()))
-    {
-        output["semantic_findings"] = findings.clone();
-    }
+    output["semantic_check"] = json!("deferred");
     serde_json::to_string_pretty(&output).map_err(Into::into)
 }
 
@@ -248,7 +216,7 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
         accepted_index_available: false,
         draft_index_available: false,
         graph_checks: vec![graph],
-        semantic_findings: vec![],
+        semantic_check: "deferred",
         lifecycle: vec![],
         failure_kind: None,
         elapsed_ms: 0,
@@ -336,13 +304,10 @@ fn command(repo: &Path, args: &[&str]) -> Command {
         .env("GIT_COMMITTER_EMAIL", "core@example.invalid")
         .args(["-C"])
         .arg(repo)
+        .args(crate::GIT_CONFIG_FENCES)
         .args([
             "-c",
             "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.attributesFile=/dev/null",
             "-c",
             "commit.gpgSign=false",
             "-c",
@@ -382,127 +347,28 @@ pub(crate) fn commit(repo: &Path, s: &str) -> Result<String> {
     require(got == s, "commit identity changed")?;
     Ok(got)
 }
-#[cfg(test)]
-#[test]
-fn clean_refuses_hidden_working_edits() {
-    let temp = tempfile::tempdir().unwrap();
-    let repo = temp.path();
-    git(repo, &["init", "-q", "-b", "main"]).unwrap();
-    fs::write(repo.join("node.md"), "committed content").unwrap();
-    git(repo, &["add", "node.md"]).unwrap();
-    git(repo, &["commit", "-qm", "knowledge: hidden-index control"]).unwrap();
-    let head = git(repo, &["rev-parse", "HEAD"]).unwrap();
-    let tree = git(repo, &["write-tree"]).unwrap();
-    clean(repo, &head).unwrap();
-    for (flag, clear) in [
-        ("--assume-unchanged", "--no-assume-unchanged"),
-        ("--skip-worktree", "--no-skip-worktree"),
-    ] {
-        git(repo, &["update-index", flag, "node.md"]).unwrap();
-        fs::write(repo.join("node.md"), "hidden uncommitted content").unwrap();
-        assert_eq!(git(repo, &["status", "--porcelain"]).unwrap(), "");
-        assert_eq!(git(repo, &["write-tree"]).unwrap(), tree);
-        assert!(clean(repo, &head).is_err(), "hidden edit accepted: {flag}");
-        assert_eq!(
-            fs::read_to_string(repo.join("node.md")).unwrap(),
-            "hidden uncommitted content"
-        );
-        assert_eq!(git(repo, &["rev-parse", "HEAD"]).unwrap(), head);
-        git(repo, &["update-index", clear, "node.md"]).unwrap();
-        assert!(clean(repo, &head).is_err());
-        fs::write(repo.join("node.md"), "committed content").unwrap();
-        clean(repo, &head).unwrap();
-    }
-    git(repo, &["update-index", "--skip-worktree", "node.md"]).unwrap();
-    // Even unchanged present files are not a safe sparse omission.
-    assert!(clean_draft(repo, &head, true).is_err());
-    fs::remove_file(repo.join("node.md")).unwrap();
-    clean_draft(repo, &head, true).unwrap();
-    assert!(clean(repo, &head).is_err()); // Destructive save still refuses.
-    std::os::unix::fs::symlink("missing-target", repo.join("node.md")).unwrap();
-    assert!(clean_draft(repo, &head, true).is_err());
-    fs::remove_file(repo.join("node.md")).unwrap();
-    git(repo, &["update-index", "--assume-unchanged", "node.md"]).unwrap();
-    assert!(clean_draft(repo, &head, true).is_err());
-}
 
 pub(crate) fn clean(draft: &Path, expected: &str) -> Result<()> {
-    clean_draft(draft, expected, false)
+    clean_draft(draft, expected)
 }
 
-// Detached submission reads the commit and never resets/removes the sparse draft.
-// Only absent skip-worktree paths may be hydrated from that commit; present hidden
-// files must still refuse, since Git status/write-tree do not inspect their bytes.
-fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
+fn clean_draft(draft: &Path, expected: &str) -> Result<()> {
     protect_local_artifacts(draft)?;
     require(
         git(draft, &["rev-parse", "HEAD"])? == expected,
         "draft HEAD changed",
     )?;
-    let files = run(draft, &["ls-files", "-v", "-z"])?;
-    require(files.status.success(), "draft index unavailable")?;
-    let mut omissions = BTreeSet::new();
-    for entry in files.stdout.split(|b| *b == 0).filter(|b| !b.is_empty()) {
-        let absent = sparse
-            && entry.starts_with(b"S ")
-            && fs::symlink_metadata(draft.join(std::str::from_utf8(&entry[2..])?))
-                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
-        if absent {
-            omissions.insert(entry[2..].to_vec());
-        }
-        require(
-            entry.starts_with(b"H ") || absent,
-            "draft index has hidden/sparse edits; preserve files before submitting",
-        )?;
-    }
-    tracked_matches_commit(draft, expected, &omissions)?;
+    native_index_guard(draft)?;
     let status = run(
         draft,
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"],
     )?;
     require(
         status.status.success() && status.stdout.is_empty(),
-        "dirty draft",
+        &format!("dirty draft at {}; preserve tracked, staged and untracked changes before submitting: {}",
+            draft.display(), String::from_utf8_lossy(&status.stdout).replace('\0', " ")),
     )?;
-    let ignored = run(
-        draft,
-        &[
-            "ls-files",
-            "--others",
-            "--ignored",
-            "--exclude-standard",
-            "-z",
-        ],
-    )?;
-    require(
-        ignored.status.success(),
-        "ignored file inventory unavailable",
-    )?;
-    for file in ignored.stdout.split(|b| *b == 0).filter(|b| !b.is_empty()) {
-        let path = Path::new(std::str::from_utf8(file)?);
-        if local_chat_link(draft, path)? {
-            continue;
-        }
-        use std::os::unix::fs::MetadataExt;
-        let metadata = fs::symlink_metadata(draft.join(path))?;
-        require(
-            metadata.is_file() && metadata.nlink() == 1,
-            "ignored entry is not a disposable regular file; preserve it before submitting",
-        )?;
-        require(
-            crate::token_metadata::derived(path)
-                || disposable_outline(path)
-                || [
-                    ".sifttext/index.sqlite",
-                    ".sifttext/index.sqlite-journal",
-                    ".sifttext/index.sqlite-wal",
-                    ".sifttext/index.sqlite-shm",
-                ]
-                .iter()
-                .any(|cache| path == Path::new(cache)),
-            "ignored user file; preserve it before submitting",
-        )?;
-    }
+    ignored_files(draft, false)?;
     // These operation markers belong to the worktree Git directory, including
     // linked worktrees. Resolve it once instead of spawning Git for each marker.
     let git_dir = PathBuf::from(git(draft, &["rev-parse", "--absolute-git-dir"])?);
@@ -521,8 +387,85 @@ fn clean_draft(draft: &Path, expected: &str, sparse: bool) -> Result<()> {
     Ok(())
 }
 
-/// Refuse user-owned material before Git's recursive ignored-file inventory or
-/// destructive draft cleanup. Chat links retain their separate checked contract.
+// Status omits ignored files. Unknown ignored work is not evidence of a clean
+// reader either; only the durable home may retain node-owned artifacts/pointer.
+pub(crate) fn ignored_files(draft: &Path, durable_home: bool) -> Result<()> {
+    let ignored = run(
+        draft,
+        &[
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--directory",
+            "--exclude-standard",
+            "-z",
+        ],
+    )?;
+    require(
+        ignored.status.success(),
+        "ignored file inventory unavailable",
+    )?;
+    for file in ignored.stdout.split(|b| *b == 0).filter(|b| !b.is_empty()) {
+        ignored_entry(draft, Path::new(std::str::from_utf8(file)?), durable_home)?;
+    }
+    Ok(())
+}
+
+fn ignored_entry(root: &Path, path: &Path, durable_home: bool) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let parts: Vec<_> = path.iter().map(|s| s.to_str().unwrap_or_default()).collect();
+    if durable_home && path == Path::new("AGENTS.md") {
+        return Ok(());
+    }
+    if durable_home && parts.len() >= 3 && parts[0] == "nodes"
+        && crate::uuid(parts[1]) && parts[2] == "artifacts" {
+        // Artifact contents are opaque, including independent projects and aliases.
+        for parent in [root.join("nodes"), root.join("nodes").join(parts[1])] {
+            crate::real_dir(&parent)?;
+        }
+        return crate::real_dir(&root.join("nodes").join(parts[1]).join("artifacts"));
+    }
+    for parent in path.ancestors().skip(1).filter(|p| !p.as_os_str().is_empty()) {
+        crate::real_dir(&root.join(parent))?;
+    }
+    let metadata = fs::symlink_metadata(root.join(path))?;
+    if matches!(parts.as_slice(), ["nodes", id, "artifacts", "chats", _] if crate::uuid(id)) {
+        return require(metadata.file_type().is_symlink(), "local chat artifact must be a symlink");
+    }
+    if metadata.is_dir() {
+        let known = match parts.as_slice() {
+            [".sifttext"] | [".sifttext", "outlines"] | [".sifttext", "outline-stage"] => true,
+            [".sifttext", "outlines", id] => crate::uuid(id),
+            ["nodes", id, "artifacts"] | ["nodes", id, "artifacts", "chats"] => crate::uuid(id),
+            _ => false,
+        };
+        require(known, &format!("unknown ignored directory {}; preserve it before submitting", path.display()))?;
+        for entry in fs::read_dir(root.join(path))? {
+            ignored_entry(root, &path.join(entry?.file_name()), durable_home)?;
+        }
+        return Ok(());
+    }
+    require(
+        metadata.is_file() && metadata.nlink() == 1,
+        "ignored entry is not a disposable regular file; preserve it before submitting",
+    )?;
+    require(
+        crate::token_metadata::derived(path)
+            || disposable_outline(path)
+            || (durable_home && path == Path::new(".sifttext/config.json"))
+            || [
+                ".sifttext/index.sqlite",
+                ".sifttext/index.sqlite-journal",
+                ".sifttext/index.sqlite-wal",
+                ".sifttext/index.sqlite-shm",
+                ".sifttext/refresh.lock",
+            ].iter().any(|cache| path == Path::new(cache)),
+        &format!("ignored user file {}; preserve it before submitting", path.display()),
+    )
+}
+
+/// Refuse user-owned material during draft preflight, before Git's recursive
+/// ignored-file inventory. Chat links retain their separate checked contract.
 /// Durable-home artifacts never enter the disposable editing worktree.
 pub(crate) fn protect_local_artifacts(root: &Path) -> Result<()> {
     let nodes = root.join("nodes");
@@ -587,24 +530,6 @@ pub(crate) fn protect_artifact_owners(home: &Path, target: &str) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn local_chat_link(root: &Path, path: &Path) -> Result<bool> {
-    let parts: Vec<_> = path.components().collect();
-    if parts.len() != 5
-        || parts[0].as_os_str() != "nodes"
-        || !crate::uuid(parts[1].as_os_str().to_str().unwrap_or_default())
-        || parts[2].as_os_str() != "artifacts"
-        || parts[3].as_os_str() != "chats"
-    {
-        return Ok(false);
-    }
-    crate::real_dir(&root.join(path.parent().ok_or("missing chat link parent")?))?;
-    require(
-        fs::symlink_metadata(root.join(path))?.file_type().is_symlink(),
-        "local chat artifact must be a symlink",
-    )?;
-    Ok(true)
 }
 
 #[cfg(test)]
@@ -750,101 +675,77 @@ fn ignored_outline_inventory_protects_unknown_files() {
     clean(repo, &head).unwrap();
 }
 
-/// Compare working bytes with the commit, not the caller index's cached stat data.
-/// A fresh private index has no trusted stat entries; neither refresh nor diff
-/// modifies the real index. Detached submission permits only verified omissions.
-pub(crate) fn tracked_matches_commit(
-    repo: &Path,
-    expected: &str,
-    omissions: &BTreeSet<Vec<u8>>,
-) -> Result<()> {
-    let temp = tempfile::tempdir()?;
-    let index = temp.path().join("index");
-    let checked = |args: &[&str]| {
-        let mut cmd = command(
-            repo,
-            &[
-                "-c",
-                "core.sparseCheckout=false",
-                "-c",
-                "core.autocrlf=false",
-                "-c",
-                "core.ignoreStat=false",
-                "-c",
-                "core.trustctime=true",
-                "-c",
-                "core.checkStat=default",
-                "-c",
-                "core.filemode=true",
-                "-c",
-                "core.symlinks=true",
-            ],
-        );
-        cmd.env("GIT_INDEX_FILE", &index).args(args);
-        run_command(cmd)
-    };
-    require(
-        checked(&["read-tree", expected])?.status.success(),
-        "commit index unavailable",
-    )?;
-    // Git clean filters/EOL attributes can hide raw-byte differences or execute
-    // repository commands. Core authored trees cannot contain .gitattributes.
-    let attributes = PathBuf::from(git(
-        repo,
-        &[
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-path",
-            "info/attributes",
-        ],
-    )?);
-    let metadata = fs::symlink_metadata(&attributes);
-    require(
-        metadata
-            .as_ref()
-            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-            || metadata.is_ok_and(|m| m.is_file() && m.len() == 0),
-        "unsupported repository attributes; preserve files before submitting",
-    )?;
-    let files = checked(&["ls-files", "-z"])?;
-    require(files.status.success(), "commit file inventory unavailable")?;
-    let mut parents = BTreeSet::new();
-    for file in files.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
-        let path = Path::new(std::str::from_utf8(file)?);
-        for parent in path.parent().ok_or("missing tracked parent")?.ancestors() {
-            parents.insert(parent.to_path_buf());
+/// Reject hidden edits and malformed indexes, while allowing Git-owned sparse
+/// omission in linked editing worktrees. Immutable Git trees remain the complete
+/// acceptance input; skip-worktree is not evidence of a deletion.
+pub(crate) fn native_index_guard(repo: &Path) -> Result<()> {
+    let sparse = crate::local::sparse_checkout(repo)?;
+    if sparse {
+        require(fs::symlink_metadata(repo.join(".git"))?.is_file(),
+            "sparse checkout is supported only in linked editing worktrees; keep the normal home complete")?;
+    }
+    let config = run(repo, &["config", "--null", "--get-regexp", "^core\\.splitindex$"])?;
+    require(matches!(config.status.code(), Some(0 | 1)), "Git configuration unavailable")?;
+    for entry in config.stdout.split(|b| *b == 0).filter(|b| !b.is_empty()) {
+        let entry = std::str::from_utf8(entry)?;
+        let (key, value) = entry.split_once('\n').ok_or("invalid Git configuration")?;
+        require(matches!(value.to_ascii_lowercase().as_str(), "false" | "no" | "off" | "0"),
+            &format!("unsupported Git configuration {key}; preserve files and disable split index before retrying"))?;
+    }
+    require(git(repo, &["rev-parse", "--shared-index-path"])?.is_empty(),
+        "split Git index unsupported; preserve files and disable split index before retrying")?;
+    let git_dir = PathBuf::from(git(repo, &["rev-parse", "--absolute-git-dir"])?);
+    for name in ["config.worktree", "info/sparse-checkout"] {
+        let path = git_dir.join(name);
+        match fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                use std::os::unix::fs::MetadataExt;
+                require(meta.is_file() && meta.nlink() == 1,
+                    &format!("unsafe Git configuration at {}; preserve files before retrying", path.display()))?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
         }
     }
-    for parent in parents {
-        require(
-            fs::symlink_metadata(repo.join(parent).join(".gitattributes"))
-                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
-            "unsupported working attributes; preserve files before submitting",
-        )?;
+    let attributes = PathBuf::from(git(repo, &["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"])?);
+    let metadata = fs::symlink_metadata(&attributes);
+    require(metadata.as_ref().is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        || metadata.is_ok_and(|m| m.is_file() && m.len() == 0),
+        &format!("unsupported repository attributes at {}; preserve files before retrying", attributes.display()))?;
+    let check_attributes = |parent: &Path| -> Result<()> {
+        let path = repo.join(parent).join(".gitattributes");
+        require(fs::symlink_metadata(&path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
+            &format!("unsupported working attributes at {}; preserve files before retrying", path.display()))
+    };
+    check_attributes(Path::new(""))?;
+    let mut files = tempfile::tempfile()?;
+    let output = lifetime::run_stdout_file(command(repo, &["ls-files", "-v", "-z"]), &files)?;
+    require(output.status.success(), "Git index inventory unavailable")?;
+    if files.metadata()?.len() != 0 {
+        files.seek(SeekFrom::End(-1))?;
+        let mut end = [0];
+        files.read_exact(&mut end)?;
+        require(end == [0], "truncated Git index inventory; preserve files before retrying")?;
     }
-    // Refresh hashes every stat-invalid entry; code 1 means changed/missing files,
-    // which the following NUL-delimited inventory checks (including sparse omissions).
-    let refresh = checked(&["update-index", "--really-refresh"])?;
-    require(
-        matches!(refresh.status.code(), Some(0 | 1)),
-        "commit index refresh unavailable",
-    )?;
-    let diff = checked(&[
-        "diff-files",
-        "--no-ext-diff",
-        "--name-only",
-        "-z",
-        "--ignore-submodules=none",
-    ])?;
-    require(
-        diff.status.success()
-            && diff
-                .stdout
-                .split(|b| *b == 0)
-                .filter(|p| !p.is_empty())
-                .all(|p| omissions.contains(p)),
-        "working files differ from committed knowledge; preserve them before submitting",
-    )
+    files.rewind()?;
+    let mut previous_parent = PathBuf::new();
+    for entry in BufReader::new(files).split(0) {
+        let entry = entry?;
+        require(entry.starts_with(b"H ") || (sparse && entry.starts_with(b"S ")),
+            &format!("hidden, unmerged or malformed Git index entry {}; preserve files and clear assume-unchanged or resolve the index before retrying", String::from_utf8_lossy(&entry)))?;
+        let text = std::str::from_utf8(&entry[2..])?;
+        require(!text.is_empty() && !text.starts_with('/')
+            && text.split('/').all(|part| !part.is_empty() && part != "." && part != ".."),
+            "unsafe Git index path; preserve files before retrying")?;
+        let parent = Path::new(text).parent().ok_or("missing tracked parent")?;
+        for ancestor in parent.ancestors() {
+            if !previous_parent.starts_with(ancestor) { check_attributes(ancestor)?; }
+        }
+        previous_parent = parent.to_path_buf();
+    }
+    drop(previous_parent);
+    crate::release_unused_memory();
+    Ok(())
 }
 
 // Namespace membership alone does not make an ignored user file disposable.
@@ -869,22 +770,6 @@ fn disposable_outline(path: &Path) -> bool {
         }
         _ => false,
     }
-}
-type FileIdentity = (PathBuf, u64, u64, i64, i64);
-fn tracked_identity(view: &Path) -> Result<Vec<FileIdentity>> {
-    use std::os::unix::fs::MetadataExt;
-    let files = run(view, &["ls-files", "-z"])?;
-    require(files.status.success(), "missing view index")?;
-    files
-        .stdout
-        .split(|b| *b == 0)
-        .filter(|b| !b.is_empty())
-        .map(|name| {
-            let path = PathBuf::from(std::str::from_utf8(name)?);
-            let m = fs::symlink_metadata(view.join(&path))?;
-            Ok((path, m.dev(), m.ino(), m.ctime(), m.ctime_nsec()))
-        })
-        .collect()
 }
 fn accepted(repo: &Path, reference: &str) -> Result<String> {
     require(
@@ -1011,69 +896,10 @@ fn authored_tree_refuses_force_tracked_artifacts_including_chat_links() {
     assert_eq!(fs::read(artifacts.join("budget.csv")).unwrap(), b"item,quantity\nwidget,10\n");
 }
 
-fn accepted_index(
-    policy: &Policy,
-    repo: &Path,
-    root: &Path,
-    main: &str,
-) -> Result<Option<index::PreparedIndex>> {
-    let mut donors = vec![repo.to_path_buf()];
-    // ponytail: scan retained views; an explicit retirement/index policy is
-    // needed if retained publication history makes this acquisition expensive.
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            donors.push(entry.path().join("view"));
-        }
-    }
-    donors.sort();
-    for path in donors {
-        let verify = || -> Result<Option<index::PreparedIndex>> {
-            crate::real_dir(&path)?;
-            if !path.join(".sifttext/index.sqlite").try_exists()? {
-                return Ok(None);
-            }
-            clean(&path, main)?;
-            let source = tracked_identity(&path)?;
-            let prepared = index::prepare_reuse(policy, &path, None)?;
-            clean(&path, main)?;
-            require(tracked_identity(&path)? == source, "donor source changed")?;
-            Ok(prepared)
-        };
-        if let Ok(Some(prepared)) = verify() {
-            return Ok(Some(prepared));
-        }
-    }
-    Ok(None)
-}
-
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None)
-}
-
-/// Submit through the normal structural checks, then require a caller-provided
-/// semantic verdict bound to this exact candidate commit and rule snapshot.
-/// Core does not select a provider or decide whether review is mandatory.
-/// The reviewer runs under draft custody and must not reenter session mutation
-/// or publication for that draft.
-pub fn submit_reviewed(
-    policy: &Policy,
-    request: &Request,
-    mode: ReviewMode,
-    rules: &[u8],
-    mut review: impl FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict>,
-) -> Receipt {
-    submit_inner(
-        policy,
-        request,
-        false,
-        None,
-        &mut |_, _| Ok(()),
-        Some((mode, rules, &mut review)),
-        None,
-    )
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None)
 }
 
 /// Check and accept the combination in the submitted worktree. The caller owns
@@ -1090,7 +916,7 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record, None, None)
+    submit_inner(policy, request, true, previous_heads, &mut record, None)
 }
 
 pub(crate) fn save_prepared_leased(
@@ -1101,28 +927,7 @@ pub(crate) fn save_prepared_leased(
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
     submit_inner(
-        policy, request, true, previous_heads, &mut record, None, Some(lease),
-    )
-}
-
-pub(crate) fn save_prepared_reviewed_leased(
-    policy: &Policy,
-    request: &Request,
-    lease: &crate::local::DraftLease,
-    mode: ReviewMode,
-    rules: &[u8],
-    previous_heads: Option<(&str, &str)>,
-    review: &mut dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<SemanticVerdict>,
-    mut record: impl FnMut(&str, &str) -> Result<()>,
-) -> Receipt {
-    submit_inner(
-        policy,
-        request,
-        true,
-        previous_heads,
-        &mut record,
-        Some((mode, rules, review)),
-        Some(lease),
+        policy, request, true, previous_heads, &mut record, Some(lease),
     )
 }
 
@@ -1132,7 +937,6 @@ fn submit_inner(
     in_draft: bool,
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
-    review: Option<(ReviewMode, &[u8], &mut SemanticReviewer<'_>)>,
     lease: Option<&crate::local::DraftLease>,
 ) -> Receipt {
     let start = Instant::now();
@@ -1153,7 +957,7 @@ fn submit_inner(
         accepted_index_available: false,
         draft_index_available: false,
         graph_checks: vec![],
-        semantic_findings: vec![],
+        semantic_check: "deferred",
         lifecycle: vec![],
         failure_kind: None,
         elapsed_ms: 0,
@@ -1182,12 +986,15 @@ fn submit_inner(
             in_draft,
             previous_heads,
             record,
-            review,
             &notes,
         )
     })();
     receipt.lifecycle = notes.take();
     receipt.failure_kind = result.as_ref().err().map(|e| owned::error_kind(e));
+    if let Err(error) = &result {
+        eprintln!("submission {}: {}", receipt.check,
+            error.to_string().chars().take(4096).collect::<String>());
+    }
     if result.is_err() && receipt.published {
         receipt.status = "unavailable";
         receipt.check = "published_view_requires_recovery";
@@ -1196,6 +1003,51 @@ fn submit_inner(
     receipt.elapsed_ms = start.elapsed().as_millis();
     receipt
 }
+fn apply_git_normalization(
+    reader: &mut crate::git_snapshot::GitReader,
+    candidate: &crate::git_snapshot::GitView,
+    view: &Path,
+    normalized: &crate::status::Acceptance,
+    patches: &BTreeMap<String, Vec<u8>>,
+) -> Result<BTreeMap<String, String>> {
+    // A status change may reopen an omitted ancestor. Expand exactly the nodes
+    // carrying planned patches at this candidate revision, never the whole draft.
+    let ids: Vec<_> = normalized.normalized_ids.iter().cloned().collect();
+    crate::local::materialize_nodes(view, &ids)?;
+    crate::real_dir(&view.join("nodes"))?;
+    let mut staged = BTreeMap::new();
+    let mut blobs = BTreeMap::new();
+    // Stage complete Markdown before any replacement. Hash those exact bytes,
+    // not a mutable destination later read by `git add`.
+    for id in &normalized.normalized_ids {
+        let directory = view.join("nodes").join(id);
+        crate::real_dir(&directory)?;
+        let destination = directory.join("node.md");
+        let mut file = tempfile::NamedTempFile::new_in(&directory)?;
+        file.write_all(&patches[id])?;
+        file.as_file().set_permissions(fs::symlink_metadata(&destination)?.permissions())?;
+        file.as_file().sync_all()?;
+        let blob = git(view, &["hash-object", "-w", "--no-filters", "--", file.path().to_str().ok_or("non-UTF-8 patch path")?])?;
+        require(oid(&blob), "invalid normalization blob")?;
+        staged.insert(id.clone(), file);
+        blobs.insert(id.clone(), blob);
+    }
+    crate::status::apply_changes(&normalized.changes, |id| {
+        let directory = view.join("nodes").join(id);
+        crate::real_dir(&view.join("nodes"))?;
+        crate::real_dir(&directory)?;
+        let destination = directory.join("node.md");
+        require(
+            crate::read_regular(&destination)? == reader.bytes(candidate, id)?,
+            &format!("node {id}: candidate bytes changed before normalization; retain the draft"),
+        )?;
+        staged.remove(id).ok_or("missing staged normalization")?.persist(&destination)?;
+        fs::File::open(directory)?.sync_all()?;
+        Ok(())
+    })?;
+    Ok(blobs)
+}
+
 fn execute(
     policy: &Policy,
     q: &Request,
@@ -1203,7 +1055,6 @@ fn execute(
     in_draft: bool,
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
-    mut review: Option<(ReviewMode, &[u8], &mut SemanticReviewer<'_>)>,
     notes: &owned::Notes,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
@@ -1278,11 +1129,13 @@ fn execute(
                 "unaccepted draft HEAD changed; repair and resubmit explicitly",
             )?;
         }
-        clean_draft(&path, if in_draft { &head } else { &sha }, !in_draft)?;
+        clean_draft(&path, if in_draft { &head } else { &sha })?;
         let branch = git(&path, &["symbolic-ref", "--quiet", "HEAD"])?;
         require(branch != q.accepted_ref, "draft is accepted branch")?;
         r.draft_branch = Some(branch);
-        authored_tree(&repo, &sha)?;
+        if sha != main {
+            authored_tree(&repo, &sha)?;
+        }
         Some(path)
     } else {
         require(
@@ -1296,32 +1149,16 @@ fn execute(
         fs::create_dir(&root)?;
     }
     crate::real_dir(&root)?;
-    // Only the detached repository reader and Core's retained publication views
-    // are donors, never unrelated registered drafts. Git and the index verifier
-    // both check them; missing/corrupt data is just an optimization miss.
-    owned::recover(&repo, &root, notes)?;
-    let main_index = accepted_index(policy, &repo, &root, &main)?;
+    // Normal publication reads immutable Git objects, not retained view donors.
+    // Recovering unrelated historical views is not part of saving this draft.
+    if !in_draft {
+        owned::recover(&repo, &root, notes)?;
+    }
     r.check = "owned_view_setup";
-    let before = WorkingView::new(&repo, &root, &main, notes)?;
-    let draft_index = if let Some(path) = &draft {
-        if path.join(".sifttext/index.sqlite").try_exists()? {
-            // Sparse preparation must use the submitted draft's pinned base,
-            // not the newer accepted main (sparse omissions are not deletions).
-            let base = WorkingView::new(
-                &repo,
-                &root,
-                q.base.as_deref().ok_or("missing base")?,
-                notes,
-            )?;
-            index::prepare_reuse(policy, path, Some(&base.path))?
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    r.accepted_index_available = main_index.is_some();
-    r.draft_index_available = draft_index.is_some();
+    let mut reader = crate::git_snapshot::GitReader::new(policy, &repo)?;
+    let before = reader.view(&main)?;
+    // The lifecycle refreshes the real home's existing derived state after
+    // acceptance. Do not hydrate donors or build a second full temporary index.
     let candidate = if in_draft {
         None
     } else {
@@ -1341,7 +1178,7 @@ fn execute(
     let already = run(&repo, &["merge-base", "--is-ancestor", submitted, &main])?
         .status
         .success();
-    let sha = if in_draft {
+    let mut sha = if in_draft {
         if already {
             main.clone()
         } else if run(&repo, &["merge-base", "--is-ancestor", &main, submitted])?
@@ -1437,114 +1274,145 @@ fn execute(
             ],
         )?;
     } else if !in_draft || git(view, &["rev-parse", "HEAD"])? != sha {
+        // Reset only the exact successful native merge. Recheck mutable files
+        // here, at the destructive boundary, not as acceptance of Git objects.
+        require(
+            git(view, &["write-tree"])? == *r.tree.as_ref().ok_or("missing candidate tree")?,
+            "merge index changed; retain the draft",
+        )?;
+        native_index_guard(view)?;
+        let changes = run(view, &["diff-files", "--no-ext-diff", "--name-only", "-z", "--ignore-submodules=none"])?;
+        require(changes.status.success() && changes.stdout.is_empty(),
+            "working files changed after merge; preserve the draft before retrying")?;
         git(view, &["reset", "--hard", &sha])?;
     }
-    authored_tree(&repo, &sha)?;
-    // Git omits empty directories. Hydrate the candidate after combination
-    // (which may remove the last node) and the isolated accepted baseline.
-    for owned in [&before.path, view] {
-        // The root cache directory is part of the conservative Store inventory
-        // (its generated contents are excluded). Hydrate it symmetrically before
-        // proving the base so refresh cannot itself change the graph edit class.
-        for name in ["nodes", "trees", ".sifttext"] {
-            let path = owned.join(name);
-            if !path.try_exists()? {
-                fs::create_dir(&path)?;
-            }
-            crate::real_dir(&path)?;
-        }
+    // Main and the submitted commit were already checked above. Only a new
+    // combination needs another authored-path inventory.
+    if sha != main && q.commit.as_deref() != Some(sha.as_str()) {
+        authored_tree(&repo, &sha)?;
     }
-    // Only draft submissions consume a transition capability. Recovery still
-    // validates both graphs and retains both complete inventories below.
-    let proven = if draft.is_some() {
-        // A branch name or prior receipt is not a proof: bootstrap from the
-        // exact accepted detached view in this process.
-        let (base_check, base_capture) = gate::validate_with_capture(
-            policy,
-            &gate::Request {
-                store: before.path.clone(),
-                before: None,
-                explicit: BTreeSet::new(),
-                expected_version: None,
-                pause_before_accept: None,
-            },
-            None,
-        );
-        if base_check.status == "current" {
-            r.check = "graph_transition_unavailable";
-            let transition = crate::graph_transition::Transition::checked(policy)?;
-            let base = transition.prove_validated(base_capture.ok_or("missing validated base")?)?;
-            require(
-                Some(base.version()) == base_check.version.as_deref(),
-                "base changed after validation",
-            )?;
-            Some((transition, base))
-        } else {
-            None
+    let candidate_view = reader.view(&sha)?;
+    require(Some(&candidate_view.tree) == r.tree.as_ref(), "candidate tree identity changed")?;
+    r.check = "candidate_normalization_rejected";
+    let (normalized, patches) = crate::status::normalize_git(&mut reader, &before, &candidate_view, &q.explicit)?;
+    normalized.report_reopenings();
+    let final_view = if !patches.is_empty() {
+        // Build from exact patches in a private index: never scoop up unrelated
+        // staged edits or let a concurrent body write change the checked tree.
+        policy.verify_stamp()?;
+        let blobs = apply_git_normalization(&mut reader, &candidate_view, view, &normalized, &patches)?;
+        drop(normalized);
+        drop(patches);
+        let old_tree = git(view, &["rev-parse", &format!("{sha}^{{tree}}")])?;
+        require(
+            git(view, &["write-tree"])? == old_tree,
+            "candidate index changed",
+        )?;
+        let temporary = tempfile::tempdir()?;
+        let index_path = temporary.path().join("index");
+        let indexed = |args: &[&str]| -> Result<String> {
+            let mut cmd = command(view, args);
+            cmd.env("GIT_INDEX_FILE", &index_path);
+            let out = run_command(cmd)?;
+            require(out.status.success(), "normalization index unavailable")?;
+            Ok(std::str::from_utf8(&out.stdout)?
+                .trim_end_matches('\n')
+                .to_owned())
+        };
+        indexed(&["read-tree", &sha])?;
+        for (id, blob) in &blobs {
+            indexed(&["update-index", "--add", "--cacheinfo", "100644", blob, &format!("nodes/{id}/node.md")])?;
         }
+        let tree = indexed(&["write-tree"])?;
+        let metadata = git(
+            view,
+            &[
+                "log",
+                "-1",
+                "--format=%an%x00%ae%x00%(trailers:key=Co-authored-by)",
+                submitted,
+            ],
+        )?;
+        let mut cmd = command(view, &["commit-tree", &tree, "-p", &sha]);
+        crate::checked_publication_attribution::integration_commit(&mut cmd, &metadata)?;
+        let out = run_command(cmd)?;
+        require(out.status.success(), "normalization commit rejected")?;
+        let next = std::str::from_utf8(&out.stdout)?.trim().to_owned();
+        commit(&repo, &next)?;
+        require(
+            git(view, &["write-tree"])? == old_tree,
+            "candidate index changed",
+        )?;
+        // The tree contains only exact patches over the immutable combination.
+        // New working edits are not acceptance input; completed drafts are disposable.
+        require(
+            git(view, &["rev-parse", "HEAD"])? == sha,
+            "candidate HEAD changed",
+        )?;
+        if in_draft {
+            record(&sha, &next)?;
+        }
+        if let Some(candidate) = &candidate {
+            candidate.revision(&next)?;
+        }
+        git(view, &["update-ref", "HEAD", &next, &sha])?;
+        // Synchronize only our paths. Never replace the entire real index: a
+        // concurrently staged unrelated edit must remain available for repair.
+        for (id, blob) in &blobs {
+            git(view, &["update-index", "--add", "--cacheinfo", "100644", blob, &format!("nodes/{id}/node.md")])?;
+        }
+        sha = next;
+        r.candidate = Some(sha.clone());
+        r.tree = Some(tree);
+        // The checked authored tree plus exact node.md patches cannot introduce
+        // another path or mode. Do not enumerate that whole tree again.
+        reader.view(&sha)?
     } else {
-        None
+        drop(normalized);
+        drop(patches);
+        candidate_view
     };
+    require(Some(&final_view.tree) == r.tree.as_ref(), "final candidate tree identity changed")?;
     r.check = "candidate_validation_rejected";
-    let validation = gate::Request {
-        store: view.clone(),
-        before: Some(before.path.clone()),
-        explicit: q.explicit.clone(),
-        expected_version: None,
-        pause_before_accept: None,
-    };
-    let proof = proven.as_ref().map(|(transition, base)| (transition, base));
-    let (checked, final_capture) = gate::validate_with_capture(policy, &validation, proof);
+    // Execute the full law once on exact Git input. The baseline supplies
+    // history, not a second full proof or a mutable filesystem recapture.
+    let checked = gate::validate_git(policy, &mut reader, &before, &final_view, &q.explicit);
     r.graph_checks.push(checked.graph.clone());
     r.version = checked.version.clone();
     let valid = checked.status == "current";
     r.validation = Some(checked);
     require(valid, "combined candidate rejected")?;
-    let final_capture = final_capture.ok_or("missing validated candidate")?;
-    let source_identity = tracked_identity(view)?;
-    let before_identity = tracked_identity(&before.path)?;
+    require(r.version.as_deref() == Some(final_view.version.as_str()), "validated candidate version mismatch")?;
+    drop(final_view);
+    drop(before);
+    drop(reader);
+    crate::token_count::release();
+    crate::release_unused_memory();
     r.check = "derived_view_unavailable";
     // Full checked refresh remains independent of graph preservation. Only
     // verified assembled records/search bodies cross views, not acceptance proofs;
     // Git never merges SQLite or generated files.
-    let (indexed, reuse) = index::refresh_for_publication(
-        policy,
-        view,
-        None,
-        main_index.as_ref(),
-        draft_index.as_ref(),
-        None,
-    )?;
-    r.index_reuse = Some(reuse);
-    require(
-        indexed.status == "current" && indexed.version == r.version,
-        "derived candidate mismatch",
-    )?;
-    if let Some((mode, rules, reviewer)) = review.as_mut() {
-        r.check = "semantic_review_rejected";
-        let diff = run(
-            &repo,
-            &["diff", "--binary", "--no-ext-diff", &main, &sha, "--"],
-        )?;
-        require(diff.status.success(), "candidate diff unavailable")?;
-        let message = run(&repo, &["show", "-s", "--format=%B", submitted])?;
-        require(message.status.success(), "submission message unavailable")?;
-        let candidate = sha.as_str();
-        let rules = *rules;
-        let verdict = reviewer(candidate, &diff.stdout, &message.stdout, rules)?;
-        let bound = verdict.candidate == candidate && verdict.rules == crate::sha256(rules);
-        r.semantic_findings = verdict.findings;
-        require(
-            bound && (matches!(mode, ReviewMode::Advisory) || verdict.passed),
-            "semantic review rejected or stale",
-        )?;
+    if draft.is_none() {
+        // The explicit accepted-view operation still exposes a ready standalone
+        // view. Git omits empty directories; this bounded legacy adapter is not
+        // used by normal publication or immutable acceptance.
+        for name in ["nodes", "trees", ".sifttext"] {
+            let path = view.join(name);
+            if !path.try_exists()? { fs::create_dir(&path)?; }
+            crate::real_dir(&path)?;
+        }
+        let (version, ()) = index::with_current(policy, view, |_, _| Ok(()))?;
+        require(Some(version) == r.version, "derived candidate mismatch")?;
     }
     if let Some(barrier) = &q.pause_before_publish {
         barrier.wait(&[&repo, &common], view)?;
     }
     r.check = "source_or_ref_changed";
     if let Some(draft) = &draft {
-        clean_draft(draft, if in_draft { &sha } else { submitted }, !in_draft)?;
+        require(
+            git(draft, &["rev-parse", "HEAD"])? == if in_draft { &sha } else { submitted },
+            "draft HEAD changed; retain the draft",
+        )?;
         require(
             git(draft, &["symbolic-ref", "--quiet", "HEAD"])?
                 == *r.draft_branch.as_ref().ok_or("missing draft identity")?,
@@ -1555,34 +1423,11 @@ fn execute(
         accepted(&repo, &q.accepted_ref)? == main,
         "accepted ref changed",
     )?;
-    require(
-        tracked_identity(view)? == source_identity
-            && tracked_identity(&before.path)? == before_identity,
-        "captured source identity changed",
-    )?;
-    clean(&before.path, &main)?;
-    clean(view, &sha)?;
-    require(
-        git(view, &["write-tree"])? == *r.tree.as_ref().ok_or("missing tree")?,
-        "candidate tree changed",
-    )?;
-    // Same invocation, request and immutable inputs: reuse every successful
-    // candidate check, never a caller-supplied receipt or logical version alone.
-    // Refresh may change derived files only. Keep complete before/candidate byte
-    // and physical identity barriers and independently pin the transition helper.
+    // Reuse the successful exact-candidate gate in this invocation. Keep final
+    // source/policy barriers, not another graph/outline
+    // recomputation over the same input or a caller-forgeable receipt.
     r.check = "candidate_recheck_rejected";
-    if let Some((transition, _)) = proof {
-        transition.verify()?;
-    }
-    final_capture.checked(policy)?;
-    if let Some((transition, _)) = proof {
-        transition.verify()?;
-    }
-    let inspection = crate::outlines::verify_validated(policy, view, &final_capture)?;
-    require(
-        inspection.status == "current" && inspection.version == r.version,
-        "derived candidate changed",
-    )?;
+    policy.verify_stamp()?;
     r.check = "artifact_owner_removed";
     protect_artifact_owners(&repo, &sha)?;
     // Git's conditional update is the serialization point; never retry a lost race.
@@ -1603,12 +1448,10 @@ fn execute(
         accepted(&repo, &q.accepted_ref)? == sha,
         "accepted advanced again",
     )?;
-    clean(view, &sha)?;
-    let inspection = crate::outlines::verify_validated(policy, view, &final_capture)?;
-    require(
-        inspection.status == "current" && inspection.version == r.version,
-        "post-publication view changed",
-    )?;
+    // Acceptance is over immutable Git input, not post-publication cleanliness.
+    // Editing drafts are disposable; retained observer views are checked once
+    // by WorkingView::retain below.
+    policy.verify_stamp()?;
     r.view = Some(if in_draft {
         view.clone()
     } else {

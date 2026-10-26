@@ -20,7 +20,7 @@ for name in Cargo.toml Cargo.lock build.rs README.md AGENTS.md .gitignore rust-t
   [ ! -e "$name" ] || cp -R "$name" "$STAGE/package/$name"
 done
 mkdir "$STAGE/package/build"
-for name in graph-policy graph-policy.sha256 graph-transition graph-transition.sha256 candidate.sha256; do cp "build/$name" "$STAGE/package/build/$name"; done
+for name in graph-policy graph-policy.sha256 candidate.sha256; do cp "build/$name" "$STAGE/package/build/$name"; done
 cp target/release/sifttext "$STAGE/package/sifttext"
 printf '{"version":"%s","source":"%s","knowledge":"%s","format":1}\n' "$VERSION" "$SOURCE" "$KB" > "$STAGE/package/release.json"
 # Normalize archive order, times and ownership with GNU tar on every build host.

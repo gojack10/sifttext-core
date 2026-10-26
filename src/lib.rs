@@ -14,6 +14,30 @@ use std::{
 // Standalone observers and reusable modules share this public crate identity.
 extern crate self as sifttext_file_graph;
 
+/// Return freed phase buffers to the OS before spawning another working set.
+pub(crate) fn release_unused_memory() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        unsafe extern "C" {
+            fn malloc_zone_pressure_relief(zone: *mut libc::c_void, goal: usize) -> usize;
+        }
+        malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
+    }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe { libc::malloc_trim(0); }
+}
+
+// Per-command policy: fence only knobs that can transform authored bytes or run
+// repository-supplied programs. Git keeps its own caches, stat handling and
+// index threading.
+pub(crate) const GIT_CONFIG_FENCES: [&str; 10] = [
+    "-c", "core.autocrlf=false",
+    "-c", "core.attributesFile=/dev/null",
+    "-c", "core.filemode=true",
+    "-c", "core.symlinks=true",
+    "-c", "diff.external=",
+];
+
 /// Directory holding the native helper binaries built beside this test binary.
 /// `CARGO_MANIFEST_DIR/target/debug` is the wrong answer whenever the build
 /// used an external `CARGO_TARGET_DIR`, which is the project's preferred
@@ -46,7 +70,6 @@ pub(crate) fn native_bin(name: &str) -> PathBuf {
     bin
 }
 
-pub mod graph_transition;
 pub(crate) mod patch_build;
 
 #[cfg(test)]
@@ -67,6 +90,8 @@ mod checked_publication_attribution;
 #[path = "../tests/successor/checked_publication.rs"]
 mod checked_publication_tests;
 mod coherent_capture;
+pub(crate) mod git_snapshot;
+pub(crate) mod source_version;
 #[cfg(test)]
 #[path = "../tests/successor/coherent_capture.rs"]
 mod coherent_capture_tests;
@@ -144,6 +169,7 @@ mod prepared_index_reuse_tests;
 #[path = "../tests/successor/retrieval_contention.rs"]
 mod retrieval_contention_tests;
 pub mod status;
+pub mod token_count;
 pub mod token_metadata;
 pub mod updates;
 
@@ -236,10 +262,9 @@ pub struct Authored {
 }
 
 // A deliberately small front matter grammar: one key and JSON value per line.
-// Body and unknown metadata remain opaque bytes; rename patches only the name value.
+// Body and unknown metadata remain opaque bytes.
 struct Markdown<'a> {
     authored: Authored,
-    name_range: std::ops::Range<usize>,
     fields: BTreeMap<&'a str, &'a str>,
 }
 
@@ -254,7 +279,6 @@ fn markdown(text: &str) -> Result<Markdown<'_>> {
     )?;
     let mut offset = first.len();
     let mut fields = BTreeMap::new();
-    let mut name_range = None;
     let mut body = None;
     for raw in lines {
         let line = raw
@@ -310,11 +334,6 @@ fn markdown(text: &str) -> Result<Markdown<'_>> {
                 Path::new("."),
                 known,
             )?;
-            if key == "name" {
-                let start = offset + line.find(':').unwrap() + 1 + value.len()
-                    - value.trim_start_matches([' ', '\t']).len();
-                name_range = Some(start..start + trimmed.len());
-            }
         }
         offset += raw.len();
     }
@@ -344,7 +363,6 @@ fn markdown(text: &str) -> Result<Markdown<'_>> {
     };
     Ok(Markdown {
         authored,
-        name_range: name_range.ok_or("missing name metadata")?,
         fields,
     })
 }
@@ -353,12 +371,52 @@ pub fn parse_markdown(text: &str) -> Result<Authored> {
     Ok(markdown(text)?.authored)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Entry {
     File(Vec<u8>),
+    /// Invocation-local captured bytes, never an authority for later source reads.
+    FileRef { source: PathBuf, len: u64, digest: [u8; 32] },
     Link(PathBuf),
     Dir,
 }
+
+impl Entry {
+    fn file_identity(&self) -> Option<(u64, [u8; 32])> {
+        match self {
+            Self::File(bytes) => Some((bytes.len() as u64, Sha256::digest(bytes).into())),
+            Self::FileRef { len, digest, .. } => Some((*len, *digest)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn bytes(&self) -> Result<std::borrow::Cow<'_, [u8]>> {
+        match self {
+            Self::File(bytes) => Ok(std::borrow::Cow::Borrowed(bytes)),
+            Self::FileRef { source, len, digest } => {
+                let bytes = read_regular(source)?;
+                require(bytes.len() as u64 == *len && <[u8; 32]>::from(Sha256::digest(&bytes)) == *digest,
+                    "captured file changed")?;
+                Ok(std::borrow::Cow::Owned(bytes))
+            }
+            _ => Err("captured entry is not a file".into()),
+        }
+    }
+
+}
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::File(a), Self::File(b)) => a == b,
+            (Self::File(_) | Self::FileRef { .. }, Self::File(_) | Self::FileRef { .. }) =>
+                self.file_identity() == other.file_identity(),
+            (Self::Link(a), Self::Link(b)) => a == b,
+            (Self::Dir, Self::Dir) => true,
+            _ => false,
+        }
+    }
+}
+impl Eq for Entry {}
 
 #[derive(Clone, Debug)]
 pub struct Store {
@@ -367,6 +425,9 @@ pub struct Store {
     pub children: BTreeMap<String, Vec<String>>,
     pub roots: Vec<String>,
     pub inventory: BTreeMap<PathBuf, Entry>,
+    // Some means content is deliberately absent from Authored; this set records
+    // actual nonblank bodies. Rendering/replay must explicitly materialize first.
+    pub(crate) compact_bodies: Option<BTreeSet<String>>,
 }
 
 fn real_dir(path: &Path) -> Result<()> {
@@ -475,7 +536,7 @@ fn inventory(path: &Path, root: &Path, result: &mut BTreeMap<PathBuf, Entry>) ->
                         if let Some(kind) = io_failure {
                             return Err(std::io::Error::from(kind).into());
                         }
-                        inventory_entries(chunk, root, &mut batch)
+                        inventory_entries(chunk, root, &mut batch, false)
                     };
                     read()
                         .map(|()| batch)
@@ -506,7 +567,7 @@ fn inventory(path: &Path, root: &Path, result: &mut BTreeMap<PathBuf, Entry>) ->
         }
         Ok(())
     } else {
-        inventory_entries(&paths, root, result)
+        inventory_entries(&paths, root, result, false)
     }
 }
 
@@ -514,6 +575,7 @@ fn inventory_entries(
     paths: &[PathBuf],
     root: &Path,
     result: &mut BTreeMap<PathBuf, Entry>,
+    compact: bool,
 ) -> Result<()> {
     for p in paths {
         let rel = p.strip_prefix(root)?.to_path_buf();
@@ -535,6 +597,7 @@ fn inventory_entries(
                     ".sifttext/index.sqlite-journal",
                     ".sifttext/index.sqlite-wal",
                     ".sifttext/index.sqlite-shm",
+                    ".sifttext/refresh.lock",
                 ]
                 .iter()
                 .any(|cache| rel == Path::new(cache))
@@ -574,8 +637,17 @@ fn inventory_entries(
                         .iter()
                         .any(|n| parts[2].as_os_str() == *n);
                 let meta = fs::symlink_metadata(&p)?;
+                let file = || -> Result<Entry> {
+                    let bytes = read_regular(p)?;
+                    Ok(if compact {
+                        Entry::FileRef {
+                            source: p.clone(), len: bytes.len() as u64,
+                            digest: Sha256::digest(&bytes).into(),
+                        }
+                    } else { Entry::File(bytes) })
+                };
                 let e = if authored_file {
-                    Entry::File(read_regular(&p)?)
+                    file()?
                 } else if meta.file_type().is_symlink() {
                     // Only relationship directories may contain links, already checked individually.
                     let parts: Vec<_> = rel.components().collect();
@@ -588,10 +660,14 @@ fn inventory_entries(
                     )?;
                     Entry::Link(fs::read_link(&p)?)
                 } else if meta.is_dir() {
-                    inventory(&p, root, result)?;
+                    if compact {
+                        inventory_entries(&entries(p)?, root, result, true)?;
+                    } else {
+                        inventory(&p, root, result)?;
+                    }
                     Entry::Dir
                 } else {
-                    Entry::File(read_regular(&p)?)
+                    file()?
                 };
                 result.insert(rel.clone(), e);
                 Ok(())
@@ -630,24 +706,35 @@ impl Store {
         base: Option<&Store>,
         residues: &coherent_capture::Residues,
     ) -> Result<(Self, coherent_capture::Metadata)> {
+        Self::capture_classified_mode(path, base, residues, false)
+    }
+
+    pub(crate) fn capture_classified_mode(
+        path: &Path,
+        base: Option<&Store>,
+        residues: &coherent_capture::Residues,
+        compact: bool,
+    ) -> Result<(Self, coherent_capture::Metadata)> {
         real_dir(path)?;
         let path = fs::canonicalize(path)?;
-        let (files, dirs) = Self::inventory_classified(
+        let (files, dirs) = Self::inventory_classified_mode(
             &path,
             base.map(|b| (b.path.as_path(), &b.inventory)),
             residues,
+            compact,
         )?;
-        let captured = coherent_capture::from_inventory(path, files, dirs, base.is_some())?;
+        let captured = coherent_capture::from_inventory_mode(path, files, dirs, base.is_some(), compact)?;
         residues.unchanged()?;
         Ok(captured)
     }
 
     // Shared by initial parsing and freshness-only recapture. Sparse inheritance
     // selects whole nodes from inventoried directories, including their assets.
-    pub(crate) fn inventory_classified(
+    pub(crate) fn inventory_classified_mode(
         path: &Path,
         base: Option<(&Path, &BTreeMap<PathBuf, Entry>)>,
         residues: &coherent_capture::Residues,
+        compact: bool,
     ) -> Result<(BTreeMap<PathBuf, Entry>, BTreeMap<String, PathBuf>)> {
         real_dir(path)?;
         real_dir(&path.join("nodes"))?;
@@ -656,7 +743,11 @@ impl Store {
         #[cfg(test)]
         coherent_capture::count(|c| c.inventories += 1);
         let mut files = BTreeMap::new();
-        inventory(path, path, &mut files)?;
+        if compact {
+            inventory_entries(&entries(path)?, path, &mut files, true)?;
+        } else {
+            inventory(path, path, &mut files)?;
+        }
         files.retain(|p, _| {
             let mut parts = p.components();
             !(parts.next().is_some_and(|p| p.as_os_str() == "nodes")
@@ -711,6 +802,7 @@ impl Store {
     }
 
     pub fn view(&self) -> serde_json::Value {
+        assert!(self.compact_bodies.is_none(), "rendering requires a full Store capture");
         let node_path = |id: &str| self.path.join(format!("nodes/{id}/node.md"));
         let nodes: Vec<_> = self.nodes.values().map(|n| {
             let navigation: Vec<_> = n.see_also.iter().filter_map(|r| self.nodes.get(&r.target).map(|t|
@@ -730,86 +822,126 @@ struct WireNode {
     refs: Vec<(usize, usize)>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Graph {
+pub(crate) struct Graph {
     assets: usize,
     roots: Vec<usize>,
     nodes: Vec<WireNode>,
 }
 
-#[derive(Default)]
-struct Tokens(HashMap<Vec<u8>, usize>);
-impl Tokens {
-    fn intern(&mut self, bytes: &[u8]) -> usize {
-        if let Some(&id) = self.0.get(bytes) {
-            return id;
-        }
-        // Symbols follow encounter order, never the map's iteration order.
-        let id = self.0.len() + 1;
-        self.0.insert(bytes.to_vec(), id);
-        id
-    }
-}
-
-fn asset_bytes(s: &Store) -> Vec<u8> {
-    // Exact, length-delimited inventory of every non-relationship file/directory.
-    let mut out = Vec::new();
-    for (p, e) in &s.inventory {
-        let components: Vec<_> = p.components().collect();
-        if components.first().is_some_and(|c| c.as_os_str() == "trees")
-            || (components.len() >= 3
-                && components[0].as_os_str() == "nodes"
-                && ["children", "children.order", "node.md"]
-                    .iter()
-                    .any(|n| components[2].as_os_str() == *n))
-        {
-            continue;
-        }
-        let path = p.to_string_lossy();
-        out.extend_from_slice(&(path.len() as u64).to_le_bytes());
-        out.extend_from_slice(path.as_bytes());
-        match e {
-            Entry::Dir => out.push(0),
-            Entry::File(b) => {
-                out.push(1);
-                out.extend_from_slice(&(b.len() as u64).to_le_bytes());
-                out.extend_from_slice(b);
-            }
-            Entry::Link(_) => unreachable!("unrelated symlinks rejected"),
-        }
-    }
-    out
-}
-
-fn encode(s: &Store, ids: &[String], tokens: &mut Tokens) -> Graph {
-    let mut symbols = HashMap::with_capacity(ids.len());
-    for (i, id) in ids.iter().enumerate() {
-        // Retain the old position() semantics even for duplicate input IDs.
-        symbols.entry(id.as_str()).or_insert(i + 1);
-    }
+// Shape.valid proves erasure of payload/assets and reference reason zero/nonzero
+// normalization preserve Spec.valid. Every authored reference has a positive reason.
+fn encode_shape(s: &Store) -> Graph {
+    let symbols: HashMap<_, _> = s.nodes.keys().enumerate()
+        .map(|(i, id)| (id.as_str(), i + 1)).collect();
     let id = |s: &str| symbols.get(s).copied().unwrap_or(0);
     Graph {
-        assets: tokens.intern(&asset_bytes(s)),
+        assets: 0,
         roots: s.roots.iter().map(|s| id(s)).collect(),
-        nodes: s
-            .nodes
-            .values()
-            .map(|n| WireNode {
-                id: id(&n.id),
-                payload: tokens.intern(
-                    match &s.inventory[&PathBuf::from(format!("nodes/{}/node.md", n.id))] {
-                        Entry::File(b) => b,
-                        _ => unreachable!(),
-                    },
-                ),
-                children: s.children[&n.id].iter().map(|s| id(s)).collect(),
-                refs: n
-                    .see_also
-                    .iter()
-                    .map(|r| (id(&r.target), tokens.intern(r.reason.as_bytes())))
-                    .collect(),
-            })
-            .collect(),
+        nodes: s.nodes.values().map(|n| WireNode {
+            id: id(&n.id), payload: 0,
+            children: s.children[&n.id].iter().map(|s| id(s)).collect(),
+            refs: n.see_also.iter().map(|r| (id(&r.target), 1)).collect(),
+        }).collect(),
     }
+}
+
+// Hash the exact normalized shape sent to the same compiled full validator.
+fn graph_validation_key(graph: &Graph, policy: &str) -> String {
+    let mut hash = Sha256::new();
+    hash.update(b"sifttext-valid-graph-v1\0");
+    hash.update(policy.as_bytes());
+    let mut word = |value: usize| hash.update((value as u64).to_le_bytes());
+    word(0); // erased assets
+    word(graph.roots.len());
+    for &root in &graph.roots {
+        word(root);
+    }
+    word(graph.nodes.len());
+    for node in &graph.nodes {
+        word(node.id);
+        word(0); // erased payload
+        word(node.children.len());
+        for &child in &node.children {
+            word(child);
+        }
+        word(node.refs.len());
+        for &(target, reason) in &node.refs {
+            word(target);
+            word(reason);
+        }
+    }
+    format!("{:x}", hash.finalize())
+}
+
+// Optional, reconstructible local performance cache, not publication authority.
+// Git common metadata shares successful checks across accepted/draft worktrees.
+fn graph_cache_dir(store: &Path) -> Result<PathBuf> {
+    let root = fs::canonicalize(store)?;
+    let (parent, cache_name) = match fs::symlink_metadata(root.join(".git")) {
+        Ok(meta) => {
+            require(meta.is_dir() || meta.is_file(), "unsafe Git metadata entry")?;
+            let common = PathBuf::from(local::reader_git(
+                &root,
+                &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            )?);
+            require(fs::canonicalize(&common)? == common, "unsafe Git metadata path")?;
+            real_dir(&common)?;
+            (common, "sifttext-valid-graphs")
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // No cache inside authored standalone stores: checking must not mutate
+            // their captured source. Git-backed drafts share immutable-input results.
+            return Err("graph cache requires Git metadata".into());
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let directory = parent.join(cache_name);
+    // Only create these two known levels; never follow an existing symlink.
+    for path in [&parent, &directory] {
+        match fs::create_dir(path) {
+            Ok(()) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error.into()),
+        }
+        real_dir(path)?;
+    }
+    Ok(directory)
+}
+
+fn graph_cache_marker(key: &str) -> String {
+    format!("sifttext-valid-graph-v1 {key}\n")
+}
+
+fn graph_cache_hit(directory: &Path, key: &str) -> Result<bool> {
+    real_dir(directory)?;
+    let path = directory.join(key);
+    let meta = fs::symlink_metadata(&path)?;
+    let expected = graph_cache_marker(key);
+    require(meta.is_file() && meta.len() == expected.len() as u64, "unsafe graph cache marker")?;
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+        require(meta.nlink() == 1, "hard-linked graph cache marker")?;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    require(file.metadata()?.is_file(), "unsafe graph cache marker")?;
+    let mut bytes = Vec::new();
+    file.take(expected.len() as u64 + 1).read_to_end(&mut bytes)?;
+    Ok(bytes == expected.as_bytes())
+}
+
+fn graph_cache_record(directory: &Path, key: &str) -> Result<()> {
+    real_dir(directory)?;
+    let mut marker = tempfile::NamedTempFile::new_in(directory)?;
+    marker.write_all(graph_cache_marker(key).as_bytes())?;
+    // Atomic no-clobber: concurrent success for this key is harmless. Never
+    // overwrite a malformed/symlink entry; it simply remains a cache miss.
+    marker.persist_noclobber(directory.join(key))?;
+    // ponytail: one tiny marker per successful structural graph, no GC yet.
+    Ok(())
 }
 
 fn graph_word_count(g: &Graph) -> Result<usize> {
@@ -872,109 +1004,6 @@ fn graph_words(g: &Graph) -> Result<Vec<usize>> {
         }
     }
     Ok(v)
-}
-
-fn graph_integer_envelope(request: &Graph) -> Result<usize> {
-    let largest = request.nodes.iter().fold(request.assets, |max, n| {
-        n.refs.iter().fold(
-            n.children
-                .iter()
-                .copied()
-                .fold(max.max(n.id).max(n.payload), usize::max),
-            |max, &(t, r)| max.max(t).max(r),
-        )
-    });
-    largest
-        .max(request.roots.iter().copied().max().unwrap_or(0))
-        .max(graph_word_count(request)?)
-        .checked_add(1)
-        .ok_or_else(|| "graph size overflow".into())
-}
-
-fn decimal_budget(words: usize, largest: usize) -> Result<usize> {
-    words
-        .checked_mul(largest.checked_ilog10().unwrap_or(0) as usize + 2)
-        .and_then(|bytes| bytes.checked_sub(1))
-        .ok_or_else(|| "graph size overflow".into())
-}
-
-fn parse_graph(text: &str, request: &Graph) -> Result<Graph> {
-    // Move/reorder/rename preserve total edges, roots, nodes and reference counts.
-    // Check the complete word budget BEFORE allocating from untrusted counts.
-    let count = graph_word_count(request)?;
-    require(
-        text.len() <= decimal_budget(count, graph_integer_envelope(request)?)?,
-        "process graph exceeds output limit",
-    )?;
-    let actual_count = text.split(' ').count();
-    require(actual_count <= count, "trailing process output")?;
-    require(actual_count >= count, "truncated process graph")?;
-    // All output numbers come from the request, collection counts, or one new
-    // rename symbol. This is a request-derived envelope, not a store ceiling.
-    let envelope = graph_integer_envelope(request)?;
-    let mut words = reserved(count)?;
-    for word in text.split(' ') {
-        let value = word.parse::<usize>()?;
-        require(value <= envelope, "out-of-envelope process integer")?;
-        words.push(value);
-    }
-    let mut it = words.into_iter();
-    let next = |it: &mut std::vec::IntoIter<usize>| -> Result<usize> {
-        it.next().ok_or_else(|| "truncated process graph".into())
-    };
-    let assets = next(&mut it)?;
-    let nr = next(&mut it)?;
-    require(nr == request.roots.len(), "process changed root count")?;
-    let mut roots = reserved(nr)?;
-    for _ in 0..nr {
-        roots.push(next(&mut it)?);
-    }
-    let nn = next(&mut it)?;
-    require(nn == request.nodes.len(), "process changed node count")?;
-    let mut nodes = reserved(nn)?;
-    let mut edges = request.nodes.iter().try_fold(0usize, |sum, n| {
-        sum.checked_add(n.children.len())
-            .ok_or("graph size overflow")
-    })?;
-    for old in &request.nodes {
-        let id = next(&mut it)?;
-        let payload = next(&mut it)?;
-        let nc = next(&mut it)?;
-        require(
-            nc <= edges && nc <= it.len(),
-            "process changed child budget",
-        )?;
-        edges -= nc;
-        let mut children = reserved(nc)?;
-        for _ in 0..nc {
-            children.push(next(&mut it)?);
-        }
-        let nrefs = next(&mut it)?;
-        require(nrefs == old.refs.len(), "process changed reference count")?;
-        require(
-            nrefs.checked_mul(2).is_some_and(|n| n <= it.len()),
-            "truncated process references",
-        )?;
-        let mut refs = reserved(nrefs)?;
-        for _ in 0..nrefs {
-            refs.push((next(&mut it)?, next(&mut it)?));
-        }
-        nodes.push(WireNode {
-            id,
-            payload,
-            children,
-            refs,
-        });
-    }
-    require(
-        edges == 0 && it.next().is_none(),
-        "trailing or missing process edges",
-    )?;
-    Ok(Graph {
-        assets,
-        roots,
-        nodes,
-    })
 }
 
 pub fn sha256(bytes: &[u8]) -> String {
@@ -1066,14 +1095,24 @@ impl Policy {
                     stamped.insert(file.to_owned()),
                     "duplicate build stamp entry",
                 )?;
-                let bytes = fs::read(project.join(file)).map_err(|error| {
+                let digest = (|| -> std::io::Result<String> {
+                    let mut input = fs::File::open(project.join(file))?;
+                    let mut hash = Sha256::new();
+                    let mut buffer = [0u8; 32 * 1024];
+                    loop {
+                        let count = input.read(&mut buffer)?;
+                        if count == 0 { break; }
+                        hash.update(&buffer[..count]);
+                    }
+                    Ok(format!("{:x}", hash.finalize()))
+                })().map_err(|error| {
                     // Keep the OS error kind so refusal classification stays truthful.
                     std::io::Error::new(
                         error.kind(),
                         format!("cannot read stamped path {file}; run sh scripts/build.sh"),
                     )
                 })?;
-                if sha256(&bytes) != expected {
+                if digest != expected {
                     return Err(format!(
                         "{CANDIDATE_CHANGED_PREFIX}{file}; rebuild and recheck with sh scripts/build.sh"
                     ).into());
@@ -1108,48 +1147,71 @@ impl Policy {
         Ok(sha256(&bytes))
     }
 
-    fn call(&self, kind: usize, x: usize, y: usize, graph: &Graph) -> Result<String> {
+    fn call(&self, graph: &Graph) -> Result<String> {
         self.verify_stamp()?;
         let count = graph_word_count(graph)?
             .checked_add(4)
             .ok_or("graph size overflow")?;
         let mut words = reserved(count)?;
-        words.extend([1, kind, x, y]);
+        words.extend([1, 0, 0, 0]);
         words.extend(graph_words(graph)?);
         let wire = wire_text(&words)?;
-        let stdout_bytes = if kind == 0 {
-            "STG1 REJECT\n".len()
-        } else {
-            decimal_budget(
-                graph_word_count(graph)?,
-                graph_integer_envelope(graph)?.max(y),
-            )?
-            .checked_add("STG1 OK \n".len())
-            .ok_or("graph size overflow")?
-        };
         invoke_bounded_with_deadline(
             &self.executable,
             wire.as_bytes(),
-            stdout_bytes,
+            "STG1 REJECT\n".len(),
             policy_deadline(graph)?,
         )
     }
 
     pub(crate) fn graph_valid(&self, s: &Store) -> Result<bool> {
-        let ids = s.nodes.keys().cloned().collect::<Vec<_>>();
-        let graph = encode(s, &ids, &mut Tokens::default());
-        let verdict = self.call(0, 0, 0, &graph).map_err(|error| {
-            if error.to_string() == "policy process output exceeds limit" {
-                "malformed checked graph verdict".into()
-            } else {
-                error
-            }
-        })?;
-        match verdict.as_str() {
-            "STG1 VALID\n" => Ok(true),
-            "STG1 REJECT\n" => Ok(false),
-            _ => Err("malformed checked graph verdict".into()),
+        self.graph_valid_input(&encode_shape(s), &s.path)
+    }
+
+    pub(crate) fn graph_valid_input(&self, graph: &Graph, cache_root: &Path) -> Result<bool> {
+        let started = Instant::now();
+        // A marker never bypasses the checked source/executable stamp guard.
+        self.verify_stamp()?;
+        // Graph truth depends on this predicate and proved normalization, not
+        // unrelated documentation, SQL rendering, or the runtime's install path.
+        let predicate = sha256(&[
+            fs::read(self.project.join("build/graph-policy.sha256"))?,
+            fs::read(self.project.join("laws/successor/validation/Shape.bend"))?,
+        ].concat());
+        let key = graph_validation_key(graph, &predicate);
+        let directory = graph_cache_dir(cache_root).ok();
+        let hit = directory.as_ref().is_some_and(|directory| {
+            graph_cache_hit(directory, &key).unwrap_or(false)
+        });
+        let result = if hit {
+            Ok(true)
+        } else {
+            self.call(graph)
+                .map_err(|error| {
+                    if error.to_string() == "policy process output exceeds limit" {
+                        "malformed checked graph verdict".into()
+                    } else {
+                        error
+                    }
+                })
+                .and_then(|verdict| match verdict.as_str() {
+                    "STG1 VALID\n" => Ok(true),
+                    "STG1 REJECT\n" => Ok(false),
+                    _ => Err("malformed checked graph verdict".into()),
+                })
+        };
+        let recorded = !hit && matches!(result, Ok(true)) && directory.as_ref().is_some_and(|directory| {
+            graph_cache_record(directory, &key).is_ok()
+        });
+        if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+            eprintln!(
+                "graph-work cache_hit={hit} law_run={} valid={} cache_write={recorded} elapsed_ms={}",
+                !hit,
+                match &result { Ok(true) => "true", Ok(false) => "false", Err(_) => "error" },
+                started.elapsed().as_millis(),
+            );
         }
+        result
     }
 
     pub fn validate(&self, s: &Store) -> Result<()> {
@@ -1209,18 +1271,6 @@ fn process_output(mut pipe: impl Read, limit: usize) -> std::io::Result<Vec<u8>>
         }
     }
     unreachable!()
-}
-
-// Public for prescribed process-failure tests, not an alternate CLI acceptance path.
-pub fn invoke(executable: &Path, input: &[u8]) -> Result<String> {
-    invoke_with_deadline(executable, input, PROCESS_DEADLINE)
-}
-
-fn invoke_with_deadline(executable: &Path, input: &[u8], budget: Duration) -> Result<String> {
-    let stdout_bytes = decimal_budget(input.len().max(1), usize::MAX)?
-        .checked_add("STG1 OK \n".len())
-        .ok_or("output size overflow")?;
-    invoke_bounded_with_deadline(executable, input, stdout_bytes, budget)
 }
 
 #[cfg(test)]
@@ -1320,211 +1370,4 @@ fn invoke_bounded_with_deadline(
         child.wait()?;
     }
     result
-}
-
-#[derive(Clone, Debug)]
-pub enum Operation {
-    Move { node: String, parent: String },
-    Reorder { node: String, after: String },
-    Rename { node: String, name: String },
-}
-
-fn order_bytes(ids: &[String]) -> Vec<u8> {
-    if ids.is_empty() {
-        Vec::new()
-    } else {
-        (ids.join("\n") + "\n").into_bytes()
-    }
-}
-
-fn plan(policy: &Policy, before: &Store, operation: &Operation) -> Result<Store> {
-    let ids = before.nodes.keys().cloned().collect::<Vec<_>>();
-    let index = |s: &str| -> Result<usize> {
-        Ok(ids
-            .iter()
-            .position(|i| i == s)
-            .ok_or("unknown operation UUID")?
-            + 1)
-    };
-    let mut tokens = Tokens::default();
-    let graph = encode(before, &ids, &mut tokens);
-    let mut planned = before.clone();
-    let (kind, x, y) = match operation {
-        Operation::Move { node, parent } => (1, index(node)?, index(parent)?),
-        Operation::Reorder { node, after } => (2, index(node)?, index(after)?),
-        Operation::Rename { node, name } => {
-            require(!name.trim().is_empty(), "blank rename")?;
-            let n = planned.nodes.get_mut(node).ok_or("unknown rename UUID")?;
-            n.name = name.clone();
-            let path = PathBuf::from(format!("nodes/{node}/node.md"));
-            let Entry::File(original) = &before.inventory[&path] else {
-                unreachable!()
-            };
-            let mut text = std::str::from_utf8(original)?.to_owned();
-            let range = markdown(&text)?.name_range;
-            text.replace_range(range, &serde_json::to_string(name)?);
-            let bytes = text.into_bytes();
-            require(bytes.len() <= LIMIT, "oversized renamed Markdown file")?;
-            let payload = tokens.intern(&bytes);
-            planned.inventory.insert(path, Entry::File(bytes));
-            (3, index(node)?, payload)
-        }
-    };
-    let output = policy.call(kind, x, y, &graph)?;
-    let text = output
-        .strip_prefix("STG1 OK ")
-        .and_then(|s| s.strip_suffix('\n'))
-        .ok_or("checked operation rejected or malformed verdict")?;
-    let got = parse_graph(text, &graph)?;
-    // Validate untrusted decoding and preservation, not a second implementation of move policy.
-    require(
-        got.assets == graph.assets
-            && got.roots == graph.roots
-            && got.nodes.len() == graph.nodes.len(),
-        "process changed assets, roots or node inventory",
-    )?;
-    let rename_payload = if kind == 3 { Some((x, y)) } else { None };
-    for (old, new) in graph.nodes.iter().zip(&got.nodes) {
-        require(
-            new.id == old.id && new.refs == old.refs,
-            "process changed identities or references",
-        )?;
-        let expected_payload = rename_payload
-            .filter(|(id, _)| *id == old.id)
-            .map_or(old.payload, |(_, p)| p);
-        require(
-            new.payload == expected_payload,
-            "process changed protected payload",
-        )?;
-        let mut unique = BTreeSet::new();
-        let mut children = reserved(new.children.len())?;
-        for &i in &new.children {
-            require(
-                i > 0 && i <= ids.len() && unique.insert(i),
-                "invalid process child UUID",
-            )?;
-            let mut id = String::new();
-            id.try_reserve_exact(ids[i - 1].len())?;
-            id.push_str(&ids[i - 1]);
-            children.push(id);
-        }
-        planned.children.insert(ids[new.id - 1].clone(), children);
-    }
-    // The filesystem effect is intentionally narrow. Unexpected policy effect lists fail closed.
-    let changed: Vec<_> = ids
-        .iter()
-        .filter(|id| before.children[*id] != planned.children[*id])
-        .collect();
-    match operation {
-        Operation::Move { node, parent } => {
-            let old_parent = before
-                .children
-                .iter()
-                .find(|(_, cs)| cs.contains(node))
-                .map(|(id, _)| id)
-                .ok_or("root has no movable entry")?;
-            require(
-                changed.iter().all(|id| *id == old_parent || *id == parent),
-                "process changed unrelated children",
-            )?;
-            if old_parent != parent {
-                let old_path = PathBuf::from(format!("nodes/{old_parent}/children/{node}"));
-                let new_path = PathBuf::from(format!("nodes/{parent}/children/{node}"));
-                let entry = planned
-                    .inventory
-                    .remove(&old_path)
-                    .ok_or("missing old child entry")?;
-                require(
-                    !planned.inventory.contains_key(&new_path),
-                    "destination child already exists",
-                )?;
-                planned.inventory.insert(new_path, entry);
-            }
-        }
-        Operation::Reorder { node, .. } => {
-            let parent = before
-                .children
-                .iter()
-                .find(|(_, cs)| cs.contains(node))
-                .map(|(id, _)| id)
-                .ok_or("root cannot reorder")?;
-            require(
-                changed.iter().all(|id| *id == parent),
-                "process reordered unrelated parent",
-            )?;
-        }
-        Operation::Rename { .. } => {
-            require(changed.is_empty(), "process rename changed hierarchy")?
-        }
-    }
-    for id in changed {
-        planned.inventory.insert(
-            PathBuf::from(format!("nodes/{id}/children.order")),
-            Entry::File(order_bytes(&planned.children[id])),
-        );
-    }
-    // Roundtrip the pure output through the same checked validator before any native writes.
-    policy.validate(&planned)?;
-    Ok(planned)
-}
-
-pub fn validate_draft(
-    policy: &Policy,
-    before: &Store,
-    after: &Store,
-    operation: &Operation,
-) -> Result<()> {
-    let planned = plan(policy, before, operation)?;
-    policy.validate(after)?;
-    require(
-        planned.nodes == after.nodes
-            && planned.children == after.children
-            && planned.roots == after.roots
-            && planned.inventory == after.inventory,
-        "native draft differs from the checked operation (bytes or graph)",
-    )
-}
-
-pub fn apply(policy: &Policy, before: &Store, operation: &Operation) -> Result<Store> {
-    let planned = plan(policy, before, operation)?;
-    require(
-        Store::read(&before.path)?.inventory == before.inventory,
-        "candidate changed after checking",
-    )?;
-    if let Operation::Move { node, parent } = operation {
-        let old_parent = before
-            .children
-            .iter()
-            .find(|(_, cs)| cs.contains(node))
-            .map(|(id, _)| id)
-            .ok_or("root has no movable entry")?;
-        if old_parent != parent {
-            let source = before
-                .path
-                .join(format!("nodes/{old_parent}/children/{node}"));
-            let destination = before.path.join(format!("nodes/{parent}/children/{node}"));
-            require(
-                !destination.try_exists()? && fs::symlink_metadata(&destination).is_err(),
-                "move would overwrite an entry",
-            )?;
-            require(
-                Command::new("mv")
-                    .arg(&source)
-                    .arg(&destination)
-                    .status()?
-                    .success(),
-                "native mv failed; draft remains inspectable",
-            )?;
-        }
-    }
-    for (rel, entry) in &planned.inventory {
-        if before.inventory.get(rel) != Some(entry)
-            && let Entry::File(bytes) = entry
-        {
-            fs::write(before.path.join(rel), bytes)?;
-        }
-    }
-    let after = Store::read(&before.path)?;
-    validate_draft(policy, before, &after, operation)?;
-    Ok(after)
 }

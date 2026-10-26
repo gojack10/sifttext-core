@@ -75,14 +75,7 @@ If none is attached, use SiftText Commit to create or reuse a suitable undertaki
 
 Read the accepted source and retained candidate before resolving the conflict within the user's authority. Ask about unresolved semantic choices while preserving the draft.
 
-Check the resolution before committing it:
-
-```sh
-"$BIN" normalize "$home" "$draft"
-"$BIN" check "$draft" "$home"
-```
-
-Commit only the checked resolution in the updater's worktree. Then run `"$BIN" update --resume` for checked publication and activation. Keep the draft under updater custody until completion. The published undertaking retains the repair history after the transaction clears.
+Inspect the actual resolved files and Git diff, then commit only the intended resolution in the updater's worktree. Run `"$BIN" update --resume`; submission owns normalization and exact combined-candidate checks before activation. There is no standalone `check` command or required normalization preflight. Keep the draft under updater custody until completion. The published undertaking retains the repair history after the transaction clears.
 
 After activation, reread the task-relevant `refresh_instruction_paths` returned by the updater; an empty list is omitted. Continue the original task using those instructions while preserving unrelated worktrees.
 
@@ -100,7 +93,7 @@ Treat the pin as a local user choice and never copy it from another machine.
 
 ## Rollback and recovery
 
-Use `"$BIN" update --rollback` to restore the retained previous release. The updater prepares any required knowledge reversal in a private worktree. If that reversal conflicts with newer work, preserve the draft and ask about the unresolved choice.
+Use `"$BIN" update --rollback` to restore the retained previous release. The updater reverses the exact accepted update delta, including its normalization, in a private worktree while preserving later unrelated accepted changes. Older journals without that exact baseline can refuse rather than guess. If that reversal conflicts with newer work, preserve the draft and ask about the unresolved choice.
 
 For interrupted activation, inspect `"$BIN" update --status` and the refusal diagnostic before resuming. The v0.3.0 recovery code can finish activation after a rollback's knowledge reversal was already accepted, including when its submitted draft was removed. An older executable needs that patched code to use this recovery behavior.
 

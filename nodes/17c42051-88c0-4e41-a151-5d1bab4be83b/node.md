@@ -18,4 +18,4 @@ The six native statuses describe a lifecycle:
 - **Deferred** — intentionally set aside for later. Not abandoned, but not active.
 - **Discarded** — considered and rejected. Kept for the historical record of what was tried.
 
-The children explain the other status concepts. Knowledge Layout owns the complete native grammar: deferred requires `deferred_reason` and a resume condition; discarded requires `discard_reason`. Worktree Publication owns explicit status requests and fixed-baseline normalization/checks. Status is an authored claim, not proof that Core or an agent completed the work.
+The children explain the other status concepts. Knowledge Layout owns the complete native grammar: deferred requires `deferred_reason` and a resume condition; discarded requires `discard_reason`. Worktree Publication owns the immutable base SHA and submit-owned status normalization/validation. Pass explicitly authorized status UUIDs to submit; native drafting or optional mechanical normalization is not acceptance. Status is an authored claim, not proof that Core or an agent completed the work.

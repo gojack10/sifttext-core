@@ -59,11 +59,11 @@ Reproduce the failure with safe data before deciding whether Core needs a repair
 
 Preserve the user's knowledge and session traces throughout diagnosis.
 
-### Repair and verify
+### Repair and start
 
-Implement the smallest repair and verify the affected behavior.
+Implement the smallest repair. Check that it builds and starts; Jack tests the behavior.
 
-Add a regression test when existing checks cannot catch the defect.
+NO. FUCKING. TESTS. Never add or run a test unless Jack explicitly asks for it and designs it. No screenshots unless he explicitly requests screenshots. Existing Bend checks inside the normal build remain build steps, not a new agent verification pass.
 
 Keep the local repair available and resume the user's task even when upstream publication is unavailable.
 
@@ -73,7 +73,7 @@ After recovering the user's task, ask whether they want a contribution unless it
 
 Prepare the authorized repair for review.
 
-Include the regression check that verifies it.
+Include the repair and its actual build/start result. Do not create a regression check unless Jack explicitly requests and designs it.
 
 Update any instructions affected by the repair.
 
@@ -81,6 +81,6 @@ Exclude private data from contributions.
 
 Obtain permission before pushing or publishing under the license.
 
-Describe a workaround as unverified until a behavior check passes.
+Describe behavior beyond startup as unverified until Jack reports it working or explicitly requests a use-case investigation.
 
 Claim official integration support only with maintainer confirmation.

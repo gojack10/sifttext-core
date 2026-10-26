@@ -10,121 +10,107 @@
 // path so the pure contribution stays inside its own files until library registration lands.
 
 use serde_json::{Map, Value};
+use std::fmt::Write;
 
 const ROWS: &str = "rows";
 
 pub fn render(document: &Value) -> Result<String, String> {
-    // ponytail: serde_json's map collapses a duplicate JSON key to its last value before this
-    // encoder runs. Real outline rows come from typed graph data, not hand-written JSON; add an
-    // explicit duplicate-key rejection here if any caller ever feeds raw authored JSON in.
+    let mut text = String::new();
+    write_into(document, &mut text)?;
+    Ok(text)
+}
+
+/// Append the exact rendered bytes, without a final LF or a second output-sized string.
+pub fn write_into(document: &Value, text: &mut String) -> Result<(), String> {
+    // serde_json has already collapsed duplicate keys; native rows come from typed data.
     let Value::Object(root) = document else {
         return Err("outline document must be a JSON object".to_owned());
     };
-    // The pinned encoder writes an empty object as "{}" and its decoder reads nothing else; an
-    // empty line list is not decodable LEAN.
     if root.is_empty() {
-        return Ok("{}".to_owned());
+        text.push_str("{}");
+        return Ok(());
     }
-    let mut lines: Vec<String> = Vec::new();
-    let mut rows: Option<Vec<&Map<String, Value>>> = None;
-    // The instruction response has an owner-selected field order; other documents stay sorted.
-    let keys = if root.len() == 2
-        && root.contains_key("version")
-        && root.contains_key("path")
-    {
-        vec!["version", "path"]
-    } else {
-        root.keys().map(String::as_str).collect()
-    };
-    for key in keys {
-        let value = &root[key];
-        validate_key(key)?;
-        if key == ROWS {
-            rows = Some(rows_of(value)?);
-        } else {
-            let text = scalar(value).map_err(|error| format!("metadata {key}: {error}"))?;
-            lines.push(format!("{key}:{text}"));
-        }
+    // Instructions retain their owner-selected order; other metadata stays sorted, rows last.
+    if root.len() == 2 && root.contains_key("version") && root.contains_key("path") {
+        write_field_into("version", &root["version"], text)?;
+        text.push('\n');
+        return write_field_into("path", &root["path"], text);
     }
-    if let Some(items) = rows {
-        encode_rows(&items, &mut lines)?;
+    let mut first = true;
+    for (key, value) in root.iter().filter(|(key, _)| key.as_str() != ROWS) {
+        if !first { text.push('\n'); }
+        first = false;
+        write_field_into(key, value, text)?;
     }
-    Ok(lines.join("\n"))
+    if let Some(rows) = root.get(ROWS) {
+        if !first { text.push('\n'); }
+        write_field_into(ROWS, rows, text)?;
+    }
+    Ok(())
 }
 
-fn rows_of(value: &Value) -> Result<Vec<&Map<String, Value>>, String> {
+/// One root field, for canonical field-by-field generated artifact assembly.
+pub(crate) fn write_field_into(key: &str, value: &Value, text: &mut String) -> Result<(), String> {
+    validate_key(key)?;
+    if key == ROWS {
+        encode_rows(rows_of(value)?, text)
+    } else {
+        text.push_str(key);
+        text.push(':');
+        text.push_str(&scalar(value).map_err(|error| format!("metadata {key}: {error}"))?);
+        Ok(())
+    }
+}
+
+fn rows_of(value: &Value) -> Result<&[Value], String> {
     let Value::Array(items) = value else {
         return Err("rows must be an array of objects".to_owned());
     };
-    items
-        .iter()
-        .map(|item| {
-            let Value::Object(row) = item else {
-                return Err("each row must be an object".to_owned());
-            };
-            // A fieldless row has no tabular header and no dashed item to decode back.
-            if row.is_empty() {
-                return Err("each row must carry at least one field".to_owned());
-            }
-            for key in row.keys() {
-                validate_key(key)?;
-            }
-            Ok(row)
-        })
-        .collect()
+    for item in items {
+        let Value::Object(row) = item else {
+            return Err("each row must be an object".to_owned());
+        };
+        if row.is_empty() {
+            return Err("each row must carry at least one field".to_owned());
+        }
+        for key in row.keys() { validate_key(key)?; }
+    }
+    Ok(items)
 }
 
-fn encode_rows(items: &[&Map<String, Value>], lines: &mut Vec<String>) -> Result<(), String> {
-    if items.is_empty() {
-        lines.push(format!("{ROWS}[0]:"));
-        return Ok(());
-    }
-    let fields: Vec<&str> = items[0].keys().map(String::as_str).collect();
-    if items
-        .iter()
-        .all(|row| row.keys().map(String::as_str).eq(fields.iter().copied()))
-    {
-        lines.push(format!("{ROWS}[{}]:{}", items.len(), fields.join("\t")));
-        for row in items {
-            let mut cells = Vec::with_capacity(fields.len());
-            for field in &fields {
-                cells.push(cell_of(row, field)?);
-            }
-            lines.push(format!("  {}", cells.join("\t")));
-        }
-        return Ok(());
-    }
-    // Semi-tabular: objects that share at least one field in every row. Optional fields ride as
-    // trailing `key:value` cells under the pinned `~` header marker.
-    let shared: Vec<&str> = fields
-        .into_iter()
-        .filter(|key| items.iter().all(|row| row.contains_key(*key)))
-        .collect();
-    if items.len() >= 2 && !shared.is_empty() {
-        lines.push(format!("{ROWS}[{}]:{}\t~", items.len(), shared.join("\t")));
-        for row in items {
-            let mut cells = Vec::with_capacity(row.len());
-            for key in &shared {
-                cells.push(cell_of(row, key)?);
+fn encode_rows(items: &[Value], text: &mut String) -> Result<(), String> {
+    write!(text, "{ROWS}[{}]:", items.len()).unwrap();
+    if items.is_empty() { return Ok(()) }
+    // rows_of already validated every object and key; no second row inventory is needed.
+    let fields: Vec<&str> = items[0].as_object().unwrap().keys().map(String::as_str).collect();
+    let uniform = items.iter().all(|row| row.as_object().unwrap().keys().map(String::as_str).eq(fields.iter().copied()));
+    let shared: Vec<&str> = fields.into_iter()
+        .filter(|key| items.iter().all(|row| row.get(*key).is_some())).collect();
+    if uniform || (items.len() >= 2 && !shared.is_empty()) {
+        text.push_str(&shared.join("\t"));
+        if !uniform { text.push_str("\t~"); }
+        for item in items {
+            let row = item.as_object().unwrap();
+            text.push_str("\n  ");
+            for (i, key) in shared.iter().enumerate() {
+                if i > 0 { text.push('\t'); }
+                text.push_str(&cell_of(row, key)?);
             }
             for (key, value) in row.iter().filter(|(key, _)| !shared.contains(&key.as_str())) {
-                let text = cell(value).map_err(|error| format!("row field {key}: {error}"))?;
-                cells.push(format!("{key}:{text}"));
+                text.push('\t');
+                text.push_str(key);
+                text.push(':');
+                text.push_str(&cell(value).map_err(|error| format!("row field {key}: {error}"))?);
             }
-            lines.push(format!("  {}", cells.join("\t")));
         }
-        return Ok(());
-    }
-    // No shared field: the pinned dashed list keeps every supplied key and the supplied order.
-    lines.push(format!("{ROWS}[{}]:", items.len()));
-    for row in items {
-        let mut supplied = row.iter();
-        let (key, value) = supplied
-            .next()
-            .ok_or_else(|| "each row must carry at least one field".to_owned())?;
-        lines.push(format!("  - {key}:{}", scalar(value)?));
-        for (key, value) in supplied {
-            lines.push(format!("    {key}:{}", scalar(value)?));
+    } else {
+        for item in items {
+            for (i, (key, value)) in item.as_object().unwrap().iter().enumerate() {
+                text.push_str(if i == 0 { "\n  - " } else { "\n    " });
+                text.push_str(key);
+                text.push(':');
+                text.push_str(&scalar(value)?);
+            }
         }
     }
     Ok(())
@@ -137,11 +123,11 @@ fn cell_of(row: &Map<String, Value>, field: &str) -> Result<String, String> {
     cell(value)
 }
 
-fn scalar(value: &Value) -> Result<String, String> {
+pub(crate) fn scalar(value: &Value) -> Result<String, String> {
     primitive(value, true)
 }
 
-fn cell(value: &Value) -> Result<String, String> {
+pub(crate) fn cell(value: &Value) -> Result<String, String> {
     primitive(value, false)
 }
 

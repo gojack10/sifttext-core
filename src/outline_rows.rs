@@ -29,7 +29,7 @@ pub enum Coverage {
 
 /// One complete logical node record. Only the fields a row can carry are typed; every other
 /// authored field is ignored, so a real hydrated record needs no stripping before projection.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Node {
     pub id: String,
     pub name: String,
@@ -96,7 +96,7 @@ pub fn project(request: &Request) -> Result<Response<'_>, String> {
 
 /// Identity, ownership and authored-text guards over the complete input forest, including nodes
 /// this owner never displays. Nothing here is repaired: an invalid store is rejected.
-fn index<'a>(nodes: &'a [Node]) -> Result<Forest<'a>, String> {
+fn index<'a>(nodes: &'a [Node], publication: bool) -> Result<Forest<'a>, String> {
     let mut forest = Forest {
         nodes: HashMap::new(),
         parents: HashMap::new(),
@@ -113,7 +113,9 @@ fn index<'a>(nodes: &'a [Node]) -> Result<Forest<'a>, String> {
         }
     }
     for node in nodes {
-        validate(node)?;
+        if publication {
+            validate(node)?;
+        }
         let mut listed = HashSet::new();
         for child in &node.children {
             if !listed.insert(child.as_str()) {
@@ -145,7 +147,18 @@ impl<'a> Forest<'a> {
     /// one contiguous preorder range. A node not reached from a root belongs to a cycle because
     /// all references resolve and each child has at most one parent.
     pub(crate) fn new(nodes: &'a [Node]) -> Result<Self, String> {
-        let mut forest = index(nodes)?;
+        Self::build(nodes, true)
+    }
+
+    /// Draft retrieval projects authored fields without imposing submit-only status/body rules.
+    /// Structural failures remain explicit: callers must publish a refusal view, not stale rows.
+    #[allow(dead_code)] // native indexed retrieval; standalone validated observers do not use this
+    pub(crate) fn draft(nodes: &'a [Node]) -> Result<Self, String> {
+        Self::build(nodes, false)
+    }
+
+    fn build(nodes: &'a [Node], publication: bool) -> Result<Self, String> {
+        let mut forest = index(nodes, publication)?;
         let mut pending = Vec::new();
         for node in nodes {
             if forest.parents.contains_key(node.id.as_str()) {

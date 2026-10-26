@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Seek;
 fn shell(script: &str) -> Command {
     let mut c = Command::new("sh");
     c.args(["-c", script]);
@@ -63,6 +64,27 @@ fn helper_nonzero_and_output_limit_remain_bounded_and_drained() {
     thread::sleep(Duration::from_millis(550));
     assert!(!late.exists());
 }
+#[test]
+fn file_backed_stdout_preserves_bytes_and_bounds_total_output() {
+    let mut file = tempfile::tempfile().unwrap();
+    let out = run_stdout_file(shell("printf payload; printf diagnostic >&2"), &file).unwrap();
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty());
+    assert_eq!(out.stderr, b"diagnostic");
+    file.rewind().unwrap();
+    let mut text = String::new();
+    file.read_to_string(&mut text).unwrap();
+    assert_eq!(text, "payload");
+    for script in [
+        "head -c 16777217 /dev/zero",
+        "head -c 9437184 /dev/zero; head -c 9437184 /dev/zero >&2",
+    ] {
+        let file = tempfile::tempfile().unwrap();
+        let error = run_stdout_file(shell(script), &file).unwrap_err();
+        assert!(error.to_string().contains("resource limit"), "{error}");
+    }
+}
+
 #[test]
 fn pipe_read_failure_stops_group_and_keeps_initiating_error() {
     let t = tempfile::tempdir().unwrap();

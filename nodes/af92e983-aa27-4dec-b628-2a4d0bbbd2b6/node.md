@@ -9,13 +9,13 @@ warnings: "Create structure before dependent references/content; abort dependent
 ---
 ## Input and role
 
-Input is the reviewed Unix-style tree delta and its explicit approval or standing write grant after the required pull and Forcing Pass. It identifies operations, exact content, effective statuses and the permission boundary. Use ordinary file tools in the authorized private knowledge worktree. Follow Worktree Publication for baseline allocation, checks, commit and serialized submission; do not edit accepted home or a software installation. Before overwriting an existing field or body, compare its current content with the version used for the proposal; reconcile intervening work within the grant rather than silently overwrite it.
+Input is the reviewed Unix-style tree delta and its explicit approval or standing write grant after the required pull and Forcing Pass. It identifies operations, exact content, effective statuses and the permission boundary. Use ordinary file tools in the authorized private knowledge worktree. Follow Worktree Publication for private draft allocation, its immutable base SHA, inspection, commit and serialized submission; do not edit accepted home or a software installation. Before overwriting an existing field or body, compare its current content with the version used for the proposal; reconcile intervening work within the grant rather than silently overwrite it.
 
-The human-facing author applies the authorized delta. A bounded worker commits a checked private candidate and returns it to its assigning agent; it does not infer publication or push authority. The designated publisher separately carries an authorized candidate through checked submission.
+The human-facing author applies the authorized delta. A bounded worker returns its private candidate commit, base SHA, inspection evidence and open issues to its assigning agent; it does not infer publication or push authority. The designated publisher separately carries an authorized candidate through checked submission.
 
 ## Local operation mapping
 
-- `[+]`: use the native `create` helper for a node with a name, stable micro-summary and optional parent, then edit its native fields/body. Use the returned UUID, never an invented result.
+- `[+]`: create native files with a canonical UUID and Knowledge Layout's node/relationship layout. The optional `create` helper supplies UUID/layout bookkeeping; inspect its returned paths, then edit fields/body. Draft fields or structure may be incomplete until submission; creation does not certify the collection.
 - `[!]`: edit the appropriate JSON-valued metadata field or Markdown body in `nodes/UUID/node.md`. Append only incremental discoveries; rewrite only obsolete sections when warranted. Preserve meaningful history and unknown fields.
 - `[→]`: change the exact old/new parent's child symlinks and complete `children.order` files; update root shortcuts for root transitions. Keep the node's UUID and directory. Inspect both parents and the node first; no dedicated move CLI is assumed.
 - `[←]`: add or revise `see_also` entries as `{"target":"UUID","reason":"Nonblank relationship"}` after reading both endpoints. Narrative `[[Name|UUID]]` citations do not create graph edges.
@@ -25,21 +25,21 @@ No general YAML, `parent`, `children`, duplicate `content` or `ruled_out` metada
 
 ## Execution order
 
-1. Create required structures and verify returned paths/UUIDs.
+1. Create required structures and inspect actual paths/UUIDs.
 2. Apply moves and complete child ordering/root changes.
 3. Add references once targets exist.
 4. Edit authorized body, scope, summary and warnings.
-5. Apply justified status requests; normalize against the fixed baseline and review actual effects.
-6. Delete last, then normalize and run the entire candidate check again.
+5. Apply justified status requests and retain their explicit UUIDs for submission.
+6. Delete last. Inspect actual files, relationships, statuses and the complete diff against the authorized delta; stage only intended paths and commit. No standalone graph-certification step precedes the private commit.
 
 If any operation fails, stop dependent operations, preserve the draft and report what actually landed. Before retrying an uncertain operation, inspect whether it already landed; preserve successful operations rather than duplicate them. Do not invent replacement topology during persistence. Fix connected stale guidance within the authorized scope through Reconciliation; ask for genuinely missing authority rather than silently expand it.
 
 ## Status and acceptance
 
-Native normalization compares the candidate with the fixed baseline. An edit to an existing node can activate previously unexamined work and reopen affected resolved ancestors; a newly created leaf can remain unexamined. Explicit status requests must be passed consistently to normalization, check and submission. Inspect effects rather than resetting them to cosmetic pre-write markers. Resolve only when evidence proves the node's own claim and active direct children do not block it.
+Submission owns mechanical normalization and exact combined-candidate validation against the fixed base SHA. An edit to an existing node can activate previously unexamined work and reopen affected resolved ancestors; a newly created leaf can remain unexamined. Pass explicitly authorized status UUIDs to submit; do not list every edited node. Inspect effects rather than resetting them to cosmetic pre-write markers. Resolve only when evidence proves the node's own claim and active direct children do not block it.
 
-An ordinary Git commit does not enforce native graph/status/token gates. Use Worktree Publication's `check` and exact checked `submit` path. If submission is interrupted or its home/retrieval/cleanup remains unavailable, inspect the receipt and follow Worktree Publication's original-request recovery. Preserve the pending records and finish the already-accepted save without publishing it again.
+An ordinary Git commit does not enforce native graph/status/token gates. The authorized publisher uses Worktree Publication's `submit` path, inspects normalization effects and repairs/commits/resubmits refusals within the same authority. Optional normalization is deliberate mechanical editing, not a mandatory preflight or acceptance. Do not reset successful work, change frozen limits or claim semantic approval from the deterministic gate. If submission is interrupted or its home/retrieval/cleanup remains unavailable, inspect the receipt and follow Worktree Publication's original-request recovery. Preserve the pending records and finish the already-accepted save without publishing it again.
 
 ## Return
 
-Read affected files and native receipts, then report the actual changes, node count, private candidate SHA, checks and the completed home/accepted revision, or the exact unfinished recovery boundary. Distinguish draft, commit and checked publication. Reconciliation and Verify inspect the result next; completion requires their checks, not repeating the proposed delta as if it had executed. Remote pushing requires separately authorized repository access and privacy approval.
+Read affected files and native receipts, then report the actual changes, node count, private candidate and base SHAs, inspection evidence and, if authorized and observed, the completed home/accepted revision, or the exact unfinished recovery boundary. Distinguish draft, commit and checked publication. Reconciliation and Verify inspect the result next; completion requires their checks, not repeating the proposed delta as if it had executed. Remote pushing requires separately authorized repository access and privacy approval.

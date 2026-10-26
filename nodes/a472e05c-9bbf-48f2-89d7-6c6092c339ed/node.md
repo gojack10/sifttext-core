@@ -41,7 +41,9 @@ Local trees stay on disk during login.
 
 Offline knowledge commands and official release updates remain available without payment or cloud login.
 
-The Core package supplies no hosted MCP server or cloud semantic checks.
+The Core package supplies no hosted MCP server or cloud semantic checks. Submit reports `semantic_check:deferred`, not a semantic pass.
+
+Where the installed help lists `sync`, enable/status/disable are local opt-in controls for the native Git-backed accepted-knowledge queue. Transfer requires login; origin, identity and home-ownership guards remain binding. No background runner is installed automatically. Use actual `sifttext -h` for operations; this port does not newly qualify cloud service compatibility. Offline Core remains usable without payment.
 
 ## Select and verify the command
 
@@ -119,7 +121,7 @@ Every `init` call requires an explicit home. For the normal location, set `home=
 
 The source-owned seed is compiled from readable `nodes/` and `trees/`. Initialization copies it into an independent Git repository with a checked initial commit and detached reader. Keep software and contributor checkouts outside that home.
 
-Init checks and preserves existing recognized homes while refusing unrecognized directories and symlinks.
+Init preserves existing recognized homes while refusing unrecognized directories and symlinks; reuse is not whole-home recertification.
 
 Preserve interrupted initialization for diagnosis before attempting repair.
 
@@ -135,9 +137,9 @@ In a clone or private draft without the pointer, `instructions` remains the supp
 "$BIN" instructions "$home"
 ```
 
-Read the entry file it returns and follow its task-specific instruction reads. During authorized setup, complete its Maintain Memory Continuity handoff before reporting persistent harness entry established. Preserve existing instructions; identify missing permission or an unsupported mechanism without stopping independent work. Stop dependent reads at an unreadable required file and report its exact path for repair. Return to the user's task after setup or ask what they want to work on.
+Read the entry file it returns and follow its selected task-specific reads; do not require a hardcoded six-child list in a custom home. `version_scope:onboarding_entry_and_order` covers only the entry and its order, not a global accepted certificate. Both instructions and node reads use direct files without whole-store validation. During authorized setup, complete its Maintain Memory Continuity handoff before reporting persistent harness entry established. Preserve existing instructions; identify missing permission or an unsupported mechanism without stopping independent work. Stop dependent reads at an unreadable required file and report its exact path for repair. Return to the user's task after setup or ask what they want to work on.
 
-Before a knowledge write, follow Worktree Publication to allocate a private draft and fixed baseline. Its checked `submit` refreshes the normal home and retrieval and removes the completed draft. Read from that home before allocating the next draft.
+Before a knowledge write, follow Worktree Publication: reuse or allocate a private draft and retain its returned base SHA, edit native files, inspect/stage intended paths and commit, then submit that exact commit and base. No separate baseline checkout, standalone `check` or mandatory `normalize` preflight is needed. Submit normalizes and gates the exact combined candidate, then completes home/retrieval/cleanup or reports unfinished recovery. Preserve dirty home work; read an accepted separate view if it cannot advance.
 
 ## Connect a project folder
 
@@ -177,9 +179,9 @@ For an already-approved creation, set `wt` to the allocated private worktree:
 "$BIN" create "$wt" 'Trial note' 'Records evidence from the bounded local trial.' "$root_uuid"
 ```
 
-After validating and applying the new structure, the helper returns the uncommitted node's UUID and path for ordinary file reads and edits.
+The helper returns the uncommitted node's UUID and path after UUID/layout/relationship bookkeeping. It neither certifies the collection nor normalizes all statuses. Blank name/summary can remain draft work; required fields are enforced at submit. Valid native files may be created directly without this helper.
 
-Creation requires a private Git worktree and one cooperative writer. After partial I/O failure, preserve the draft and inspect it before retrying. Continue through Worktree Publication's full candidate checks and publication procedure.
+The helper requires a private Git worktree and one cooperative writer. After partial I/O failure, preserve and inspect the node, relationship link and child order before retrying; do not overwrite inspectable partial work. Continue with ordinary file edits, review, commit and Worktree Publication's checked submit.
 
 ## Failure and return
 

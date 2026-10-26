@@ -18,12 +18,12 @@
 // forest request and its operation, not a module-wide or project-wide suppression.
 
 use crate::{
-    lean_render::render,
+    lean_render::{cell, write_field_into},
     outline_rows::{self, Coverage, TOKEN_ENCODING},
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write};
 
 /// One complete logical forest plus the version its generated views are measured at.
 #[allow(dead_code)] // forest observer uses ForestRequest/assemble_forest, not the single-owner API
@@ -215,7 +215,7 @@ fn full_artifact<'a>(
     owner: &str,
     version: &'a str,
 ) -> Result<Value, String> {
-    let text = bytes(&document(forest, owner, Coverage::Full, version)?)?;
+    let text = response_bytes(&forest.project(owner, Coverage::Full, version)?)?;
     let (hash, tokens) = cost(&text);
     Ok(json!({"text": text, "meta": {"hash": hash, "tokens": tokens, "encoding": TOKEN_ENCODING}}))
 }
@@ -226,20 +226,89 @@ pub(crate) fn bytes(document: &Value) -> Result<String, String> {
     let Value::Object(fields) = document else {
         return Err("generated outline document must be a JSON object".to_owned());
     };
-    let mut lines = Vec::with_capacity(fields.len());
+    let mut text = String::new();
     for (key, value) in fields {
-        let mut part = Map::new();
-        part.insert(key.clone(), value.clone());
-        lines.push(render(&Value::Object(part))?);
+        write_field_into(key, value, &mut text)?;
+        text.push('\n');
     }
-    Ok(lines.join("\n") + "\n")
+    // The historical borrowed empty-object boundary is one LF.
+    if fields.is_empty() { text.push('\n'); }
+    Ok(text)
+}
+
+/// Consume one native projected document without cloning its complete rows array.
+#[allow(dead_code)] // indexed native publication; standalone observers use borrowed bytes
+pub(crate) fn owned_bytes(document: Value) -> Result<String, String> {
+    let Value::Object(fields) = document else {
+        return Err("generated outline document must be a JSON object".to_owned());
+    };
+    let mut text = String::new();
+    for (key, value) in fields {
+        write_field_into(&key, &value, &mut text)?;
+        text.push('\n');
+    }
+    Ok(text)
+}
+
+/// Render borrowed native rows in canonical root-field order. Only one row-sized
+/// JSON object is temporary at a time; no complete Value array or full-text copy.
+pub(crate) fn response_bytes(response: &outline_rows::Response<'_>) -> Result<String, String> {
+    let metadata = json!({
+        "coverage":response.coverage, "path_template":response.path_template,
+        "rows":null, "source_version":response.source_version,
+        "source_version_scope":response.source_version_scope,
+        "token_encoding":response.token_encoding,
+    });
+    let mut text = String::new();
+    for (key, value) in metadata.as_object().ok_or("missing response metadata")? {
+        if key == "rows" {
+            response_rows(response, &mut text)?;
+        } else {
+            write_field_into(key, value, &mut text)?;
+        }
+        text.push('\n');
+    }
+    Ok(text)
+}
+
+fn response_rows(response: &outline_rows::Response<'_>, text: &mut String) -> Result<(), String> {
+    let rows = &response.rows;
+    write!(text, "rows[{}]:", rows.len()).unwrap();
+    let Some(first) = rows.first() else { return Ok(()) };
+    let first = serde_json::to_value(first).map_err(|e| e.to_string())?;
+    let fields: Vec<String> = first.as_object().ok_or("missing response row")?.keys().cloned().collect();
+    drop(first);
+    let mut shared = fields.clone();
+    let mut uniform = true;
+    for row in rows.iter().skip(1) {
+        let value = serde_json::to_value(row).map_err(|e| e.to_string())?;
+        let object = value.as_object().ok_or("missing response row")?;
+        uniform &= object.keys().eq(fields.iter());
+        shared.retain(|key| object.contains_key(key));
+    }
+    // Typed rows always share their mandatory navigation fields.
+    text.push_str(&shared.join("\t"));
+    if !uniform { text.push_str("\t~"); }
+    for row in rows {
+        let value = serde_json::to_value(row).map_err(|e| e.to_string())?;
+        let object = value.as_object().ok_or("missing response row")?;
+        text.push_str("\n  ");
+        for (i, key) in shared.iter().enumerate() {
+            if i > 0 { text.push('\t'); }
+            text.push_str(&cell(&object[key])?);
+        }
+        for (key, value) in object.iter().filter(|(key, _)| !shared.contains(key)) {
+            text.push('\t');
+            text.push_str(key);
+            text.push(':');
+            text.push_str(&cell(value)?);
+        }
+    }
+    Ok(())
 }
 
 /// SHA-256 of the complete UTF-8 text and its ordinary `o200k_base` token count.
 pub(crate) fn cost(text: &str) -> (String, usize) {
-    let tokens = tiktoken_rs::o200k_base_singleton()
-        .lock()
-        .encode_ordinary(text)
-        .len();
+    let tokens = sifttext_file_graph::token_count::ordinary(text);
     (sifttext_file_graph::sha256(text.as_bytes()), tokens)
 }

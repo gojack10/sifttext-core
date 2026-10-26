@@ -14,14 +14,12 @@ are retained. No frozen law, authored-file cap, tokenizer or status rule changes
 Direct-child reap is not descendant isolation; inherited pipes can outlive a
 malicious producer, but the receive deadline still refuses the operation.
 
-After `sh scripts/build.sh`, focused checks are:
+The process-framing and deadline checks retained in source are historical
+artifacts, not current development execution instructions. After the pinned
+assured build (`sh scripts/build.sh`, including its required formal checks),
+exercise the actual CLI on disposable native drafts and inspect refusals,
+producer lifetimes and resource use with native profiling/debugger tools.
+Do not infer the synthetic helper cases above from ordinary CLI success.
 
-```sh
-cargo test --locked --lib process_framing_tests -- --nocapture --test-threads=1
-cargo test --locked --lib policy_deadline_tests -- --nocapture --test-threads=1
-SIFTTEXT_SERIAL_PROCESS_TEST=1 cargo test --locked --lib \
-  process_framing_tests::repeated_process_rejection -- --nocapture --test-threads=1
-```
-
-These checks do not establish full native capacity, platform qualification or main
-acceptance. Keep the current maintained acceptance and affected native consumers.
+These observations do not establish full native capacity, platform qualification
+or main acceptance. Keep the maintained submit gate and affected native consumers.

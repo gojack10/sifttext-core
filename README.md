@@ -57,7 +57,9 @@ Bring your team’s work into one place for people and agents.
 
 Knowledge lives in local Markdown files with Git history. Related questions form branches that agents explore through outlines and search, using the bundled instructions to find the relevant research as a project develops.
 
-To change that knowledge, an agent edits in a private Git worktree and submits it for validation of the combined structure. Accepted changes remain in Git history for later inspection or recovery.
+To change that knowledge, an agent edits ordinary files in a private Git worktree, reviews and commits the intended paths, then submits the commit and its base SHA. Submit normalizes statuses and checks the exact combined candidate before updating accepted main. Accepted changes remain in Git history; incomplete drafts remain recoverable. Semantic checking is deferred, not reported as passed.
+
+`worktree HOME` allocates a sparse draft without a full checkout. Expand an existing or new node with `git -C WORKTREE sparse-checkout add nodes/UUID`; this does not pull a newer version. `sifttext create` selects its new node and parent automatically. Then edit and stage ordinary authored files in that draft. For manually created files outside the selection, select their directory first (or deliberately stage with `git add --sparse`). Read an omitted node with `sifttext read WORKTREE UUID` without materializing it. SQL, search, outlines and submit use the complete logical version, including omitted Git content and valid uncommitted changes; missing sparse paths are not deletions. Submit materializes only nodes requiring status patches. `git -C WORKTREE sparse-checkout disable` is the full-draft fallback. The normal home stays complete; keep durable task artifacts there, not in the disposable draft.
 
 ## What installation does
 
@@ -102,18 +104,15 @@ Setup acquires verified [Bend](https://github.com/bendlang/bend) 2.0.27 and Rust
 
 Choose a new absolute application path whose parent already exists, with no symlink components. To keep knowledge outside the application, use the default `~/sifttext` or supply another absolute path as the installer's second argument.
 
-Source-build and installed workflows were tested on macOS 26.4/arm64 and Ubuntu 24.04.4/aarch64 at `991aca3`.
+Source-build and installed workflows were qualified on macOS 26.4/arm64 and Ubuntu 24.04.4/aarch64 at historical source pin `991aca3`; that does not qualify this revision on Linux or establish official harness integration support.
 
-### Tests
+### Qualify a change
 
-After building:
+Keep pinned builds, frozen-law verification, Bend formal checks and source/runtime stamps enabled. The build checks include the input-normalization proof in `Shape.bend`; formal assurance concerns the modeled graph, not all Rust, filesystem behavior or security. Body token counting retains the pinned `o200k_base` vocabulary, regex and upstream BPE semantics.
 
-```sh
-sh scripts/with-tools.sh cargo test --locked
-sh scripts/law-mutations.sh
-```
+Use the public CLI in disposable homes to exercise the changed workflow, refusals and recovery. Use ad hoc inspection, a native debugger and native CPU/RSS/process measurements as needed; preserve exact argv, source/runtime identity and outputs. Do not substitute a test-suite run or a text walkthrough for ordinary-use evidence. Current full-submit and warm-SQL measurements do not meet the resource/latency targets; no universal 50 MB or instant-query claim is made.
 
-For command help, run the installed `sifttext -h`.
+For operations and flags, use the built or installed `sifttext -h`.
 
 ## License
 

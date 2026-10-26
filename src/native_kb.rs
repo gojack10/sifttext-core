@@ -60,6 +60,7 @@ pub fn verify_assets(root: &Path) -> Result<()> {
                 fs::read_link(path)? == *target,
                 "bundled KB link changed; rebuild and recheck",
             )?,
+            Some(Entry::FileRef { .. }) => return Err("bundled KB requires full assets".into()),
             None => return Err("bundled KB inventory changed; rebuild and recheck".into()),
         }
         Ok(())

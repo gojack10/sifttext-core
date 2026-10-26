@@ -2,13 +2,13 @@
 //! This is not a Git publisher, semantic judge, or unmanaged-writer boundary.
 use crate::{
     Entry, Policy, Result, Store,
-    coherent_capture::{Capture, logical},
-    graph_transition::{Preservation, ProvenBase, Transition},
-    require, sha256,
+    coherent_capture::{Capture, authored_path},
+    require,
     status::{self, State, Status},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -515,39 +515,57 @@ pub(crate) fn customer_report(value: &mut serde_json::Value) {
 
 /// Same length-delimited logical inventory/version boundary as the native index.
 /// Derived caches, metadata sidecars, outlines and unrelated repository files are excluded.
-pub fn version(store: &Store) -> String {
-    let mut bytes = Vec::new();
-    for (path, entry) in logical(store) {
-        let p = path.to_string_lossy();
-        bytes.extend_from_slice(&(p.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(p.as_bytes());
+pub fn version(store: &Store) -> Result<String> {
+    use crate::source_version::{self, Part};
+    let mut digest = source_version::start();
+    for (path, entry) in store.inventory.iter().filter(|(p, _)| authored_path(p)) {
         match entry {
-            Entry::Dir => bytes.push(0),
-            Entry::File(b) => {
-                bytes.push(1);
-                bytes.extend_from_slice(&(b.len() as u64).to_le_bytes());
-                bytes.extend(b);
+            Entry::Dir => source_version::add(&mut digest, path, Part::Directory)?,
+            Entry::File(_) | Entry::FileRef { .. } => {
+                let (len, hash) = entry.file_identity().ok_or("missing file identity")?;
+                source_version::add(&mut digest, path, Part::File { len, hash: &hash })?;
             }
-            Entry::Link(p) => {
-                let p = p.to_string_lossy();
-                bytes.push(2);
-                bytes.extend_from_slice(&(p.len() as u64).to_le_bytes());
-                bytes.extend_from_slice(p.as_bytes());
+            Entry::Link(target) => {
+                let bytes = target.to_str().ok_or("non-UTF-8 link target")?.as_bytes();
+                let hash = Sha256::digest(bytes).into();
+                source_version::add(&mut digest, path,
+                    Part::Link { len: bytes.len() as u64, hash: &hash })?;
             }
         }
     }
-    sha256(&bytes)
+    Ok(format!("{:x}", digest.finalize()))
+}
+pub(crate) fn intrinsic_fields(fields: &BTreeMap<&str, &str>) -> u8 {
+    u8::from(fields.contains_key("ruled_out"))
+        | (u8::from(fields.contains_key("content")) << 1)
+        | (u8::from(["scope", "warnings"].iter().any(|key|
+            fields.get(key).is_some_and(|value| serde_json::from_str::<String>(value).is_err()))) << 2)
+        | (u8::from(["name", "micro_summary"].iter().any(|key|
+            fields.get(key).is_none_or(|value| serde_json::from_str::<String>(value)
+                .map_or(true, |text| text.trim().is_empty())))) << 3)
 }
 
-fn node_bytes<'a>(store: &'a Store, id: &str) -> Result<&'a [u8]> {
-    match store
-        .inventory
-        .get(Path::new(&format!("nodes/{id}/node.md")))
-    {
-        Some(Entry::File(b)) => Ok(b),
-        _ => Err("missing captured source".into()),
+fn field_rows(report: &mut Report, id: &str, errors: u8) {
+    for (bit, check) in [(1, "ruled_out_removed"), (2, "body_metadata_duplicate"), (4, "authored_field_type"), (8, "authored_field_blank")] {
+        if errors & bit != 0 { report.reject(Some(id), check, FIELD_RULE, None); }
     }
 }
+
+fn intrinsic_node_rows(report: &mut Report, id: &str, field_errors: u8,
+    references: impl Iterator<Item = impl AsRef<str>>, state: Option<&State>, body_nonblank: bool, tokens: usize) {
+    field_rows(report, id, field_errors);
+    if tokens > CEILING {
+        report.reject(Some(id), "content_over_limit", CEILING_RULE, Some(tokens));
+    }
+    let mut targets = BTreeSet::new();
+    if references.map(|target| target.as_ref().to_owned()).any(|target| target == id || !targets.insert(target)) {
+        report.reject(Some(id), "self_or_duplicate_reference", FIELD_RULE, None);
+    }
+    if state.is_some_and(|state| state.status == Status::Resolved) && !body_nonblank {
+        report.reject(Some(id), "resolved_body_blank", STATUS_RULE, None);
+    }
+}
+
 fn state(capture: &Capture, id: &str) -> Result<State> {
     let fields = &capture.metadata[id];
     let status = serde_json::from_str(fields.get("status").ok_or("missing status")?)?;
@@ -564,54 +582,23 @@ fn state(capture: &Capture, id: &str) -> Result<State> {
 /// caller-supplied captures/versions can manufacture this capability.
 pub(crate) struct ValidatedCapture {
     capture: Capture,
-    before: Option<Capture>,
-    policy_identity: String,
 }
 impl ValidatedCapture {
     /// Consume checked immutable bytes for copying, not a live-source proof.
     /// The recipient must validate the materialized destination independently.
-    pub(crate) fn into_snapshot(self) -> Store {
-        self.capture.store
-    }
-
-    pub(crate) fn checked(&self, policy: &Policy) -> Result<&Capture> {
-        policy.verify_stamp()?;
-        require(
-            policy.validation_identity()? == self.policy_identity,
-            "validated capture policy changed",
-        )?;
+    pub(crate) fn into_snapshot(self) -> Result<Store> {
         self.capture.unchanged_all()?;
-        if let Some(before) = &self.before {
-            before.unchanged_all()?;
-        }
-        policy.verify_stamp()?;
-        require(
-            policy.validation_identity()? == self.policy_identity,
-            "validated capture policy changed",
-        )?;
-        Ok(&self.capture)
-    }
-
-    pub(crate) fn into_capture(self, policy: &Policy) -> Result<Capture> {
-        self.checked(policy)?;
-        Ok(self.capture)
+        let full = Store::read(&self.capture.store.path)?;
+        require(full.inventory == self.capture.store.inventory, "snapshot source changed")?;
+        self.capture.unchanged_all()?;
+        Ok(full)
     }
 }
 
 /// Recheck the complete candidate, optionally against an immutable before view
 /// and a prior logical version. Never normalize/mutate authored bytes or caches.
 pub fn validate(policy: &Policy, request: &Request) -> Report {
-    validate_with_transition(policy, request, None)
-}
-
-/// Only the native publisher supplies this in-memory capability, never JSON or
-/// a caller's assertion that an edit is body-only. All non-graph checks remain.
-pub(crate) fn validate_with_transition(
-    policy: &Policy,
-    request: &Request,
-    proof: Option<(&Transition<'_>, &ProvenBase)>,
-) -> Report {
-    validate_with_capture(policy, request, proof).0
+    validate_with_capture(policy, request).0
 }
 
 /// Retain only the exact capture that passed every ordinary candidate check and
@@ -619,7 +606,6 @@ pub(crate) fn validate_with_transition(
 pub(crate) fn validate_with_capture(
     policy: &Policy,
     request: &Request,
-    proof: Option<(&Transition<'_>, &ProvenBase)>,
 ) -> (Report, Option<ValidatedCapture>) {
     let mut report = Report {
         status: "current",
@@ -631,12 +617,12 @@ pub(crate) fn validate_with_capture(
         problem: None,
         graph: GraphCheck {
             mode: "full_law",
-            reason: "unproven base",
+            reason: "complete structural law (same-input cache eligible)",
             base_version: None,
             candidate_version: None,
         },
     };
-    let capture = match check(policy, request, proof, &mut report) {
+    let capture = match check(policy, request, &mut report) {
         Ok(capture) => capture,
         Err(error) => {
             if report.failure.is_none() {
@@ -673,29 +659,33 @@ pub(crate) fn validate_with_capture(
 }
 // Explanations of an already rejected graph, never an acceptance path. Keep the
 // full checked Spec.valid call above these diagnostics; unknown failures stay generic.
-fn graph_diagnostics(store: &Store, report: &mut Report) {
+fn graph_diagnostics<'a>(
+    nodes: impl Iterator<Item = (&'a str, Vec<&'a str>)>,
+    children: &BTreeMap<String, Vec<String>>, roots: &[String], report: &mut Report,
+) {
+    let nodes: BTreeMap<_, _> = nodes.collect();
     let mut parents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (source, children) in &store.children {
+    for (source, children) in children {
         for target in children {
             parents.entry(target).or_default().push(source);
         }
     }
-    for (source, node) in &store.nodes {
-        for reference in &node.see_also {
-            if !store.nodes.contains_key(&reference.target) {
+    for (&source, references) in &nodes {
+        for &target in references {
+            if !nodes.contains_key(target) {
                 report.structural(
                     Some(source),
-                    Some(&reference.target),
+                    Some(target),
                     "laws/Spec.bend:refs_valid",
                 );
                 report.rows.last_mut().unwrap().check = "dangling_reference";
             }
         }
         let ps = parents
-            .get(source.as_str())
+            .get(source)
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let placements = ps.len() + store.roots.iter().filter(|r| *r == source).count();
+        let placements = ps.len() + roots.iter().filter(|r| r.as_str() == source).count();
         if placements != 1 {
             if ps.is_empty() {
                 report.structural(Some(source), None, "laws/Spec.bend:nodes_valid");
@@ -716,17 +706,17 @@ fn graph_diagnostics(store: &Store, report: &mut Report) {
         }
     }
     let mut rooted = BTreeSet::new();
-    let mut pending: Vec<_> = store.roots.iter().map(String::as_str).collect();
+    let mut pending: Vec<_> = roots.iter().map(String::as_str).collect();
     while let Some(id) = pending.pop() {
         if rooted.insert(id) {
             pending.extend(selected_children.get(id).into_iter().flatten().copied());
         }
     }
-    for id in store.nodes.keys() {
-        if !rooted.contains(id.as_str()) {
+    for &id in nodes.keys() {
+        if !rooted.contains(id) {
             report.structural(
                 Some(id),
-                parents.get(id.as_str()).and_then(|p| p.first()).copied(),
+                parents.get(id).and_then(|p| p.first()).copied(),
                 "laws/Spec.bend:rooted",
             );
             report.rows.last_mut().unwrap().check = "not_rooted";
@@ -737,10 +727,9 @@ fn graph_diagnostics(store: &Store, report: &mut Report) {
 fn check(
     policy: &Policy,
     request: &Request,
-    proof: Option<(&Transition<'_>, &ProvenBase)>,
     report: &mut Report,
 ) -> Result<Option<ValidatedCapture>> {
-    // Pin before the native law/transition, but do not preempt its existing
+    // Pin before the native law, but do not preempt its existing
     // failure stage or candidate capture/version observations with a new guard.
     // An initial identity-read error can never mint a successful capability.
     let policy_identity = policy.validation_identity();
@@ -750,62 +739,30 @@ fn check(
     )?;
     let store = &candidate.store;
     report.nodes = store.nodes.len();
-    report.version = Some(version(store));
-    let before = report.observe(
-        "before_capture",
-        request
-            .before
-            .as_deref()
-            .map(|p| Capture::read(p, None))
-            .transpose(),
-    )?;
+    report.version = Some(report.observe("candidate_version", version(store))?);
     report.graph.candidate_version = report.version.clone();
-    report.graph.base_version = before.as_ref().map(|b| version(&b.store));
-    let preserved = if let Some((transition, base)) = proof {
-        if report.graph.base_version.as_deref() != Some(base.version()) {
-            report.graph.reason = "base version mismatch";
-            false
-        } else {
-            // Errors are not unsupported-class fallback: helper/policy/source
-            // failures reject, even if a subsequent full check might succeed.
-            report.graph.mode = "transition_error";
-            report.graph.reason = "transition failed";
-            report.observe("graph_transition", transition.check_policy(policy))?;
-            match report.observe(
-                "graph_transition",
-                transition.check_captured(base, base.version(), &candidate, || {}),
-            )? {
-                Preservation::Preserved {
-                    base_version,
-                    candidate_version,
-                } => {
-                    require(
-                        Some(&candidate_version) == report.version.as_ref()
-                            && Some(&base_version) == report.graph.base_version.as_ref(),
-                        "transition capture mismatch",
-                    )?;
-                    report.graph.mode = "preserved";
-                    report.graph.reason = "compiled Bend preservation executed";
-                    true
-                }
-                Preservation::FullLawRequired(reason) => {
-                    report.graph.mode = "full_law";
-                    report.graph.reason = reason;
-                    false
-                }
-            }
-        }
-    } else {
-        false
-    };
+    // Compact captures always use the full law on its proved normalized input
+    // (or the same-input shape cache), before retaining the baseline capture.
     // Structural errors carry only UUIDs/rule locators, never raw parser paths or prose.
-    if !preserved && !report.observe("graph_policy", policy.graph_valid(store))? {
-        graph_diagnostics(store, report);
+    if !report.observe("graph_policy", policy.graph_valid(store))? {
+        graph_diagnostics(store.nodes.iter().map(|(id, node)|
+            (id.as_str(), node.see_also.iter().map(|r| r.target.as_str()).collect())),
+            &store.children, &store.roots, report);
         if report.rows.is_empty() {
             report.reject(None, "graph_invalid", CANDIDATE_RULE, None);
         }
         return Ok(None);
     }
+    let mut before = report.observe(
+        "before_capture",
+        request
+            .before
+            .as_deref()
+            .map(Capture::read_for_validation)
+            .transpose(),
+    )?;
+    report.graph.base_version = report.observe("before_version",
+        before.as_ref().map(|b| version(&b.store)).transpose())?;
     if request
         .expected_version
         .as_ref()
@@ -813,11 +770,10 @@ fn check(
     {
         report.reject(None, "receipt_version_changed", CANDIDATE_RULE, None);
     }
-    if let Some(before) = &before {
-        if !preserved {
-            report.observe("before_graph_policy", policy.validate(&before.store))?;
-        }
-        report.before_version = Some(version(&before.store));
+    if before.is_some() {
+        // The complete candidate law establishes its
+        // graph. The baseline supplies status/version history, not another gate.
+        report.before_version = report.graph.base_version.clone();
     }
     require(
         request
@@ -827,51 +783,23 @@ fn check(
             && (request.before.is_some() || request.explicit.is_empty()),
         "invalid explicit requests",
     )?;
-    let tokenizer = tiktoken_rs::o200k_base_singleton();
     let mut states = BTreeMap::new();
     let mut transitions = BTreeMap::new();
     for (id, node) in &store.nodes {
-        let tokens = tokenizer.lock().encode_ordinary(&node.content).len();
-        report.rows.push(Row {
-            id: Some(id.clone()),
-            check: "content_tokens",
-            rule: CEILING_RULE,
-            tokens: Some(tokens),
-            source: None,
-            target: None,
-            law: None,
-        });
-        if tokens > CEILING {
-            report.reject(
-                Some(id),
-                "content_over_limit",
-                CEILING_RULE,
-                Some(tokens),
-            );
-        }
+        // Run after graph-policy exits: tokenizer and Bend working sets do not overlap.
+        let path = std::path::PathBuf::from(format!("nodes/{id}/node.md"));
+        let bytes = crate::source_error::context(
+            store.inventory.get(&path).ok_or("missing captured source")?.bytes(), &path, None)?;
+        let parsed = crate::source_error::context(
+            (|| crate::markdown(std::str::from_utf8(&bytes)?))(), &path, None)?;
+        let tokens = crate::token_count::ordinary(&parsed.authored.content);
         let fields = &candidate.metadata[id];
-        if fields.contains_key("ruled_out") {
-            report.reject(Some(id), "ruled_out_removed", FIELD_RULE, None);
-        }
-        if fields.contains_key("content") {
-            report.reject(Some(id), "body_metadata_duplicate", FIELD_RULE, None);
-        }
-        for key in ["scope", "warnings"] {
-            if let Some(v) = fields.get(key)
-                && serde_json::from_str::<String>(v).is_err()
-            {
-                report.reject(Some(id), "authored_field_type", FIELD_RULE, None);
-            }
-        }
-        let mut targets = BTreeSet::new();
-        if node
-            .see_also
-            .iter()
-            .any(|r| r.target == *id || !targets.insert(&r.target))
-        {
-            report.reject(Some(id), "self_or_duplicate_reference", FIELD_RULE, None);
-        }
-        let requested = match state(&candidate, id) {
+        let requested = state(&candidate, id);
+        intrinsic_node_rows(report, id, intrinsic_fields(&fields.iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())).collect()),
+            node.see_also.iter().map(|reference| &reference.target), requested.as_ref().ok(),
+            !parsed.authored.content.trim().is_empty(), tokens);
+        let requested = match requested {
             Ok(s) => s,
             Err(_) => {
                 report.reject(Some(id), "status_or_reason_type", STATUS_RULE, None);
@@ -885,8 +813,8 @@ fn check(
             .transpose()?;
         let changed = before.as_ref().is_some_and(|b| {
             b.store.nodes.contains_key(id)
-                && (node_bytes(&b.store, id).ok() != node_bytes(store, id).ok()
-                    || b.store.children[id] != store.children[id])
+                && (b.store.inventory.get(&path) != store.inventory.get(&path)
+                    || b.store.children.get(id) != store.children.get(id))
         });
         let transitioned = match status::transition(
             old.as_ref(),
@@ -915,9 +843,6 @@ fn check(
             }
         };
         transitions.insert(id.clone(), transitioned);
-        if requested.status == Status::Resolved && node.content.trim().is_empty() {
-            report.reject(Some(id), "resolved_body_blank", STATUS_RULE, None);
-        }
         states.insert(id.clone(), requested);
     }
     if transitions.len() == store.nodes.len() {
@@ -948,6 +873,16 @@ fn check(
                 }
             }
         }
+    }
+    drop(states);
+    drop(transitions);
+    // Retain only the baseline's compact inventory/identities for later barriers.
+    if let Some(before) = &mut before {
+        before.metadata.clear();
+        before.store.nodes.clear();
+        before.store.children.clear();
+        before.store.roots.clear();
+        before.store.compact_bodies = None;
     }
     if let Some(pause) = &request.pause_before_accept {
         let mut paths = vec![store.path.as_path()];
@@ -980,7 +915,112 @@ fn check(
     }
     Ok((report.status == "current").then_some(ValidatedCapture {
         capture: candidate,
-        before,
-        policy_identity,
     }))
+}
+
+/// Exact immutable Git inputs: no mutable filesystem capture or source sweep.
+pub(crate) fn validate_git(
+    policy: &Policy, reader: &mut crate::git_snapshot::GitReader,
+    before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
+    explicit: &BTreeSet<String>,
+) -> Report {
+    let mut report = Report {
+        status: "current", version: Some(candidate.version.clone()),
+        before_version: Some(before.version.clone()), nodes: candidate.nodes.len(),
+        rows: vec![], failure: None, problem: None,
+        graph: GraphCheck { mode: "full_law",
+            reason: "complete structural law on immutable Git shape (same-input cache eligible)",
+            base_version: Some(before.version.clone()), candidate_version: Some(candidate.version.clone()) },
+    };
+    if let Err(error) = check_git(policy, reader, before, candidate, explicit, &mut report) {
+        if let Some(issue) = error.downcast_ref::<StructuralIssue>() {
+            report.structural(issue.source.as_deref(), issue.target.as_deref(), issue.law);
+            report.problem = Some(issue.problem());
+        } else {
+            report.problem = error.downcast_ref::<crate::source_error::SourceError>().cloned();
+            let check = report.problem.as_ref().map_or("validation_unavailable", |p| p.kind);
+            report.reject(None, check, CANDIDATE_RULE, None);
+        }
+        if report.failure.is_none() {
+            report.failure = Some(Failure { stage: "candidate", kind: failure_kind("candidate", error.as_ref()) });
+        }
+    }
+    if report.status != "current" && report.failure.is_none() {
+        report.failure = Some(Failure { stage: "candidate", kind: "invalid_candidate" });
+    }
+    report
+}
+
+fn check_git(
+    policy: &Policy, reader: &mut crate::git_snapshot::GitReader,
+    before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
+    explicit: &BTreeSet<String>, report: &mut Report,
+) -> Result<()> {
+    report.observe("policy_identity", policy.verify_stamp())?;
+    let identity = report.observe("policy_identity", policy.validation_identity())?;
+    report.observe("policy_identity", require(reader.policy_identity == identity, "validated capture policy changed"))?;
+    require(explicit.iter().all(|id| crate::uuid(id) && candidate.nodes.contains_key(id)), "invalid explicit requests")?;
+    reader.suspend_objects();
+    // Drop the graph before the first cold BPE allocation. This is the actual
+    // existing checked Bend validator, not a Rust structural acceptance test.
+    let valid = {
+        let graph = candidate.graph();
+        report.observe("graph_policy", policy.graph_valid_input(&graph, &reader.repo))?
+    };
+    if !valid {
+        graph_diagnostics(candidate.nodes.iter().map(|(id, facts)|
+            (id.as_str(), facts.reference_targets.iter().map(String::as_str).collect())),
+            &candidate.children, &candidate.roots, report);
+        if report.rows.is_empty() { report.reject(None, "graph_invalid", CANDIDATE_RULE, None); }
+        return Ok(());
+    }
+    for (id, facts) in &candidate.nodes {
+        let tokens = report.observe("candidate_tokens", reader.tokens(candidate, id))?;
+        intrinsic_node_rows(report, id, facts.field_errors, facts.reference_targets.iter(),
+            Some(&facts.state), facts.body_nonblank, tokens);
+    }
+    reader.suspend_objects();
+    crate::token_count::release();
+    crate::release_unused_memory();
+    let old: BTreeMap<_, _> = before.nodes.iter().map(|(id, node)| (id.clone(), node.state.clone())).collect();
+    let requested: BTreeMap<_, _> = candidate.nodes.iter().map(|(id, node)| (id.clone(), node.state.clone())).collect();
+    let edited: BTreeSet<_> = candidate.nodes.iter().filter(|(id, node)|
+        before.nodes.get(*id).is_some_and(|prior| prior.raw_hash != node.raw_hash))
+        .map(|(id, _)| id.clone()).collect();
+    let normalized = status::normalized_states(&old, &requested, &before.children,
+        &candidate.children, &edited, explicit);
+    match normalized {
+        Ok(expected) => {
+            for (id, state) in &requested {
+                if expected.get(id) != Some(state) {
+                    let check = if state.status == Status::Resolved
+                        && expected.get(id).is_some_and(|state| state.status == Status::InProgress) {
+                        "parent_requires_reopening"
+                    } else { "status_transition_or_reason" };
+                    report.reject(Some(id), check, STATUS_RULE, None);
+                }
+            }
+        }
+        Err(_) => {
+            let start = report.rows.len();
+            for (id, state) in &requested {
+                let changed = edited.contains(id) || before.children.get(id) != candidate.children.get(id);
+                if status::transition(old.get(id), state, changed, explicit.contains(id)).is_err() {
+                    report.reject(Some(id), "status_transition_or_reason", STATUS_RULE, None);
+                }
+                if state.status == Status::Resolved && candidate.children[id].iter()
+                    .any(|child| requested[child].status.blocks()) {
+                    report.reject(Some(id), "active_child_blocks_resolution", STATUS_RULE, None);
+                }
+            }
+            if report.rows.len() == start { report.reject(None, "status_transition_or_reason", STATUS_RULE, None); }
+        }
+    }
+    report.observe("policy_identity", policy.verify_stamp())?;
+    let final_identity = report.observe("policy_identity", policy.validation_identity())?;
+    report.observe("policy_identity", require(final_identity == identity, "validated capture policy changed"))?;
+    // Caller still binds the exact tree and performs the conditional Git advance.
+    // An immutable content identity is never permission to skip filesystem safety
+    // at that caller's checkout/cleanup boundary.
+    Ok(())
 }

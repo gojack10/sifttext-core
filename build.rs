@@ -1,5 +1,42 @@
 // Generate the executable's seed from the canonical, readable native files.
-use std::{env, fs, path::Path, process::Command};
+use std::{
+    env, fs,
+    io::{BufWriter, Write},
+    path::Path,
+    process::Command,
+};
+
+fn ordinary_vocabulary(out: &Path) {
+    // tiktoken-rs =0.6.0 o200k_base has 199_998 ordinary ranks, 0..199_998
+    // (exclusive). Rank 199_998 is absent; 199_999 and 200_018 are special.
+    const COUNT: u32 = 199_998;
+    let bpe = tiktoken_rs::o200k_base().expect("pinned o200k_base vocabulary");
+    let mut packed = BufWriter::new(fs::File::create(out.join("o200k-ordinary.bin")).unwrap());
+    packed.write_all(&COUNT.to_le_bytes()).unwrap();
+    let mut single_bytes = [false; 256];
+    let mut count = 0u32;
+    // Missing/incompatible ranks panic in the public decoder, never truncate.
+    // CoreBPE construction checks rank uniqueness; encoder keys are unique bytes.
+    for token in bpe._decode_native_and_split((0..COUNT).collect()) {
+        assert!(!token.is_empty(), "empty ordinary token");
+        if token.len() == 1 {
+            assert!(!single_bytes[token[0] as usize], "duplicate byte token");
+            single_bytes[token[0] as usize] = true;
+        }
+        let len = u32::try_from(token.len()).expect("ordinary token length fits u32");
+        packed.write_all(&len.to_le_bytes()).unwrap();
+        packed.write_all(&token).unwrap();
+        count = count
+            .checked_add(1)
+            .expect("ordinary vocabulary size overflow");
+    }
+    assert_eq!(count, COUNT, "incompatible ordinary vocabulary count");
+    assert!(
+        single_bytes.into_iter().all(|present| present),
+        "missing byte token"
+    );
+    packed.flush().unwrap();
+}
 
 fn walk(root: &Path, path: &Path, dirs: &mut String, files: &mut String, links: &mut String) {
     println!("cargo:rerun-if-changed={}", path.display());
@@ -101,6 +138,7 @@ fn main() {
         walk(root, &root.join(name), &mut dirs, &mut files, &mut links);
     }
     let out = fs::canonicalize(env::var_os("OUT_DIR").unwrap()).unwrap();
+    ordinary_vocabulary(&out);
     // Pin the physical build location; runtime must not follow later target symlink edits.
     println!(
         "cargo:rustc-env=SIFTTEXT_BUILD_BIN_DIR={}",

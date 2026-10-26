@@ -1,6 +1,6 @@
-//! Ranked lexical retrieval of one complete checked logical working view.
-use crate::leviathan_search::{self, Document};
-use crate::{Policy, Result, index, require, search_document};
+//! Ranked lexical retrieval from the native current working-view index.
+use crate::leviathan_search;
+use crate::{Policy, Result, index, require};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -122,105 +122,108 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
     if !local && let Some(id) = request.under_node_id {
         require(crate::uuid(id), "invalid scope identity")?;
     }
-    let (view, found) = index::with_query(
-        policy,
-        request.store,
-        request.base_store,
-        index::Mode::Incremental,
-        request.pause_before_accept,
-        |tx, store, view| {
+    require(
+        request.base_store.is_none(),
+        "unsupported old sparse adapter; use a complete worktree",
+    )?;
+    require(
+        request.pause_before_accept.is_none(),
+        "unsupported old retrieval pause adapter; use a complete worktree without a pause",
+    )?;
+    indexed_search(policy, request, local)
+}
+
+fn indexed_search(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Outcome> {
+    let (version, (total_matches, cards, hits, rows, path_template)) =
+        index::with_current(policy, request.store, |tx, _version| {
+            // Compact hierarchy only; bodies/record JSON are decoded for results
+            // and requested ancestor context, never the complete corpus.
+            let children: BTreeMap<String, Vec<String>> = tx
+                .prepare("SELECT id,children FROM nodes ORDER BY id")?
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+                .map(|row| {
+                    let (id, children) = row?;
+                    Ok((id, serde_json::from_str(&children)?))
+                })
+                .collect::<Result<_>>()?;
             let mut scope = BTreeSet::new();
-            if let Some(id) = request.under_node_id {
-                let id = if local {
-                    store
-                        .resolve(id)
-                        .map_err(|e| index::Refusal::from_error("scope", e.as_ref()))?
-                } else {
-                    require(store.nodes.contains_key(id), "unknown scope")?;
-                    id.to_owned()
-                };
-                let mut pending = vec![id];
+            if let Some(prefix) = request.under_node_id {
+                let matches: Vec<_> = children
+                    .keys()
+                    .filter(|id| {
+                        if local {
+                            !prefix.is_empty() && id.starts_with(prefix)
+                        } else {
+                            id.as_str() == prefix
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                require(matches.len() == 1, "UUID prefix absent or ambiguous")?;
+                let mut pending = matches;
                 while let Some(id) = pending.pop() {
-                    pending.extend(store.children[&id].iter().cloned());
-                    scope.insert(id);
+                    if !children.contains_key(&id) || !scope.insert(id.clone()) {
+                        continue;
+                    }
+                    pending.extend(children[&id].iter().cloned());
                 }
             } else {
-                scope.extend(store.nodes.keys().cloned());
+                scope.extend(children.keys().cloned());
             }
             if !local {
                 scope.retain(|id| request.readable_ids.contains(id));
             }
-            let projected = view
-                .nodes
-                .iter()
-                .map(|r| {
-                    search_document::project(search_document::Fields {
-                        name: r["name"].as_str().unwrap(),
-                        micro_summary: r["micro_summary"].as_str().unwrap(),
-                        scope: r["scope"].as_str().unwrap_or(""),
-                        content: r["content"].as_str().unwrap(),
-                    })
-                    .map_err(Into::into)
-                })
-                .collect::<Result<Vec<_>>>()?;
-            let documents = view
-                .nodes
-                .iter()
-                .zip(&projected)
-                .map(|(r, d)| {
-                    let id = r["id"].as_str().unwrap();
-                    Document {
-                        id,
-                        title: d.title,
-                        body: &d.body,
-                        permitted: scope.contains(id),
-                        boost: *request.ranking.boosts.get(id).unwrap_or(&1.0),
-                    }
-                })
-                .collect::<Vec<_>>();
-            let (total, cards) = leviathan_search::retrieve(
+            let (total, cards) = leviathan_search::retrieve_indexed(
                 tx,
-                &documents,
+                &scope,
+                &request.ranking.boosts,
                 request.query,
                 request.limit,
                 request.offset,
                 request.ranking.title_weight,
             )?;
-            let records: BTreeMap<_, _> = view
-                .nodes
-                .iter()
-                .map(|r| (r["id"].as_str().unwrap(), r))
-                .collect();
-            let make_hit = |id: &str, matching_excerpt: Option<String>| {
-                let r = records[id];
-                let status = r["status"].as_str().unwrap();
-                let key = match status {
+            let mut parents = BTreeMap::new();
+            for (parent, children) in &children {
+                for child in children {
+                    parents.insert(child.as_str(), parent.as_str());
+                }
+            }
+            let root = std::fs::canonicalize(request.store)?;
+            let make_hit = |id: &str, matching_excerpt: Option<String>| -> Result<Hit> {
+                let record: String =
+                    tx.query_row("SELECT record FROM nodes WHERE id=?1", [id], |r| r.get(0))?;
+                let row: Value = serde_json::from_str(&record)?;
+                let status = row["status"].as_str().ok_or("invalid indexed status")?;
+                let reason = match status {
                     "stuck" => "blocker",
                     "deferred" => "deferred_reason",
                     "discarded" => "discard_reason",
                     _ => "",
                 };
-                let text = |key| r[key].as_str().map(str::to_owned);
-                Hit {
+                let text = |key| row[key].as_str().map(str::to_owned);
+                Ok(Hit {
                     id: id.to_owned(),
-                    name: text("name").unwrap(),
-                    micro_summary: text("micro_summary").unwrap(),
+                    name: text("name").ok_or("invalid indexed name")?,
+                    micro_summary: text("micro_summary").ok_or("invalid indexed summary")?,
                     matching_excerpt,
-                    path: store.path.join("nodes").join(id).join("node.md"),
+                    path: root.join("nodes").join(id).join("node.md"),
                     status: status.to_owned(),
-                    active_reason: text(key),
+                    active_reason: text(reason),
                     warnings: text("warnings").filter(|s| !s.trim().is_empty()),
-                }
+                })
             };
-            let hits: Vec<Hit> = cards
+            let hits = cards
                 .iter()
-                .map(|card| make_hit(&card.text.id, card.text.snippet.clone()))
-                .collect();
-            let relationships = crate::coherent_capture::Relationships::new(store);
+                .map(|c| make_hit(&c.text.id, c.text.snippet.clone()))
+                .collect::<Result<Vec<_>>>()?;
             let mut rows = Vec::new();
             for (rank, hit) in hits.iter().enumerate() {
                 let mut chain = vec![hit.id.as_str()];
-                while let Some(parent) = relationships.parents.get(chain.last().unwrap()) {
+                let mut seen = BTreeSet::from([hit.id.as_str()]);
+                while let Some(parent) = parents.get(chain.last().unwrap()) {
+                    if !children.contains_key(*parent) || !seen.insert(*parent) {
+                        break;
+                    }
                     chain.push(parent);
                 }
                 chain.reverse();
@@ -230,14 +233,13 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
                         row.insert("match".into(), Value::Bool(true));
                         row
                     } else if local || request.readable_ids.contains(id) {
-                        let mut row = serde_json::to_value(make_hit(id, None))?
+                        let mut row = serde_json::to_value(make_hit(id, None)?)?
                             .as_object()
                             .unwrap()
                             .clone();
                         row.remove("path");
                         row
                     } else {
-                        // Keep the gap explicit: visible nodes on either side are not adjacent.
                         serde_json::json!({"unavailable":true})
                             .as_object()
                             .unwrap()
@@ -248,22 +250,22 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
                     rows.push(Value::Object(row));
                 }
             }
-            let path_template = store.path.join("nodes/{id}/node.md");
-            let path_template = path_template.to_str().ok_or("non-UTF-8 store path")?.to_owned();
+            let path_template = root
+                .join("nodes/{id}/node.md")
+                .to_str()
+                .ok_or("non-UTF-8 store path")?
+                .to_owned();
             Ok((total, cards, hits, rows, path_template))
-        },
-    )?;
-    let (total_matches, cards, hits, rows, path_template) =
-        found.unwrap_or((0, vec![], vec![], vec![], String::new()));
+        })?;
     Ok(Outcome {
-        refusal: view.refusal,
-        status: view.status,
-        version: view.version,
+        refusal: None,
+        status: "current",
+        version: Some(version),
         total_matches,
         path_template,
-        cards,
         hits,
         rows,
+        cards,
     })
 }
 
@@ -281,7 +283,8 @@ impl Outcome {
                 chain.clear();
             }
             chain.push(source);
-            if let (Some(id), Some(warning)) = (source["id"].as_str(), source["warnings"].as_str()) {
+            if let (Some(id), Some(warning)) = (source["id"].as_str(), source["warnings"].as_str())
+            {
                 warnings.entry(id).or_insert(warning);
             }
             if source["match"] != true {
@@ -291,7 +294,8 @@ impl Outcome {
             for key in ["hit", "depth", "match", "path", "active_reason", "warnings"] {
                 row.remove(key);
             }
-            let context = |source: &Value| source["id"].as_str().unwrap_or("unavailable").to_owned();
+            let context =
+                |source: &Value| source["id"].as_str().unwrap_or("unavailable").to_owned();
             if chain.len() > 1 {
                 row.insert("root".into(), context(chain[0]).into());
                 row.insert("parent".into(), context(chain[chain.len() - 2]).into());
@@ -300,9 +304,10 @@ impl Outcome {
             if let Some(excerpt) = row.get("matching_excerpt").and_then(Value::as_str) {
                 let flat = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
                 let excerpt = flat(excerpt.trim_matches('…'));
-                if ["name", "micro_summary"].iter().any(|key| {
-                    flat(row[*key].as_str().unwrap()).contains(&excerpt)
-                }) {
+                if ["name", "micro_summary"]
+                    .iter()
+                    .any(|key| flat(row[*key].as_str().unwrap()).contains(&excerpt))
+                {
                     row.remove("matching_excerpt");
                 }
             }
@@ -311,7 +316,7 @@ impl Outcome {
         // Guardrails apply along every readable ancestor chain, once per source.
         // Oversized guidance becomes an explicit mandatory source read, never a clipped warning.
         for (id, warning) in warnings {
-            if tiktoken_rs::o200k_base_singleton().lock().encode_ordinary(warning).len() > 512 {
+            if warning.len() > 512 && crate::token_count::ordinary(warning) > 512 {
                 output[format!("must_read_warnings_{id}")] =
                     path_template.replace("{id}", id).into();
             } else {

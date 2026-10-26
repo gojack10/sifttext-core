@@ -82,6 +82,9 @@ struct Pending {
     changed: Vec<String>,
     #[serde(default)]
     repair_node: Option<String>,
+    // Actual publication receipt, retained even when normal-home finishing fails.
+    #[serde(default)]
+    accepted_delta: Option<(String, String)>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -91,6 +94,8 @@ struct Recovery {
     knowledge: String,
     baseline: Option<String>,
     update_commit: Option<String>,
+    #[serde(default)]
+    update_base: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -547,6 +552,7 @@ fn rebuild_active(root: &Path, state: &mut State) -> Result<Value> {
         knowledge: state.knowledge.clone(),
         baseline: state.baseline.clone(),
         update_commit: None,
+        update_base: None,
     };
     persist(
         &root.join("activation.json"),
@@ -670,22 +676,55 @@ pub fn initialize(policy: &Policy, root: &Path, home: &Path) -> Result<Value> {
     Ok(initialized)
 }
 
+// Both the internal recovery API and the customer receipt spelling are supported.
+// Acceptance alone is insufficient: activation also requires ready_home below.
+fn accepted_submission(receipt: &Value, home: &Path) -> Result<String> {
+    require(
+        matches!(receipt["status"].as_str(), Some("current" | "saved" | "recovered"))
+            && receipt["publication"] != "accepted_incomplete"
+            && receipt["home"].as_str() == home.to_str(),
+        &format!("knowledge publication remains pending; retain the original draft/base and retry: {receipt}"),
+    )?;
+    receipt["candidate"]
+        .as_str()
+        .or_else(|| receipt["accepted"].as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| "missing accepted knowledge commit; retain update journal".into())
+}
+
+fn ready_home(policy: &Policy, home: &Path, accepted: Option<&str>) -> Result<()> {
+    // This is clean, ff-only reader recovery, not another graph acceptance gate.
+    let ready = local::advance(policy, home)?;
+    require(
+        matches!(ready["status"].as_str(), Some("current" | "advanced"))
+            && ready["accepted"].as_str() == Some(git(home, &["rev-parse", "HEAD"])?.as_str())
+            && ready["accepted"].as_str() == Some(git(home, &["rev-parse", "refs/heads/main"])?.as_str()),
+        "knowledge home is not ready; retain the update journal and retry",
+    )?;
+    if let Some(accepted) = accepted {
+        git(home, &["merge-base", "--is-ancestor", accepted, "refs/heads/main"])?;
+    }
+    Ok(())
+}
+
 fn finish(
     root: &Path,
     state: &mut State,
     manifest: &Manifest,
     app: &Path,
     commit: Option<String>,
+    update_base: Option<String>,
     baseline: Option<String>,
 ) -> Result<Value> {
     let policy = checked_runtime(&root.join(app))?;
-    local::check(&policy, &state.home, None, BTreeSet::new())?;
+    ready_home(&policy, &state.home, commit.as_deref())?;
     let previous = Recovery {
         application: state.application.clone(),
         application_sha256: state.application_sha256.clone(),
         knowledge: state.knowledge.clone(),
         baseline: state.baseline.clone(),
         update_commit: commit.clone(),
+        update_base,
     };
     let application_sha256 = manifest
         .application
@@ -744,7 +783,6 @@ fn resume(
             commit != pending.base,
             "commit the resolved KB merge before resuming",
         )?;
-        local::check(&policy, &pending.draft, Some(&state.home), BTreeSet::new())?;
         pending.commit = Some(commit);
         state.pending = Some(pending.clone());
         persist(&root.join("state.json"), state)?;
@@ -775,10 +813,20 @@ fn resume(
             pause_after_publish: None,
         },
     )?;
-    require(
-        receipt["status"] == "current",
-        &format!("KB update remains pending: {receipt}"),
+    if receipt["published"] == true {
+        let before = receipt["accepted_before"].as_str().ok_or("missing publication base; retain update")?;
+        let accepted = receipt["candidate"].as_str().ok_or("missing publication candidate; retain update")?;
+        require(pending.accepted_delta.is_none(),
+            "update published more than once; preserve receipts and resolve its exact delta before activation")?;
+        pending.accepted_delta = Some((before.to_owned(), accepted.to_owned()));
+        state.pending = Some(pending.clone());
+        persist(&root.join("state.json"), state)?;
+    }
+    let accepted = accepted_submission(&receipt, &state.home)?;
+    let (before, update_commit) = pending.accepted_delta.as_ref().ok_or(
+        "missing original successful publication receipt; preserve accepted knowledge and update journal; do not infer an update base from history",
     )?;
+    git(&state.home, &["merge-base", "--is-ancestor", update_commit, &accepted])?;
     finish(
         root,
         state,
@@ -787,7 +835,8 @@ fn resume(
             _ => unreachable!(),
         },
         &pending.application,
-        receipt["candidate"].as_str().map(str::to_owned),
+        Some(update_commit.clone()),
+        Some(before.clone()),
         Some(pending.upstream.clone()),
     )
 }
@@ -917,7 +966,7 @@ fn apply(
     };
     let policy = checked_runtime(&root.join(&app))?;
     if !kb_changed {
-        return finish(root, state, manifest, &app, None, state.baseline.clone());
+        return finish(root, state, manifest, &app, None, None, state.baseline.clone());
     }
     require(
         state.baseline.is_some(),
@@ -1010,6 +1059,7 @@ fn merge_knowledge(
         commit: None,
         changed,
         repair_node: None,
+        accepted_delta: None,
     });
     persist(&root.join("state.json"), state)?;
     if let Err(error) = git(&draft, &["merge", "--no-ff", "--no-commit", &upstream]) {
@@ -1018,9 +1068,7 @@ fn merge_knowledge(
             json!({"status":"needs_agent","worktree":draft,"conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,"error":error.to_string(),"resume":"sifttext update --resume","repair":paths}),
         );
     }
-    crate::status::normalize(&policy, &state.home, &draft, &BTreeSet::new(), None)?
-        .report_reopenings();
-    local::check(&policy, &draft, Some(&state.home), BTreeSet::new())?;
+    // Record the authored merge; submit normalizes the exact combined Git candidate.
     git(&draft, &["add", "--", "nodes", "trees"])?;
     git(
         &draft,
@@ -1292,30 +1340,14 @@ pub fn update_with_receipt_preflight(
                 request.repo == state.home && request.accepted_ref == "refs/heads/main",
                 "rollback publication does not name the installed knowledge home",
             )?;
-            // A submit may publish successfully and then fail while refreshing the
-            // reader. Its draft/base are no longer a fresh submission: re-submitting
-            // them can refuse forever. Retain the accepted commit and finish only
-            // the checked activation; never reset or re-publish user knowledge.
-            let already_published = request.commit.as_ref().is_some_and(|commit| {
-                git(
-                    &request.repo,
-                    &["merge-base", "--is-ancestor", commit, "refs/heads/main"],
-                )
-                .is_ok()
-            });
-            if already_published {
-                // Finish the clean ff-only reader/derived refresh even if the
-                // original submission stopped immediately after accepting main.
-                local::advance(&policy, &state.home)?;
-            } else {
-                let receipt = local::submit(&policy, &request)?;
-                require(
-                    receipt["status"] == "current",
-                    "rollback publication remains pending; preserve the draft",
-                )?;
-            }
+            // Retry the original request: submit's journal retains normalized HEAD
+            // and cleanup custody even after main has accepted the candidate.
+            let receipt = local::submit(&policy, &request)?;
+            let accepted = accepted_submission(&receipt, &state.home)?;
+            ready_home(&policy, &state.home, Some(&accepted))?;
+        } else {
+            ready_home(&policy, &state.home, None)?;
         }
-        local::check(&policy, &state.home, None, BTreeSet::new())?;
         activate(root, &root.join(&app))?;
         if let Some(pinned) = activation.get("pinned").and_then(Value::as_str) {
             set_update_config(&state.home, "pinned", pinned)?;
@@ -1440,25 +1472,64 @@ pub fn update_with_receipt_preflight(
     Ok(result)
 }
 fn status_changes(before: &Path, after: &Path) -> Result<BTreeSet<String>> {
-    let old = crate::Store::read(before)?;
-    let new = crate::Store::read(after)?;
-    let status = |root: &Path, id: &str| -> Result<String> {
-        let body = fs::read_to_string(root.join("nodes").join(id).join("node.md"))?;
-        Ok(crate::markdown(&body)?
-            .fields
-            .get("status")
-            .ok_or("missing status")?
-            .to_string())
+    use std::io::{BufRead, BufReader, Read};
+    use std::os::unix::fs::MetadataExt;
+
+    let status = |root: &Path, id: &str| -> Result<Option<String>> {
+        crate::real_dir(&root.join("nodes"))?;
+        let dir = root.join("nodes").join(id);
+        match fs::symlink_metadata(&dir) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+            Ok(_) => crate::real_dir(&dir)?,
+        }
+        let file = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(dir.join("node.md"))
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let meta = file.metadata()?;
+        require(meta.is_file() && meta.nlink() == 1 && meta.len() <= crate::LIMIT as u64,
+            "unsafe or oversized rollback node")?;
+        let mut reader = BufReader::new(file.take(crate::LIMIT as u64 + 1));
+        let mut header = String::new();
+        loop {
+            let start = header.len();
+            require(reader.read_line(&mut header)? != 0 && header.len() <= crate::LIMIT,
+                "missing or oversized rollback node header")?;
+            if start != 0 && header[start..].trim_end_matches(['\r', '\n']) == "---" {
+                break;
+            }
+        }
+        let parsed = crate::markdown(&header)?;
+        require(parsed.authored.id == id, "rollback node identity differs from its path")?;
+        Ok(Some(parsed.fields.get("status").ok_or("missing status")?.to_string()))
     };
-    new.nodes
-        .keys()
-        .filter(|id| old.nodes.contains_key(*id))
-        .filter_map(|id| match (status(before, id), status(after, id)) {
-            (Ok(a), Ok(b)) if a == b => None,
-            (Ok(_), Ok(_)) => Some(Ok(id.clone())),
-            (Err(e), _) | (_, Err(e)) => Some(Err(e)),
-        })
-        .collect()
+    let base = git(before, &["rev-parse", "HEAD"])?;
+    // NUL-delimited native paths avoid quoting/newline ambiguity and inspect only
+    // changed node headers, not a pair of whole Store inventories or node bodies.
+    let paths = git(after, &["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", &base, "--", "nodes"])?;
+    require(paths.is_empty() || paths.ends_with('\0'), "ambiguous rollback paths")?;
+    let mut explicit = BTreeSet::new();
+    for path in paths.split_terminator('\0') {
+        if !path.ends_with("/node.md") {
+            continue;
+        }
+        let parts: Vec<_> = path.split('/').collect();
+        require(parts.len() == 3 && parts[0] == "nodes" && crate::uuid(parts[1]),
+            "unsafe rollback node path")?;
+        let id = parts[1];
+        if let (Some(old), Some(new)) = (status(before, id)?, status(after, id)?)
+            && old != new
+        {
+            explicit.insert(id.to_owned());
+        }
+    }
+    Ok(explicit)
 }
 fn rollback(root: &Path, state: &mut State) -> Result<Value> {
     require(
@@ -1471,6 +1542,37 @@ fn rollback(root: &Path, state: &mut State) -> Result<Value> {
         .ok_or("no previous release retained")?;
     let policy = checked_runtime(&root.join(&previous.application))?;
     if let Some(commit) = &previous.update_commit {
+        crate::checked_publication::commit(&state.home, commit)?;
+        git(&state.home, &["merge-base", "--is-ancestor", commit, "refs/heads/main"])?;
+        let base = match &previous.update_base {
+            Some(base) => {
+                crate::checked_publication::commit(&state.home, base)?;
+                git(&state.home, &["merge-base", "--is-ancestor", base, commit])?;
+                base.clone()
+            }
+            None => {
+                // Only the former single official merge contract has an
+                // unambiguous first-parent delta. A normalization child does not.
+                let parents = git(&state.home, &["rev-list", "--parents", "-n", "1", commit])?;
+                let parents: Vec<_> = parents.split_whitespace().collect();
+                require(parents.len() == 3
+                    && Some(parents[2]) == state.baseline.as_deref()
+                    && git(&state.home, &["show", "-s", "--format=%s", commit])?
+                        == format!("knowledge: merge official {}", state.knowledge),
+                    "legacy rollback has no exact update base or single official merge proof; preserve knowledge and recovery state for explicit repair")?;
+                parents[1].to_owned()
+            }
+        };
+        // Native binary diff preserves byte identity and three-way conflicts.
+        // The shared runner refuses >16MiB output (never truncates a patch).
+        let diff = crate::checked_publication::run_command(local::reader_command(&state.home,
+            &["diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-renames", &base, commit, "--", "nodes", "trees"]))?;
+        require(diff.status.success() && !diff.stdout.is_empty(),
+            "rollback delta unavailable or empty; preserve recovery state")?;
+        let mut patch = tempfile::NamedTempFile::new_in(root)?;
+        patch.write_all(&diff.stdout)?;
+        patch.as_file().sync_all()?;
+        drop(diff);
         let draft = local::worktree(&policy, &state.home)?;
         let path = PathBuf::from(draft["worktree"].as_str().ok_or("missing rollback draft")?);
         state.pending = Some(Pending {
@@ -1482,9 +1584,10 @@ fn rollback(root: &Path, state: &mut State) -> Result<Value> {
             commit: None,
             changed: Vec::new(),
             repair_node: None,
+            accepted_delta: None,
         });
         persist(&root.join("state.json"), state)?;
-        if let Err(error) = git(&path, &["revert", "--no-commit", commit, "-m", "1"]) {
+        if let Err(error) = git(&path, &["apply", "--reverse", "--3way", "--index", "--", text(patch.path())?]) {
             return Ok(
                 json!({"status":"needs_agent","worktree":path,"error":error.to_string(),"resume":"sifttext update --resume","reason":"resolve rollback in this retained worktree; active release unchanged"}),
             );
@@ -1508,10 +1611,8 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result
                 "resolve rollback conflicts in the retained worktree",
             )?;
             if !git(path, &["status", "--porcelain"])?.is_empty() {
-                // --rollback explicitly selected this retained delta's status changes.
-                crate::status::normalize(&policy, &state.home, path, &explicit, None)?
-                    .report_reopenings();
-                local::check(&policy, path, Some(&state.home), explicit.clone())?;
+                // --rollback selected these status intents; submit normalizes them
+                // together with the exact combined candidate, not this filesystem.
                 git(path, &["add", "--", "nodes", "trees"])?;
                 git(
                     path,
@@ -1536,12 +1637,11 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result
         persist(&root.join("activation.json"), &activation)?;
         let request = serde_json::from_value(activation["publication"].clone())?;
         let receipt = local::submit(&policy, &request)?;
-        require(
-            receipt["status"] == "current",
-            "rollback candidate not published; retain draft",
-        )?;
+        let accepted = accepted_submission(&receipt, &state.home)?;
+        ready_home(&policy, &state.home, Some(&accepted))?;
+    } else {
+        ready_home(&policy, &state.home, None)?;
     }
-    local::check(&policy, &state.home, None, BTreeSet::new())?;
     persist(&root.join("activation.json"), &activation)?;
     activate(root, &root.join(&previous.application))?;
     state.application = previous.application;

@@ -48,7 +48,15 @@ pub(super) fn run(cmd: Command) -> Result<Output> {
     run_bounded(cmd, Duration::from_secs(30))
 }
 
-fn run_bounded(mut cmd: Command, budget: Duration) -> Result<Output> {
+pub(super) fn run_stdout_file(cmd: Command, file: &fs::File) -> Result<Output> {
+    run_bounded_stdout(cmd, Duration::from_secs(30), Some(file))
+}
+
+fn run_bounded(cmd: Command, budget: Duration) -> Result<Output> {
+    run_bounded_stdout(cmd, budget, None)
+}
+
+fn run_bounded_stdout(mut cmd: Command, budget: Duration, file: Option<&fs::File>) -> Result<Output> {
     const CAP: usize = 16 * 1024 * 1024;
     // A separate open description lets us prove inherited handles have closed,
     // including descendants that close their output pipes before exiting.
@@ -75,17 +83,19 @@ fn run_bounded(mut cmd: Command, budget: Duration) -> Result<Output> {
     }
     let mut child = cmd
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(match file { Some(file) => Stdio::from(file.try_clone()?), None => Stdio::piped() })
         .stderr(Stdio::piped())
         .spawn()?;
     let group = child.id() as libc::pid_t;
     // Close the parent's description after spawn; inherited copies alone keep
     // the witness busy. Unlinking this private witness is not a path gate.
     drop(lease);
-    let pipes: [Box<dyn Read + Send>; 2] = [
-        Box::new(child.stdout.take().ok_or("Git pipe unavailable")?),
-        Box::new(child.stderr.take().ok_or("Git pipe unavailable")?),
+    let pipes: [Option<Box<dyn Read + Send>>; 2] = [
+        child.stdout.take().map(|pipe| Box::new(pipe) as _),
+        Some(Box::new(child.stderr.take().ok_or("Git pipe unavailable")?)),
     ];
+    let expected = if file.is_some() { 1 } else { 2 };
+    let read_bytes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (tx, rx) = std::sync::mpsc::channel();
     #[cfg(test)]
     let pipe_error = PIPE_ERROR.with(|v| v.replace(false));
@@ -94,16 +104,25 @@ fn run_bounded(mut cmd: Command, budget: Duration) -> Result<Output> {
     let readers: Vec<_> = pipes
         .into_iter()
         .enumerate()
-        .map(|(tag, pipe)| {
+        .filter_map(|(tag, pipe)| pipe.map(|pipe| (tag, pipe)))
+        .map(|(tag, mut pipe)| {
             let tx = tx.clone();
+            let read_bytes = read_bytes.clone();
             thread::spawn(move || {
                 let mut bytes = Vec::new();
                 let result = if pipe_error && tag == 0 {
                     Err(std::io::Error::other("injected pipe failure"))
                 } else {
-                    pipe.take((CAP + 1) as u64)
-                        .read_to_end(&mut bytes)
-                        .map(|_| bytes)
+                    (|| {
+                        let mut chunk = [0; 8192];
+                        while bytes.len() <= CAP {
+                            let n = pipe.read(&mut chunk)?;
+                            if n == 0 { break; }
+                            read_bytes.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+                            bytes.extend_from_slice(&chunk[..n]);
+                        }
+                        Ok(bytes)
+                    })()
                 };
                 let _ = tx.send((tag, result));
             })
@@ -123,10 +142,18 @@ fn run_bounded(mut cmd: Command, budget: Duration) -> Result<Output> {
                     "Git output resource limit",
                 )?;
             }
+            require(
+                file.map_or(Ok(0), |file| file.metadata().map(|m| m.len()))?
+                    .saturating_add(read_bytes.load(std::sync::atomic::Ordering::Relaxed)) <= CAP as u64,
+                "Git output resource limit",
+            )?;
             // Do not reap the leader while descendants may retain custody:
             // its live/zombie PID pins the process-group identity until any
             // required group kill, avoiding a kill against a recycled PID.
-            if received == 2 && witness.try_lock().is_ok() {
+            if received == expected && witness.try_lock().is_ok() {
+                require(file.map_or(Ok(0), |file| file.metadata().map(|m| m.len()))?
+                    .saturating_add(read_bytes.load(std::sync::atomic::Ordering::Relaxed)) <= CAP as u64,
+                    "Git output resource limit")?;
                 if let Some(status) = child.try_wait().map_err(|_| "Git wait failed")? {
                     let [stdout, stderr] = std::mem::take(&mut bytes);
                     return Ok(Output {
@@ -149,7 +176,7 @@ fn run_bounded(mut cmd: Command, budget: Duration) -> Result<Output> {
         let _ = child.wait();
     }
     let drain = Instant::now();
-    while received < 2 && drain.elapsed() < Duration::from_secs(1) {
+    while received < expected && drain.elapsed() < Duration::from_secs(1) {
         if rx.recv_timeout(Duration::from_millis(10)).is_ok() {
             received += 1;
         }
@@ -165,12 +192,12 @@ fn run_bounded(mut cmd: Command, budget: Duration) -> Result<Output> {
     };
     // Ordinary supported descendants are drained; hostile session/FD escape is
     // not a sandbox guarantee. Do not block indefinitely on such a pipe reader.
-    if received == 2 {
+    if received == expected {
         for reader in readers {
             let _ = reader.join();
         }
     }
-    if !stopped || received != 2 {
+    if !stopped || received != expected {
         return Err(format!(
             "{}; Git termination unconfirmed; preserve custody",
             result

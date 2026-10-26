@@ -20,6 +20,8 @@ const CHAT_ARTIFACTS_RULE: &str = "/nodes/*/artifacts/chats/";
 const ARTIFACTS_RULE: &str = "/nodes/*/artifacts/";
 /// The entrypoint's six direct children in authored order. Same identities
 /// `instructions` resolves; they are not a second hierarchy.
+
+
 const PIPELINE: [&str; 6] = [
     "b6107909-a33b-4c63-ab0d-351ba1a1b672",
     "f961a20f-1df5-4c0f-a263-9730e2a28aca",
@@ -169,13 +171,13 @@ fn git_command(path: &Path) -> Command {
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_ATTR_NOSYSTEM", "1")
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .arg("-C")
         .arg(path)
+        .args(crate::GIT_CONFIG_FENCES)
         .args([
             "-c",
             "init.templateDir=",
-            "-c",
-            "core.attributesFile=/dev/null",
             "-c",
             "core.hooksPath=/dev/null",
             "-c",
@@ -221,7 +223,7 @@ fn git_config_value(path: &Path, key: &str) -> Result<String> {
 }
 
 // Reader movement must not run inherited filters, hooks, fsmonitor or lazy fetch.
-pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn reader_command(path: &Path, args: &[&str]) -> Command {
     let mut cmd = git_command(path);
     cmd.env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -229,15 +231,17 @@ pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
         .env("GIT_NO_LAZY_FETCH", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
         .args([
-            "-c", "core.fsmonitor=false",
-            "-c", "core.attributesFile=/dev/null",
             "-c", "merge.autoStash=false",
             "-c", "rerere.enabled=false",
             "-c", "gc.auto=0",
             "-c", "maintenance.auto=false",
         ])
         .args(args);
-    git_output(crate::checked_publication::run_command(cmd)?)
+    cmd
+}
+
+pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
+    git_output(crate::checked_publication::run_command(reader_command(path, args))?)
 }
 
 fn git_output(out: std::process::Output) -> Result<String> {
@@ -280,6 +284,7 @@ fn stage_initialized_home(path: &Path, seed: Option<&Store>, commit: bool) -> Re
             }
             match entry {
                 Entry::File(bytes) => files.push((rel.clone(), 0o100644, bytes.as_slice())),
+                Entry::FileRef { .. } => return Err("initialization requires a full starter capture".into()),
                 Entry::Link(target) => {
                     files.push((rel.clone(), 0o120000, target.as_os_str().as_encoded_bytes()))
                 }
@@ -436,12 +441,11 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
                     expected_version: None,
                     pause_before_accept: None,
                 },
-                None,
             );
             require(report.status == "current", &report.cli_lean()?)?;
             Ok(capture
                 .ok_or("missing validated starter capture")?
-                .into_snapshot())
+                .into_snapshot()?)
         })
         .transpose()?;
     // A new independent repository cannot inherit an ancestor repo's local
@@ -474,6 +478,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
             match entry {
                 Entry::Dir => fs::create_dir(&to)?,
                 Entry::File(bytes) => new_file(&to, bytes)?,
+                Entry::FileRef { .. } => return Err("starter copy requires full source bytes".into()),
                 Entry::Link(target) => symlink(target, &to)?,
             }
         }
@@ -485,7 +490,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     let checked = check(policy, path, None, BTreeSet::new())?;
     if let Some(seed) = &seed {
         require(
-            checked.version.as_deref() == Some(candidate_validation::version(seed).as_str()),
+            checked.version.as_deref() == Some(candidate_validation::version(seed)?.as_str()),
             "copied source changed; preserve the incomplete new home",
         )?;
     }
@@ -847,40 +852,47 @@ pub fn worktree(policy: &Policy, home: &Path) -> Result<Value> {
 }
 
 fn worktree_inner(
-    policy: &Policy,
+    _policy: &Policy,
     home: &Path,
     after_create: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Value> {
-    check(policy, home, None, BTreeSet::new())?;
-    exclude_local_artifacts(home, false)?;
-    require(
-        git(home, &["status", "--porcelain"])?.is_empty(),
-        "home is dirty; preserve changes before allocating a worktree",
-    )?;
-    let home = fs::canonicalize(home)?;
+    // Allocation reads an immutable commit; it does not certify authored knowledge
+    // or take the home publication lock. Retain lifecycle and clean-reader custody.
+    let home = file_home(home)?;
+    let mut lifecycle = submission::lifecycle_lock(&home, true)?;
+    reader_repository(&home)?;
+    submission::mark_git_lifecycle(&mut lifecycle)?;
     let key = id()?;
     let branch = format!("sifttext/{key}");
     let path = home
         .parent()
         .ok_or("missing parent")?
         .join(format!("sifttext-worktree-{key}"));
-    let base = git(&home, &["rev-parse", "refs/heads/main"])?;
-    require(
-        git(&home, &["rev-parse", "HEAD"])? == base,
-        "reader is behind accepted main; use sifttext advance HOME for a clean home, or sifttext accepted HOME for a separate view",
-    )?;
+    let base = reader_git(&home, &["rev-parse", "refs/heads/main"])?;
+    // A worktree starts from this immutable accepted commit, not the reader's
+    // current files. Dirty or lagging reader files need neither inspection nor edits.
     let setup = (|| -> Result<()> {
-        git(
+        reader_git(
             &home,
             &[
+                "-c", "core.autocrlf=false",
+                "-c", "core.symlinks=true",
                 "worktree",
                 "add",
+                "--no-checkout",
                 "-b",
                 &branch,
                 path.to_str().ok_or("non-UTF-8 path")?,
                 &base,
             ],
         )?;
+        // Git stores selection in this worktree's config, not in the shared home.
+        // No full checkout precedes this targeted initial materialization.
+        reader_git(&path, &["sparse-checkout", "set", "--cone", "--no-sparse-index", "--skip-checks",
+            "trees", &format!("nodes/{ENTRY}")])?;
+        // --no-checkout leaves an empty index; populate it after selection so
+        // Git materializes only the sparse paths, not the complete collection.
+        reader_git(&path, &["read-tree", "-mu", &base])?;
         after_create(&path)?;
         // Git cannot retain empty directories. Hydrate only this newly allocated draft.
         for name in ["nodes", "trees"] {
@@ -949,16 +961,16 @@ fn worktree_receipt_is_minimal_and_partial_setup_preserves_owned_drafts() {
 }
 
 /// Explicitly advance only an initialized, independent, detached home reader.
-/// Accepted recovery supplies the checked exact target; Git supplies ff-only checkout.
+/// Accepted main already passed submission; Git supplies ff-only checkout.
 pub fn advance(policy: &Policy, home: &Path) -> Result<Value> {
-    advance_inner(policy, home, None, || Ok(()))
+    advance_inner(policy, home, || Ok(()))
 }
 
 #[path = "local_submission.rs"]
 mod submission;
 pub use submission::submit;
 
-fn reader_state(home: &Path) -> Result<String> {
+fn reader_repository(home: &Path) -> Result<()> {
     use std::path::Component;
     require(
         home.is_absolute()
@@ -1001,6 +1013,14 @@ fn reader_state(home: &Path) -> Result<String> {
             )?;
         }
     }
+    for name in ["objects/info/alternates", "shallow", "commondir"] {
+        require(
+            fs::symlink_metadata(dotgit.join(name))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
+            "unsupported reader repository indirection",
+        )?;
+    }
+    require(!sparse_checkout(home)?, "normal knowledge home must remain complete")?;
     require(
         !crate::read_regular(&dotgit.join("HEAD"))?.starts_with(b"ref:"),
         "reader must be detached; branch-owned checkouts are not advanced",
@@ -1030,18 +1050,13 @@ fn reader_state(home: &Path) -> Result<String> {
         "reader must be an independent Git home root",
     )?;
     exclude_local_artifacts(home, false)?;
-    require(
-        reader_git(home, &["ls-files", "-v"])?
-            .lines()
-            .all(|line| line.starts_with("H ")),
-        "reader index has hidden/sparse edits; preserve files before advancing",
-    )?;
+    Ok(())
+}
+
+fn reader_state(home: &Path) -> Result<String> {
+    reader_repository(home)?;
+    crate::checked_publication::native_index_guard(home)?;
     let head = reader_git(home, &["rev-parse", "--verify", "HEAD^{commit}"])?;
-    crate::checked_publication::tracked_matches_commit(home, &head, &BTreeSet::new()).map_err(
-        |error| {
-            format!("reader is dirty or unverifiable; preserve files before advancing: {error}")
-        },
-    )?;
     require(
         reader_git(
             home,
@@ -1055,108 +1070,8 @@ fn reader_state(home: &Path) -> Result<String> {
         .is_empty(),
         "reader is dirty; preserve authored and untracked work before advancing",
     )?;
+    crate::checked_publication::ignored_files(home, true)?;
     Ok(head)
-}
-
-#[cfg(test)]
-#[test]
-fn stat_hidden_edits_refuse_save_and_reader_without_changing_index() {
-    let temp = tempfile::tempdir().unwrap();
-    let repo = fs::canonicalize(temp.path()).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]).unwrap();
-    git(&repo, &["config", "user.name", "Test"]).unwrap();
-    git(&repo, &["config", "user.email", "test@example.invalid"]).unwrap();
-    git(&repo, &["config", "core.trustctime", "false"]).unwrap();
-    git(&repo, &["config", "core.checkStat", "minimal"]).unwrap();
-    fs::write(repo.join(".gitignore"), IGNORE).unwrap();
-    let path = repo.join("node.md");
-    let set_time = || {
-        fs::File::open(&path)
-            .unwrap()
-            .set_times(fs::FileTimes::new().set_modified(
-                std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_500_000_000),
-            ))
-            .unwrap();
-    };
-    fs::write(&path, "committed-content").unwrap();
-    set_time();
-    git(&repo, &["add", "."]).unwrap();
-    git(&repo, &["commit", "-qm", "knowledge: stat custody control"]).unwrap();
-    let head = git(&repo, &["rev-parse", "HEAD"]).unwrap();
-    git(&repo, &["checkout", "--detach", "-q"]).unwrap();
-    assert_eq!(reader_state(&repo).unwrap(), head);
-    // Cover even a caller-refreshed stat cache, not merely permissive config.
-    fs::write(&path, "untracked-content").unwrap();
-    set_time();
-    assert_eq!(git(&repo, &["status", "--porcelain"]).unwrap(), "");
-    assert_eq!(
-        git(&repo, &["ls-files", "-v", "node.md"]).unwrap(),
-        "H node.md"
-    );
-    assert_ne!(
-        git(&repo, &["hash-object", "node.md"]).unwrap(),
-        git(&repo, &["rev-parse", "HEAD:node.md"]).unwrap()
-    );
-    let index = fs::read(repo.join(".git/index")).unwrap();
-    assert!(crate::checked_publication::clean(&repo, &head).is_err());
-    assert!(reader_state(&repo).is_err());
-    assert_eq!(fs::read(repo.join(".git/index")).unwrap(), index);
-    assert_eq!(fs::read_to_string(&path).unwrap(), "untracked-content");
-    assert_eq!(git(&repo, &["rev-parse", "HEAD"]).unwrap(), head);
-    fs::write(&path, "committed-content").unwrap();
-    set_time();
-    crate::checked_publication::clean(&repo, &head).unwrap();
-    assert_eq!(reader_state(&repo).unwrap(), head);
-
-    // Exact bytes, not Git's configurable normalized representation.
-    git(&repo, &["config", "core.autocrlf", "false"]).unwrap();
-    fs::write(&path, "line\n").unwrap();
-    git(&repo, &["add", "node.md"]).unwrap();
-    git(
-        &repo,
-        &["commit", "-qm", "knowledge: conversion custody control"],
-    )
-    .unwrap();
-    let head = git(&repo, &["rev-parse", "HEAD"]).unwrap();
-    git(&repo, &["config", "core.autocrlf", "true"]).unwrap();
-    fs::write(&path, "line\r\n").unwrap();
-    assert_ne!(
-        git(&repo, &["hash-object", "--no-filters", "node.md"]).unwrap(),
-        git(&repo, &["rev-parse", "HEAD:node.md"]).unwrap()
-    );
-    assert!(
-        crate::checked_publication::tracked_matches_commit(&repo, &head, &BTreeSet::new()).is_err()
-    );
-    assert!(crate::checked_publication::clean(&repo, &head).is_err());
-    assert!(reader_state(&repo).is_err());
-    assert_eq!(fs::read(&path).unwrap(), b"line\r\n");
-    fs::write(&path, "line\n").unwrap();
-    crate::checked_publication::clean(&repo, &head).unwrap();
-    assert_eq!(reader_state(&repo).unwrap(), head);
-
-    // Unsupported attributes must refuse before executing their clean filter.
-    let sentinel = repo.join("filter-ran");
-    git(
-        &repo,
-        &["config", "filter.custody.clean", "touch filter-ran; cat"],
-    )
-    .unwrap();
-    fs::create_dir_all(repo.join(".git/info")).unwrap();
-    for attributes in [
-        repo.join(".gitattributes"),
-        repo.join(".git/info/attributes"),
-    ] {
-        fs::write(&attributes, "node.md filter=custody\n").unwrap();
-        fs::write(&path, "changed bytes\n").unwrap();
-        assert!(crate::checked_publication::clean(&repo, &head).is_err());
-        assert!(reader_state(&repo).is_err());
-        assert!(!sentinel.exists(), "clean filter executed");
-        assert_eq!(fs::read(&path).unwrap(), b"changed bytes\n");
-        fs::remove_file(&attributes).unwrap();
-    }
-    fs::write(&path, "line\n").unwrap();
-    crate::checked_publication::clean(&repo, &head).unwrap();
-    assert_eq!(reader_state(&repo).unwrap(), head);
 }
 
 // Private deterministic test seams use the real recovery/refresh paths, never an
@@ -1164,55 +1079,21 @@ fn stat_hidden_edits_refuse_save_and_reader_without_changing_index() {
 fn advance_inner(
     policy: &Policy,
     home: &Path,
-    pause: Option<&index::PauseBeforeAccept>,
     before_merge: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
-    let home_lock = submission::home_lock(home, false)?;
+    let publication_lock = submission::publication_lock(home)?;
+    let _publication_custody = crate::checked_publication::Custody::new(&[&publication_lock])?;
+    let home_lock = submission::home_lock(home, true)?;
     let _custody = crate::checked_publication::Custody::new(&[&home_lock])?;
     let before = reader_state(home)?;
-    let recovered = crate::checked_publication::submit(
-        policy,
-        &crate::checked_publication::Request {
-            repo: home.into(),
-            accepted_ref: "refs/heads/main".into(),
-            draft: None,
-            commit: None,
-            base: None,
-            explicit: BTreeSet::new(),
-            pause_before_publish: None,
-            pause_after_publish: None,
-        },
-    );
-    require(
-        recovered.status == "current",
-        &format!(
-            "checked accepted view unavailable: {}; retain reader",
-            recovered.check
-        ),
-    )?;
-    let target = recovered
-        .candidate
-        .as_deref()
-        .ok_or("missing checked accepted revision")?;
-    let version = recovered
-        .version
-        .as_deref()
-        .ok_or("missing checked accepted version")?;
-    let identity = fs::symlink_metadata(recovered.view.as_ref().ok_or("missing owned view")?)?;
-    let result = advance_checked(policy, home, &before, target, version, pause, before_merge);
-    let cleanup = crate::checked_publication::remove_owned_view(home, &recovered, &identity);
-    match (result, cleanup) {
-        (Ok(_), Ok(())) => Ok(json!({
-            "status":if before == target {"current"} else {"advanced"},
-            "accepted":target, "version":version, "home":home,
-        })),
-        (result, Err(cleanup)) => Err(format!(
-            "reader advance finishing incomplete (checked accepted {target}); HEAD may already be advanced; owned view {} cleanup incomplete: {cleanup}; {}; retain files and retry",
-            recovered.view.as_ref().ok_or("missing owned view")?.display(),
-            result.err().map(|e| e.to_string()).unwrap_or_else(|| "home refresh verified".into())
-        ).into()),
-        (Err(error), Ok(())) => Err(error),
-    }
+    let target = reader_git(home, &["rev-parse", "--verify", "refs/heads/main^{commit}"])?;
+    // Advancing a reader is not another submission. The accepted ref is the
+    // boundary; do not create/validate/index a duplicate temporary working tree.
+    let result = advance_checked(policy, home, &before, &target, None, None, before_merge)?;
+    Ok(json!({
+        "status":if before == target {"current"} else {"advanced"},
+        "accepted":target, "version":result["version"], "home":home,
+    }))
 }
 
 fn advance_checked(
@@ -1220,8 +1101,8 @@ fn advance_checked(
     home: &Path,
     before: &str,
     target: &str,
-    version: &str,
-    pause: Option<&index::PauseBeforeAccept>,
+    version: Option<&str>,
+    prepared: Option<&Path>,
     before_merge: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
     // This exact full object ID came from native candidate validation, not a caller ref.
@@ -1247,42 +1128,31 @@ fn advance_checked(
         )
     };
     require(
-        reader_state(home)? == before,
+        reader_git(home, &["rev-parse", "HEAD"])? == before,
         "reader changed; preserve files and retry",
     )?;
     verify_ref()?;
     crate::checked_publication::protect_artifact_owners(home, target)?;
     if before != target {
-        reader_git(home, &["merge", "--ff-only", "--no-edit", target])?;
+        reader_git(home, &["merge", "--ff-only", "--no-edit", "--no-overwrite-ignore", target])?;
     }
     // Never roll back caller files on a post-ff failure. HEAD and accepted refs
     // remain recoverable; a retry repairs only derived state after clean checks.
     let finish = || -> Result<Value> {
         require(
-            reader_state(home)? == target,
+            reader_git(home, &["rev-parse", "HEAD"])? == target,
             "reader changed during advance",
         )?;
-        let view = index::refresh(policy, home, None, index::Mode::Incremental, pause)?;
+        let refreshed = index::with_current_from(policy, home, prepared, |_, _| Ok(()))?.0;
+        require(version.is_none_or(|expected| refreshed == expected), "reader source changed during refresh; retry")?;
         require(
-            view.status == "current" && view.version.as_deref() == Some(version),
-            &format!(
-                "reader refresh stale/unavailable; retry (status: {}, version: {:?}, expected: {version}, refusal: {:?})",
-                view.status, view.version, view.refusal
-            ),
-        )?;
-        let navigation = crate::outlines::inspect(policy, home, None)?;
-        require(
-            navigation.status == "current" && navigation.version.as_deref() == Some(version),
-            "reader navigation stale/unavailable; retry",
-        )?;
-        require(
-            reader_state(home)? == target,
+            reader_git(home, &["rev-parse", "HEAD"])? == target,
             "reader changed during refresh",
         )?;
         verify_ref()?;
         Ok(
             json!({"status":"current", "home":home, "reader_before":before,
-            "reader":target, "accepted":target, "version":version, "advanced":before != target}),
+            "reader":target, "accepted":target, "version":refreshed, "advanced":before != target}),
         )
     };
     finish().map_err(|error| format!("reader advance incomplete (checked accepted {target}); HEAD may already be advanced; retain files and retry: {error}").into())
@@ -1810,22 +1680,23 @@ pub fn attach_session_with_gate(
         "valid session descriptor required",
     )?;
     let (home, _attachment_lock) = session_attachment_lock(home)?;
-    let store = Store::read(&home)?;
-    require(store.nodes.contains_key(node_id), "session node is absent")?;
-    let home = store.path;
+    let home = file_home(&home)?;
+    let node_id = resolve_node(&home, node_id)?;
+    // Presence belongs to this node, not a certification of unrelated knowledge.
+    read_local_file(&home.join("nodes").join(&node_id).join("node.md"))?;
     let available = descriptor["availability"] == "available";
     let target = if available {
         Some(checked_archive_target(archive_root, descriptor)?)
     } else {
         None
     };
-    let node = home.join("nodes").join(node_id);
+    let node = home.join("nodes").join(&node_id);
     crate::real_dir(&node)?;
     let sidecar = node.join("session-sources.json");
-    let mut records: Vec<Value> = if sidecar.exists() {
-        serde_json::from_slice(&crate::read_regular(&sidecar)?)?
-    } else {
-        Vec::new()
+    let mut records: Vec<Value> = match fs::symlink_metadata(&sidecar) {
+        Ok(_) => serde_json::from_slice(&read_local_file(&sidecar)?.0)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error.into()),
     };
     let harness = descriptor["harness"].as_str().unwrap();
     let session = descriptor["session_id"].as_str();
@@ -2093,8 +1964,7 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
         )?;
         git(&root, &["merge", "--ff-only", "FETCH_HEAD"])?;
     }
-    let store = Store::read(&home)?;
-    let home = store.path;
+    let home = file_home(&home)?;
     // A home that arrived by clone or pull carries no `.git/info/exclude` rules, so
     // re-apply them before writing private links; otherwise they surface as untracked
     // knowledge and can be committed by an ordinary `git add -A`.
@@ -2102,13 +1972,25 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
         exclude_local_artifacts(&home, home.join(POINTER).is_file())?;
     }
     let mut restored = 0;
-    for node_id in store.nodes.keys() {
-        let node = home.join("nodes").join(node_id);
-        let sidecar = node.join("session-sources.json");
-        if !sidecar.exists() {
+    // Include private/unlinked nodes too. Only sidecar owners need source reads;
+    // do not inventory arbitrary assets or hydrate every authored node.
+    for entry in fs::read_dir(home.join("nodes"))? {
+        let entry = entry?;
+        if entry.file_name() == ".keep" {
             continue;
         }
-        let records: Vec<Value> = serde_json::from_slice(&crate::read_regular(&sidecar)?)?;
+        let node_id = entry.file_name().into_string().map_err(|_| "non-UTF-8 node")?;
+        require(crate::uuid(&node_id), "invalid session node UUID")?;
+        let node = home.join("nodes").join(&node_id);
+        crate::real_dir(&node)?;
+        let sidecar = node.join("session-sources.json");
+        match fs::symlink_metadata(&sidecar) {
+            Ok(_) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        }
+        read_local_file(&node.join("node.md"))?;
+        let records: Vec<Value> = serde_json::from_slice(&read_local_file(&sidecar)?.0)?;
         for record in records {
             require(
                 record["schema_version"] == 1,
@@ -2129,9 +2011,14 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
                 valid_attachment_name(name),
                 "invalid session attachment name",
             )?;
-            let chats = node.join("artifacts").join("chats");
+            let artifacts = node.join("artifacts");
+            if !artifacts.exists() {
+                fs::create_dir(&artifacts)?;
+            }
+            crate::real_dir(&artifacts)?;
+            let chats = artifacts.join("chats");
             if !chats.exists() {
-                fs::create_dir_all(&chats)?;
+                fs::create_dir(&chats)?;
             }
             crate::real_dir(&chats)?;
             let link = chats.join(name);
@@ -2152,41 +2039,69 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
 
 pub fn maintenance_node_path(home: &Path, node_id: &str) -> Result<PathBuf> {
     require(crate::uuid(node_id), "invalid maintenance node UUID")?;
-    let store = Store::read(home)?;
-    let roots: Vec<_> = store
-        .roots
-        .iter()
-        .filter(|id| store.nodes[*id].name == "SiftText Maintenance")
-        .collect();
-    require(
-        roots.len() == 1,
-        "SiftText Maintenance tree is missing or ambiguous",
-    )?;
-    let mut pending = vec![roots[0].as_str()];
+    let home = file_home(home)?;
+    let roots = maintenance_roots(&home)?;
+    require(roots.len() == 1, "SiftText Maintenance tree is missing or ambiguous")?;
+    let mut pending = roots;
+    let mut visited = BTreeSet::new();
     while let Some(id) = pending.pop() {
-        if id == node_id {
-            return Ok(store.path.join("nodes").join(id).join("node.md"));
+        if !visited.insert(id.clone()) { continue; }
+        let id = resolve_node(&home, &id)?;
+        let directory = home.join("nodes").join(&id);
+        let path = directory.join("node.md");
+        let (bytes, _) = read_local_file(&path)?;
+        require(crate::parse_markdown(std::str::from_utf8(&bytes)?)?.id == id,
+            "maintenance node identity mismatch")?;
+        if id == node_id { return Ok(path); }
+        crate::real_dir(&directory.join("children"))?;
+        let (order, _) = read_local_file(&directory.join("children.order"))?;
+        for child in std::str::from_utf8(&order)?.lines() {
+            require(crate::uuid(child), "invalid maintenance child UUID")?;
+            require(fs::read_link(directory.join("children").join(child))?
+                == PathBuf::from(format!("../../{child}")), "unsafe maintenance child link")?;
+            pending.push(child.to_owned());
         }
-        pending.extend(store.children[id].iter().map(String::as_str));
     }
     Err("repair node must belong to SiftText Maintenance".into())
 }
 
+/// Maintenance discovery needs root identities/names, not every node and asset.
+fn maintenance_roots(home: &Path) -> Result<Vec<String>> {
+    crate::real_dir(&home.join("trees"))?;
+    let mut roots = Vec::new();
+    for entry in fs::read_dir(home.join("trees"))? {
+        let entry = entry?;
+        if entry.file_name() == ".keep" {
+            require(read_local_file(&entry.path())?.0.is_empty(), "nonempty root directory marker")?;
+            continue;
+        }
+        let id = entry.file_name().into_string().map_err(|_| "non-UTF-8 root UUID")?;
+        require(crate::uuid(&id), "invalid maintenance root UUID")?;
+        require(fs::read_link(entry.path())? == PathBuf::from(format!("../nodes/{id}")),
+            "unsafe maintenance root link")?;
+        let id = resolve_node(home, &id)?;
+        let (bytes, _) = read_local_file(&home.join("nodes").join(&id).join("node.md"))?;
+        let node = crate::parse_markdown(std::str::from_utf8(&bytes)?)?;
+        require(node.id == id, "maintenance root identity mismatch")?;
+        if node.name == "SiftText Maintenance" {
+            roots.push(id);
+        }
+    }
+    roots.sort();
+    Ok(roots)
+}
+
 pub fn ensure_maintenance_tree(policy: &Policy, home: &Path) -> Result<Value> {
-    let store = Store::read(home)?;
-    let roots: Vec<_> = store
-        .roots
-        .iter()
-        .filter(|id| store.nodes[*id].name == "SiftText Maintenance")
-        .collect();
+    let home = file_home(home)?;
+    let roots = maintenance_roots(&home)?;
     require(roots.len() <= 1, "multiple SiftText Maintenance trees")?;
     if let Some(id) = roots.first() {
         return Ok(
-            json!({"id":id,"path":store.path.join("nodes").join(id).join("node.md"),"created":false}),
+            json!({"id":id,"path":home.join("nodes").join(id).join("node.md"),"created":false}),
         );
     }
 
-    let allocation = worktree(policy, home)?;
+    let allocation = worktree(policy, &home)?;
     let draft = PathBuf::from(
         allocation["worktree"]
             .as_str()
@@ -2228,13 +2143,11 @@ pub fn ensure_maintenance_tree(policy: &Policy, home: &Path) -> Result<Value> {
         receipt["status"] == "current",
         "maintenance tree publication unavailable; preserve the draft",
     )?;
-    let published = Store::read(home)?;
     require(
-        published.roots.contains(&id.to_owned())
-            && published.nodes[id].name == "SiftText Maintenance",
+        maintenance_roots(&home)? == [id],
         "published maintenance tree did not validate",
     )?;
-    Ok(json!({"id":id,"path":published.path.join("nodes").join(id).join("node.md"),"created":true}))
+    Ok(json!({"id":id,"path":home.join("nodes").join(id).join("node.md"),"created":true}))
 }
 
 #[cfg(test)]
@@ -2270,167 +2183,227 @@ fn maintenance_tree_registration_is_checked_and_idempotent() {
 }
 
 pub fn create(
-    policy: &Policy,
+    _policy: &Policy,
     path: &Path,
     name: &str,
     summary: &str,
     parent: Option<&str>,
 ) -> Result<Value> {
-    require(
-        !name.trim().is_empty() && !summary.trim().is_empty(),
-        "name and summary must be nonblank",
-    )?;
+    // The existing lifecycle + draft lock also coordinates concurrent creations
+    // and keeps submission cleanup from removing this draft during the edit.
+    let path = file_home(path)?;
+    let (path, _creation_lock) = session_attachment_lock(&path)?;
     require(
         fs::symlink_metadata(path.join(".git"))?.is_file(),
         "create in a private Git worktree; use sifttext worktree HOME",
     )?;
     require(
-        Path::new(&git(path, &["rev-parse", "--show-toplevel"])?) == fs::canonicalize(path)?
-            && git(path, &["rev-parse", "--path-format=absolute", "--git-dir"])?
-                != git(
-                    path,
+        Path::new(&reader_git(&path, &["rev-parse", "--show-toplevel"])?) == path
+            && reader_git(&path, &["rev-parse", "--path-format=absolute", "--git-dir"])?
+                != reader_git(
+                    &path,
                     &["rev-parse", "--path-format=absolute", "--git-common-dir"],
                 )?,
         "creation requires a real linked Git worktree root",
     )?;
-    let before = checked_snapshot(policy, path, None)?;
-    let parent = parent.map(|p| before.resolve(p)).transpose()?;
-    let key = id()?;
-    let stage = tempfile::tempdir()?;
-    // ponytail: copy the bounded store, not a second graph implementation. Single
-    // cooperative writer; partial I/O failure retains an inspectable private draft.
-    for (rel, entry) in &before.inventory {
-        let to = stage.path().join(rel);
-        match entry {
-            Entry::Dir => fs::create_dir_all(to)?,
-            Entry::File(b) => new_file(&to, b)?,
-            Entry::Link(p) => symlink(p, to)?,
-        }
+    crate::real_dir(&path.join("nodes"))?;
+    let parent = parent.map(|prefix| resolve_node(&path, prefix)).transpose()?;
+    if let Some(parent) = &parent { materialize_nodes(&path, std::slice::from_ref(parent))?; }
+    let parent_order = parent.as_ref().map(|parent| -> Result<_> {
+        let dir = path.join("nodes").join(parent);
+        crate::real_dir(&dir)?;
+        crate::real_dir(&dir.join("children"))?;
+        let (bytes, identity) = read_local_file(&dir.join("children.order"))?;
+        std::str::from_utf8(&bytes)?;
+        Ok((dir, bytes, identity))
+    }).transpose()?;
+    if parent.is_none() {
+        if sparse_checkout(&path)? { reader_git(&path, &["sparse-checkout", "add", "trees"])?; }
+        crate::real_dir(&path.join("trees"))?;
     }
-    let node = stage.path().join("nodes").join(&key);
-    fs::create_dir(&node)?;
-    fs::create_dir(node.join("children"))?;
-    new_file(&node.join("children/.keep"), b"")?;
-    new_file(&node.join("children.order"), b"")?;
+    let key = id()?;
+    // Include the new directory before writing so ordinary `git add` works.
+    materialize_nodes(&path, std::slice::from_ref(&key))?;
+    let node = path.join("nodes").join(&key);
     let text = format!(
         "---\nid: {}\nname: {}\nmicro_summary: {}\nstatus: \"not_examined\"\nsee_also: []\n---\n",
-        json!(key),
-        json!(name),
-        json!(summary)
+        json!(key), json!(name), json!(summary)
     );
-    new_file(&node.join("node.md"), text.as_bytes())?;
-    if let Some(parent) = &parent {
-        let dir = stage.path().join("nodes").join(parent);
-        symlink(format!("../../{key}"), dir.join("children").join(&key))?;
-        let mut children = before.children[parent].clone();
-        children.push(key.clone());
-        fs::write(dir.join("children.order"), children.join("\n") + "\n")?;
-    } else {
-        symlink(
-            format!("../nodes/{key}"),
-            stage.path().join("trees").join(&key),
-        )?;
-    }
-    let normalized =
-        crate::status::normalize(policy, &before.path, stage.path(), &BTreeSet::new(), None)?;
-    let after = checked_snapshot(policy, stage.path(), Some(&before.path))?;
-    require(
-        Store::read(path)?.inventory == before.inventory,
-        "draft changed while preparing creation",
-    )?;
-    for (rel, entry) in &after.inventory {
-        if before.inventory.get(rel) == Some(entry) {
-            continue;
+    require(text.len() <= crate::LIMIT, "oversized authored file")?;
+    let result = (|| -> Result<()> {
+        // Exclusive creation never overwrites an existing node or relationship.
+        // On failure retain only the work we made, with an actionable location.
+        fs::create_dir(&node)?;
+        fs::create_dir(node.join("children"))?;
+        new_file(&node.join("children/.keep"), b"")?;
+        new_file(&node.join("children.order"), b"")?;
+        new_file(&node.join("node.md"), text.as_bytes())?;
+        if let Some((dir, before, identity)) = &parent_order {
+            let order = dir.join("children.order");
+            let mut bytes = before.clone();
+            if !bytes.is_empty() && !bytes.ends_with(b"\n") { bytes.push(b'\n'); }
+            bytes.extend_from_slice(format!("{key}\n").as_bytes());
+            require(bytes.len() <= crate::LIMIT, "oversized children.order")?;
+            let mut temp = tempfile::NamedTempFile::new_in(dir)?;
+            temp.as_file().set_permissions(identity.permissions())?;
+            temp.write_all(&bytes)?;
+            temp.as_file().sync_all()?;
+            let (current, current_identity) = read_local_file(&order)?;
+            require(
+                same_file(identity, &current_identity) && current == *before,
+                "parent children.order changed; retain the new node and retry after inspection",
+            )?;
+            symlink(format!("../../{key}"), dir.join("children").join(&key))?;
+            temp.persist(&order)?;
+            fs::File::open(dir)?.sync_all()?;
+        } else {
+            symlink(format!("../nodes/{key}"), path.join("trees").join(&key))?;
         }
-        let to = path.join(rel);
-        match entry {
-            Entry::Dir => fs::create_dir(&to)?,
-            Entry::Link(p) => symlink(p, &to)?,
-            Entry::File(bytes) if before.inventory.contains_key(rel) => {
-                let mut f = tempfile::NamedTempFile::new_in(to.parent().ok_or("missing parent")?)?;
-                f.write_all(bytes)?;
-                f.persist(&to)?;
+        Ok(())
+    })();
+    result.map_err(|error| format!(
+        "creation incomplete at {}; parent: {}; preserve this draft and inspect node, relationship link and children.order before retrying: {error}",
+        node.display(), parent.as_deref().unwrap_or("tree root")
+    ))?;
+    // Status propagation and graph acceptance belong to submit, not file creation.
+    Ok(json!({"id":key,"path":node.join("node.md"),"parent":parent,"committed":false}))
+}
+
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    (a.dev(), a.ino(), a.len(), a.mtime(), a.mtime_nsec(), a.ctime(), a.ctime_nsec())
+        == (b.dev(), b.ino(), b.len(), b.mtime(), b.mtime_nsec(), b.ctime(), b.ctime_nsec())
+}
+
+/// Bounded ordinary file access: reject symlinks, hardlinks and files changed
+/// during the read without parsing, tokenizing or certifying the authored store.
+fn read_local_file(path: &Path) -> Result<(Vec<u8>, fs::Metadata)> {
+    let named = fs::symlink_metadata(path)?;
+    let file = fs::OpenOptions::new().read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)?;
+    let identity = file.metadata()?;
+    require(identity.is_file() && identity.nlink() == 1 && identity.len() <= crate::LIMIT as u64
+        && same_file(&named, &identity), "unsafe or oversized authored file")?;
+    let mut bytes = Vec::new();
+    file.take(crate::LIMIT as u64 + 1).read_to_end(&mut bytes)?;
+    require(bytes.len() <= crate::LIMIT, "oversized authored file")?;
+    require(same_file(&identity, &fs::symlink_metadata(path)?), "authored file changed during read")?;
+    Ok((bytes, identity))
+}
+
+fn file_home(path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    require(!absolute.as_os_str().as_encoded_bytes().iter().any(|b| matches!(b, b'\n' | b'\r' | 0))
+        && fs::canonicalize(&absolute)? == absolute,
+        "home must have a canonical path without symlinks, aliases or line breaks")?;
+    crate::real_dir(&absolute)?;
+    crate::real_dir(&absolute.join("nodes"))?;
+    Ok(absolute)
+}
+
+/// Effective selection is worktree-local. Merely enabling worktreeConfig in the
+/// shared repository does not make the complete normal home sparse.
+pub(crate) fn sparse_checkout(path: &Path) -> Result<bool> {
+    let output = crate::checked_publication::run_command(reader_command(path,
+        &["config", "--bool", "--get", "core.sparseCheckout"]))?;
+    require(matches!(output.status.code(), Some(0 | 1)), "Git sparse configuration unavailable")?;
+    Ok(output.stdout == b"true\n")
+}
+
+/// Native expansion changes selection at the same revision, never pulls main or
+/// creates links into another writable checkout. Existing edits stay with Git.
+pub(crate) fn materialize_nodes(path: &Path, ids: &[String]) -> Result<()> {
+    if ids.is_empty() || !sparse_checkout(path)? { return Ok(()); }
+    require(ids.iter().all(|id| crate::uuid(id)), "invalid materialization UUID")?;
+    let names: Vec<_> = ids.iter().map(|id| format!("nodes/{id}")).collect();
+    let mut args = vec!["sparse-checkout", "add", "--skip-checks", "--"];
+    args.extend(names.iter().map(String::as_str));
+    reader_git(path, &args)?;
+    Ok(())
+}
+
+/// Resolve from Git's logical inventory: omitted tracked nodes and new authored
+/// files both participate; actual unstaged/staged deletions do not.
+fn resolve_node(home: &Path, prefix: &str) -> Result<String> {
+    require(!prefix.is_empty() && prefix.len() <= 36 && prefix.bytes().enumerate().all(|(i, b)| {
+        if [8, 13, 18, 23].contains(&i) { b == b'-' }
+        else { b.is_ascii_digit() || (b'a'..=b'f').contains(&b) }
+    }), "invalid UUID prefix")?;
+    if crate::uuid(prefix) && fs::symlink_metadata(home.join("nodes").join(prefix).join("node.md")).is_ok() {
+        crate::real_dir(&home.join("nodes").join(prefix))?;
+        return Ok(prefix.to_owned());
+    }
+    let selection = format!("nodes/{prefix}*");
+    let output = crate::checked_publication::run_command(reader_command(home,
+        &["ls-files", "-v", "-z", "--cached", "--others", "--exclude-standard", "--", &selection]))?;
+    require(output.status.success(), "Git node inventory unavailable")?;
+    let mut found = std::collections::BTreeSet::new();
+    for entry in output.stdout.split(|b| *b == 0).filter(|e| !e.is_empty()) {
+        require(entry.len() >= 3, "invalid Git node inventory")?;
+        let relative = std::str::from_utf8(&entry[2..])?;
+        let parts: Vec<_> = relative.split('/').collect();
+        if let ["nodes", id, "node.md"] = parts.as_slice() {
+            if crate::uuid(id) && id.starts_with(prefix)
+                && (entry[0] == b'S' || fs::symlink_metadata(home.join(relative)).is_ok()) {
+                found.insert((*id).to_owned());
             }
-            Entry::File(bytes) => new_file(&to, bytes)?,
         }
     }
-    require(
-        Store::read(path)?.inventory == after.inventory,
-        "creation incomplete; retain and inspect private draft",
-    )?;
-    normalized.report_reopenings();
-    Ok(
-        json!({"id":key,"path":fs::canonicalize(path)?.join("nodes").join(&key).join("node.md"),"parent":parent,"committed":false}),
-    )
+    require(found.len() == 1, "UUID prefix absent or ambiguous")?;
+    Ok(found.into_iter().next().ok_or("UUID prefix absent or ambiguous")?)
 }
 
-/// Copy-only snapshots need no new live-source capability. Creation still checks
-/// the live draft before applying staged bytes and again after application.
-fn checked_snapshot(policy: &Policy, path: &Path, before: Option<&Path>) -> Result<Store> {
-    let (report, capture) = candidate_validation::validate_with_capture(
-        policy,
-        &candidate_validation::Request {
-            store: path.to_owned(),
-            before: before.map(Path::to_owned),
-            explicit: BTreeSet::new(),
-            expected_version: None,
-            pause_before_accept: None,
-        },
-        None,
-    );
-    require(report.status == "current", &report.cli_lean()?)?;
-    Ok(capture
-        .ok_or("missing validated creation snapshot")?
-        .into_snapshot())
-}
-
-pub fn instructions(policy: &Policy, path: &Path) -> Result<Value> {
-    let report = check(policy, path, None, BTreeSet::new())?;
-    let store = Store::read(path)?;
-    require(
-        report.version.as_deref() == Some(&candidate_validation::version(&store)),
-        "source changed",
-    )?;
-    let entry = store.resolve(ENTRY)?;
-    let children = &store.children[&entry];
-    require(
-        children.iter().map(String::as_str).collect::<Vec<_>>() == PIPELINE,
-        "instruction identities/order unavailable",
-    )?;
-    // The entry path already carries its own UUID, so the ordinary return names one file
-    // instead of repeating every pipeline identity.
+pub fn instructions(_policy: &Policy, path: &Path) -> Result<Value> {
+    use sha2::{Digest, Sha256};
+    let home = file_home(path)?;
+    let dir = home.join("nodes").join(ENTRY);
+    crate::real_dir(&dir)?;
+    let (entry, _) = read_local_file(&dir.join("node.md"))?;
+    std::str::from_utf8(&entry)?;
+    let (order, _) = read_local_file(&dir.join("children.order"))?;
+    std::str::from_utf8(&order)?;
+    let mut hash = Sha256::new();
+    hash.update((entry.len() as u64).to_le_bytes());
+    hash.update(&entry);
+    hash.update(&order);
     Ok(json!({
-        "version": report.version,
-        "path": store.path.join("nodes").join(&entry).join("node.md"),
+        "version": format!("{:x}", hash.finalize()),
+        "version_scope": "onboarding_entry_and_order",
+        "path": dir.join("node.md"),
     }))
 }
 
-pub fn read(policy: &Policy, path: &Path, prefix: &str) -> Result<String> {
-    let report = check(policy, path, None, BTreeSet::new())?;
-    let store = Store::read(path)?;
-    require(
-        report.version.as_deref() == Some(&candidate_validation::version(&store)),
-        "source changed",
-    )?;
-    let key = store.resolve(prefix)?;
-    let Entry::File(bytes) = &store.inventory[&PathBuf::from(format!("nodes/{key}/node.md"))]
-    else {
-        return Err("missing authored node".into());
+pub fn read(_policy: &Policy, path: &Path, prefix: &str) -> Result<String> {
+    let home = file_home(path)?;
+    let key = resolve_node(&home, prefix)?;
+    let relative = format!("nodes/{key}/node.md");
+    let destination = home.join(&relative);
+    let bytes = match fs::symlink_metadata(&destination) {
+        Ok(_) => read_local_file(&destination)?.0,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && sparse_checkout(&home)? => {
+            let inventory = reader_git(&home, &["ls-files", "-v", "--", &relative])?;
+            require(inventory == format!("S {relative}"), "node was deleted, not sparsely omitted")?;
+            let stage = reader_git(&home, &["ls-files", "--stage", "--", &relative])?;
+            let (metadata, name) = stage.split_once('\t').ok_or("missing Git node entry")?;
+            let fields: Vec<_> = metadata.split_whitespace().collect();
+            require(name == relative && fields.len() == 3 && fields[2] == "0"
+                && matches!(fields[0], "100644" | "100755"), "unsafe Git node entry")?;
+            let object = format!(":{relative}");
+            let len: u64 = reader_git(&home, &["cat-file", "-s", &object])?.parse()?;
+            require(len <= crate::LIMIT as u64, "oversized Git node")?;
+            let output = crate::checked_publication::run_command(reader_command(&home, &["show", &object]))?;
+            require(output.status.success() && output.stdout.len() <= crate::LIMIT, "missing or oversized Git node")?;
+            output.stdout
+        }
+        Err(error) => return Err(error.into()),
     };
-    require(
-        crate::read_regular(&store.path.join(format!("nodes/{key}/node.md")))? == *bytes,
-        "source changed",
-    )?;
-    Ok(std::str::from_utf8(bytes)?.to_owned())
+    Ok(String::from_utf8(bytes)?)
 }
 
-pub fn refresh(policy: &Policy, path: &Path) -> Result<index::View> {
-    let view = index::refresh(policy, path, None, index::Mode::Incremental, None)?;
-    if view.status != "current" {
-        return Err(view.refusal.clone()
-            .ok_or("index not current; inspect authored files, do not use stale results")?.into());
-    }
-    Ok(view)
+pub fn refresh(policy: &Policy, path: &Path) -> Result<Value> {
+    let (version, nodes) = index::with_current(policy, path, |tx, _| {
+        Ok(tx.query_row("SELECT count(*) FROM nodes", [], |r| r.get::<_, i64>(0))?)
+    })?;
+    Ok(json!({"status":"current", "version":version, "nodes":nodes}))
 }
 
 struct SqlResult {
@@ -2441,13 +2414,12 @@ struct SqlResult {
 
 /// Run one readonly statement inside the existing same-version transaction.
 fn query_sql(policy: &Policy, path: &Path, sql: &str) -> Result<SqlResult> {
-    let (view, result) = index::with_query(
+    let (version, (columns, rows)) = index::with_current(
         policy,
         path,
-        None,
-        index::Mode::Incremental,
-        None,
-        |tx, _, _| {
+        |tx, _| {
+            // Bound native expression/row allocation as well as returned rows.
+            tx.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 8 * 1024 * 1024)?;
             let mut stmt = tx.prepare(sql)?;
             require(
                 stmt.readonly() && stmt.column_count() > 0,
@@ -2462,6 +2434,7 @@ fn query_sql(policy: &Policy, path: &Path, sql: &str) -> Result<SqlResult> {
             let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
             let mut rows = stmt.query([])?;
             let mut out = Vec::new();
+            let mut encoded_bytes = columns.iter().map(String::len).sum::<usize>();
             while let Some(row) = rows.next()? {
                 require(out.len() < 1000, "SQL result exceeds 1000 rows; add LIMIT")?;
                 let mut values = Vec::new();
@@ -2469,6 +2442,16 @@ fn query_sql(policy: &Policy, path: &Path, sql: &str) -> Result<SqlResult> {
                     use rusqlite::types::ValueRef;
                     let value = row.get_ref(i)?;
                     require(!matches!(value, ValueRef::Blob(_)), "blob results unsupported")?;
+                    encoded_bytes += match value {
+                        ValueRef::Text(bytes) => 3 + bytes.iter().map(|byte| match byte {
+                            b'"' | b'\\' | b'\n' | b'\r' | b'\t' | 8 | 12 => 2,
+                            0..=31 => 6,
+                            _ => 1,
+                        }).sum::<usize>(),
+                        _ => 33,
+                    };
+                    require(encoded_bytes <= 4 * 1024 * 1024,
+                        "SQL result exceeds 4 MiB output budget; select fewer columns or add LIMIT")?;
                     // Preserve SQLite's numeric storage class until the presentation boundary.
                     values.push(value.try_into()?);
                 }
@@ -2477,12 +2460,7 @@ fn query_sql(policy: &Policy, path: &Path, sql: &str) -> Result<SqlResult> {
             Ok((columns, out))
         },
     )?;
-    if view.status != "current" {
-        return Err(view.refusal
-            .ok_or("SQL source changed; retry from current authored files")?.into());
-    }
-    let (columns, rows) = result.ok_or("missing SQL result")?;
-    Ok(SqlResult { version: view.version, columns, rows })
+    Ok(SqlResult { version: Some(version), columns, rows })
 }
 
 /// Internal JSON diagnostics retain their existing columns/positional-rows contract.

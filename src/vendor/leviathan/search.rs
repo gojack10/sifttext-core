@@ -9,7 +9,7 @@
 use crate::{Result, card, leviathan_query::Query, relevance};
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct Document<'a> {
     pub id: &'a str,
@@ -136,6 +136,125 @@ pub fn maintain(tx: &Transaction<'_>, documents: &[Document<'_>]) -> Result<BTre
         );
     }
     Ok(by_rowid)
+}
+
+/// Native full-worktree maintenance. The source ledger, not a complete reread of
+/// stored bodies, selects changed inputs. Acceptance validation remains separate.
+pub(crate) fn initialize_incremental(tx: &Transaction<'_>) -> Result<()> {
+    tx.execute_batch("CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(title,body,names,tags, tokenize='porter unicode61');
+        CREATE TABLE IF NOT EXISTS search_ids (rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);")?;
+    Ok(())
+}
+pub(crate) fn remove_one(tx: &Transaction<'_>, id: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM search_fts WHERE rowid=(SELECT rowid FROM search_ids WHERE id=?1)",
+        [id],
+    )?;
+    tx.execute("DELETE FROM search_ids WHERE id=?1", [id])?;
+    Ok(())
+}
+pub(crate) fn maintain_one(tx: &Transaction<'_>, id: &str, title: &str, body: &str) -> Result<()> {
+    let title = title.trim();
+    let old: Option<(i64, String, String)> = tx.query_row(
+        "SELECT search_ids.rowid,title,body FROM search_ids JOIN search_fts ON search_fts.rowid=search_ids.rowid WHERE id=?1",
+        [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+    if old
+        .as_ref()
+        .is_some_and(|(_, t, b)| t == title && b == body)
+    {
+        return Ok(());
+    }
+    tx.execute("INSERT OR IGNORE INTO search_ids(id) VALUES (?1)", [id])?;
+    let rowid: i64 = tx.query_row("SELECT rowid FROM search_ids WHERE id=?1", [id], |r| {
+        r.get(0)
+    })?;
+    tx.execute("DELETE FROM search_fts WHERE rowid=?1", [rowid])?;
+    tx.execute(
+        "INSERT INTO search_fts(rowid,title,body,names,tags) VALUES (?1,?2,?3,?4,?4)",
+        params![rowid, title, body, group_token("permitted")],
+    )?;
+    Ok(())
+}
+
+/// Same accepted Leviathan query/ranking/snippet pipeline over persisted input.
+/// Permissions and boosts remain invocation-local. Only page bodies are decoded.
+pub(crate) fn retrieve_indexed(
+    tx: &Transaction<'_>,
+    scope: &BTreeSet<String>,
+    boosts: &BTreeMap<String, f64>,
+    query: &str,
+    limit: usize,
+    offset: usize,
+    title_weight: f64,
+) -> Result<(i64, Vec<Card>)> {
+    let permitted = serde_json::to_string(scope)?;
+    let parsed = Query::parse(query);
+    let limit = limit.clamp(1, relevance::MAX_LIMIT);
+    let mut total = 0;
+    let page = if parsed.is_empty() {
+        total = tx.query_row(
+            "SELECT count(*) FROM search_ids WHERE id IN (SELECT value FROM json_each(?1))",
+            [&permitted],
+            |r| r.get(0),
+        )?;
+        tx.prepare("SELECT rowid FROM search_ids WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY id DESC LIMIT ?2 OFFSET ?3")?
+            .query_map(params![permitted,limit as i64,offset as i64], |r| Ok((r.get::<_, i64>(0)?,None,None)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    } else {
+        let positive = parsed.fts().unwrap();
+        let mut expr = format!(
+            "tags : \"{}\" AND {{title body}} : ({positive})",
+            group_token("permitted")
+        );
+        if let Some(negative) = parsed.not_fts() {
+            expr = format!("({expr}) NOT ({negative})");
+        }
+        let overfetch = ((offset + limit) * 10).max(100) as i64;
+        let candidates = tx
+            .prepare(
+                "WITH hits AS MATERIALIZED (
+            SELECT rowid,bm25(search_fts,?4,1.0,0.5,0.0) AS score FROM search_fts
+            WHERE search_fts MATCH ?1 AND rowid IN (
+                SELECT rowid FROM search_ids WHERE id IN (SELECT value FROM json_each(?3))))
+            SELECT rowid,score,count(*) OVER () FROM hits ORDER BY score LIMIT ?2",
+            )?
+            .query_map(params![expr, overfetch, permitted, title_weight], |r| {
+                total = r.get(2)?;
+                Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let hits = candidates
+            .into_iter()
+            .map(|(rowid, bm25)| {
+                let id: String =
+                    tx.query_row("SELECT id FROM search_ids WHERE rowid=?1", [rowid], |r| {
+                        r.get(0)
+                    })?;
+                Ok(relevance::Hit {
+                    rowid,
+                    bm25,
+                    boost: *boosts.get(&id).unwrap_or(&1.0),
+                    date: None,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        relevance::page(&hits, limit, offset)
+            .results
+            .into_iter()
+            .map(|r| (r.rowid, Some(r.rank), Some(r.relevance)))
+            .collect()
+    };
+    let highlight = parsed.highlight();
+    let cards = page.into_iter().map(|(rowid,rank,relevance)| {
+        let (id,title,body): (String,String,String) = tx.query_row(
+            "SELECT id,title,body FROM search_ids JOIN search_fts ON search_fts.rowid=search_ids.rowid WHERE search_ids.rowid=?1",
+            [rowid], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+        let mut text = card::build(&id,&title,&body,&highlight,300);
+        let shown = text.title.iter().cloned().collect::<Vec<_>>();
+        text.snippet = crate::snippet::select(&[body],&highlight,&shown,300);
+        Ok(Card { text, group: "permitted", rank, relevance })
+    }).collect::<Result<Vec<_>>>()?;
+    Ok((total, cards))
 }
 
 pub fn retrieve(

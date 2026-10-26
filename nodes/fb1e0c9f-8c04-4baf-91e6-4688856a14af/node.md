@@ -7,95 +7,67 @@ see_also: [{"target":"dcdd97b3-9557-41e3-b7cb-1f6f9744267d","reason":"Required r
 scope: "Carry an authorized local edit through proposal, private Git work, validation, review, publication and recovery without overwriting another owner."
 warnings: "Cooperative isolation, not an OS sandbox. One publisher owns accepted knowledge at a time; no force, reset, automatic push, or overwriting another worktree."
 ---
-## Proposal and permission
+## Authority and private draft
 
-The human-facing agent recovers the assignment and reads affected nodes, their owner and necessary constraints. A bounded worker preserves its assigned fence and returns to its assigning agent. SiftText Commit remains the write discipline: reconstruct the intended tree delta, repair it, obtain explicit approval or apply the explicit standing write grant within its stated scope, persist only that authorized delta, reconcile affected state, then verify actual landed fields. A general request to discuss an improvement is not persistence permission. A concrete already-authorized creation/edit need not be approved again.
+Follow SiftText Commit and its required reads before knowledge edits. The human-facing agent reconstructs and reviews the affected delta, applies explicit approval or an explicit standing write grant within its scope, and verifies affected meaning. A concrete already-authorized edit needs no repeated approval. A bounded worker returns its assigned candidate to its assigning agent; it does not infer publication or push permission. The human may stop or reshape the undertaking without waiving unrelated permissions or preservation checks.
 
-Before new nontrivial content is persisted, show the affected tree with unchanged context and operation markers (`[+]` create, `[!]` edit, `[→]` move, `[←]` link, `[-]` delete) and effective statuses. Show exact instruction text or a readable diff, destinations and consequences. Separate proposed decisions from observations. Check ownership, independently meaningful questions, stable summaries, links, statuses and evidence; preserve failed attempts and unaffected work. Do not silently expand scope. For an instruction pipeline, walk entry, required reads, roles, action, output, return, failure and human-override paths before asking approval.
-
-Read the local SiftText Commit hub and its required children with ordinary file tools before edits, and applicable instructions in the assigned project. Before staging/committing, read [[Git Commit Skill|dcdd97b3-9557-41e3-b7cb-1f6f9744267d]] in this repository. This package does not authorize remote writes, replace a richer local project method or grant publication/push permission. Report missing authority rather than inventing it; the workflow below requires no hosted access.
-
-## Private draft and fixed baseline
-
-Set `home` to the accepted knowledge repository. Inspect status, worktrees, current branch and HEAD. Preserve any unknown/dirty work. Confirm who may publish; never assume another agent's ownership has expired. Continue an existing owned draft for the same undertaking; allocate only when a new draft is needed. After an uncertain allocation, inspect registered worktrees and establish ownership before retrying; preserve incomplete or unknown drafts.
+Set `home` to the independent knowledge repository, not a software checkout. Inspect status, worktrees and ownership; preserve unknown or dirty work. Reuse an owned draft for the same undertaking. Allocate only when editing needs a new draft:
 
 ```sh
 git -C "$home" status --short
 git -C "$home" worktree list
-git -C "$home" rev-parse HEAD
 sifttext worktree "$home"
 ```
 
-Use the returned `worktree` as `wt` and its `base` as `base_sha`; do not edit accepted authored knowledge in the home. The returned `artifact_home` names the durable home for node-owned task files; read Knowledge Layout's Node artifacts section before placing them. Artifact contents are local user work, not authored knowledge or disposable caches. Preserve a detached baseline of that exact commit for transition checks:
+Use the returned `worktree` as `wt` and immutable `base` SHA as `base_sha`. No separate baseline checkout is needed. Allocation starts from accepted main even when the normal home is dirty or behind; it does not change that home. After uncertain allocation, inspect registered worktrees before retrying. Read Knowledge Layout's Node artifacts section before placing task files: `artifact_home` is durable, `wt` is disposable.
+
+## Edit, inspect and commit
+
+Edit ordinary native files only in `wt`. The optional `create` helper supplies UUID/layout/relationship bookkeeping, not collection validation or global status normalization. Native files with valid UUIDs and layout do not require that helper. Drafts may be incomplete while editing. Create targets before references, preserve complete child ordering and stable UUIDs, and delete last. Never overwrite another contributor's paths or replace a full child list with a partial one.
+
+Before staging/committing, read [[Git Commit Skill|dcdd97b3-9557-41e3-b7cb-1f6f9744267d]]. Inspect the actual files and complete diff, stage only intended authored paths, and commit:
 
 ```sh
-base=$(mktemp -d "${TMPDIR:-/tmp}/sifttext-base.XXXXXXXX")
-rmdir "$base"
-git -C "$home" worktree add --detach "$base" "$base_sha"
-```
-
-Apply only the approved delta in `wt`. Use CLI creation where useful and ordinary native file edits otherwise. Create structure before references/content depending on it, set terminal statuses only when justified, and delete last. Preserve stable UUIDs. Never replace an existing ancestor's full child list with a partial starter's list.
-
-After edits, run native status normalization against the fixed baseline, then the complete candidate check:
-
-```sh
-sifttext normalize "$base" "$wt"
-sifttext check "$wt" "$base"
-```
-
-For an explicitly approved status transition, append each full affected UUID to BOTH commands. Do not pass every edited node as explicit: an authored edit activates an existing `not_examined` node automatically, but changing an existing resolved leaf to `in_progress` requires its explicit UUID. Resolved ancestors reopen automatically only when an active direct child blocks them. Nodes absent from that baseline are treated as creation, not an edit; a newly created leaf can remain `not_examined` even with a body. A requested resolution with active children must fail. Normalization reports `unchanged` when it writes nothing, or `normalized` with each actual change's `id`, `from` and `to`, plus removed reason field names without their former contents. These are this invocation's writes, not proof the draft is unchanged or fully validated. On incomplete normalization, retain the draft and inspect reported applied changes and the uncertain write before retrying. Review normalization's actual changes; it is not semantic approval. `check` covers graph, authored fields, statuses/transitions, token ceilings and source consistency, but cannot judge truth or grant permission.
-
-If a normalization or check fails, keep the draft and loop: read the error, repair its cause within the approved scope, normalize and check again. Repeat until both pass, without waiting for a new request. Stop and report the exact blocker only when the next step needs authority or a human decision the grant does not cover, the path is unsafe, the failure lies outside the draft (for example a changed accepted home or source identity), or the same error recurs after a repair that changed the draft. Never skip the check, change frozen limits, or force a submission. A checked submit that refuses is a failed check: inspect its receipt and loop on the same terms. For a small unintended uncommitted edit to a file already tracked at HEAD, after inspecting the diff, restore only your named file with `git -C "$wt" restore --source=HEAD -- nodes/UUID/node.md`. For a new untracked node, HEAD has no file to restore: reverse your own edit with ordinary file tools or a saved pre-edit copy, then recheck. Do not restore unrelated paths or erase untracked work blindly.
-
-## Commit and handoff
-
-Inspect the full diff, normalize/check again after any change, and stage only intended authored paths. Never stage `.sifttext/`, generated metadata or outlines. Use Scoped Commit titles (`knowledge: describe the change`, under 100 characters); no automatic push.
-
-```sh
-git -C "$wt" diff --stat
-git -C "$wt" diff
 git -C "$wt" status --short
+git -C "$wt" diff
 # git -C "$wt" add -- <the inspected authored paths>
 git -C "$wt" diff --cached --check
 # git -C "$wt" commit -m 'knowledge: describe the approved change'
+candidate=$(git -C "$wt" rev-parse HEAD)
 ```
 
-Record the candidate SHA and actual check receipts. A worker stops here and returns the SHA, paths, baseline, evidence and open issues. Do not call a private candidate published.
+Never stage `.sifttext/`, generated metadata/outlines or task artifacts. A worker returns the candidate SHA, base SHA, paths, reviewed meaning and open issues here unless publication was separately authorized. A private commit is not accepted knowledge.
 
-## Checked submission, only when authorized
+## Submit the exact combined candidate
 
-The publisher checks ownership and clean home/draft state, then rechecks the committed candidate against its fixed baseline. Use the canonical independent home with its reader detached; initialized homes already satisfy this. A checked-out accepted branch or unsupported reader must be resolved with its owner before submission. Current accepted main may have advanced through another checked submission. Stop editing the draft during submission and coordinate any other home writer.
+The authorized publisher coordinates writers, preserves the original arguments, and submits the clean committed draft:
 
 ```sh
-candidate=$(git -C "$wt" rev-parse HEAD)
-sifttext check "$wt" "$base"
 sifttext submit "$home" "$wt" "$candidate" "$base_sha"
 ```
 
-Repeat approved explicit UUID arguments on `submit` for approved status transitions. Core combines current accepted main in this same submitted worktree, checks the exact combined graph, authored fields, statuses, token limits and source identity, refreshes derived retrieval, and conditionally advances accepted history. A fast-forward reuses the submitted commit. Divergence creates an integration commit preserving its selected author/co-author policy from Git Commit Skill. Existing committed history keeps its attribution.
+Append only full UUIDs for explicitly authorized status requests. Do not list every edited node: editing an existing `not_examined` node activates it automatically; reopening an existing resolved leaf requires its explicit UUID. Resolved parents reopen automatically when an active direct child blocks them. Nodes absent from the base are creations; a new leaf may remain `not_examined`. Resolution with active children must fail.
 
-Success completes the save: the normal home matches accepted history, SQLite/search/complete LEAN outlines match that knowledge, and the submitted worktree and temporary branch are removed. Require `status:saved` for new acceptance or `status:recovered` for a successful retry, the exact `accepted` commit and knowledge `version`, `home`, and `worktree_removed:true`. No separate advance or index is needed after a completed submit. Inspect those identities, then read from `home`:
+Submit combines current accepted main with the candidate in the draft, performs mechanical status normalization, and gates the exact combined Git candidate on Bend structural laws, required fields, status/transition rules and the 5000 `o200k_base` body-token ceiling. It then conditionally advances accepted main. Normalization may create an attributed commit; integration retains committed history and its attribution. A changed main, conflict or failed rule returns to ordinary Git repair, review, commit and resubmission. Do not bypass the gate or change frozen limits. There is no standalone `check` command or required preflight normalization. Optional `normalize BEFORE WORKTREE [EXPLICIT_UUID ...]` is for deliberate mechanical editing with a known baseline directory, not acceptance; inspect its actual writes and any partial failure before retrying.
 
-```sh
-git -C "$home" rev-parse HEAD refs/heads/main
-sifttext search "$home" 'the saved question'
-sifttext worktree "$home"  # Fresh draft for the next approved contribution.
-```
+The receipt reports `semantic_check:deferred`, not semantic approval. Agents remain responsible for evidence, meaning and authority. Raw Git can bypass this cooperative workflow; it is not OS enforcement.
 
-Do not keep editing the old `wt`; allocate a new draft for the next edit. Remove only your own clean disposable baseline after its checks and result are retained. Other agents' drafts remain intact.
+Successful customer receipts are `status:saved` or `status:recovered`, with `accepted`, knowledge `version`, `home` and `worktree_removed:true`. Internal `current` is not a substitute for inspecting the customer completion receipt. Completed submission advances the normal home, refreshes SQLite/search/outlines and removes only the saved draft and its temporary branch. Verify accepted identities and affected source from `home`; no ritual `advance` or `index` is needed. Allocate a new draft only for the next authorized edit.
 
-### Refusal and interrupted recovery
+## Refusal, repair and recovery
 
-A file conflict remains in the submitted draft for repair. Inspect its Git conflict and the affected nodes; resolve within the approved intent, or ask the owner when meanings conflict. Finish the draft's Git merge, run fixed-baseline normalization/checks and commit any resulting changes, then submit its actual clean HEAD. Non-chat artifacts in a private draft also refuse before publication or cleanup; preserve them and follow Knowledge Layout's deliberate durable-home placement procedure, not a force-add or deletion. Invalid combined knowledge, changed source/ref identities, dirty or unregistered drafts, unrelated baselines and unsafe paths also refuse. Preserve unaccepted work and inspect the receipt before choosing repair; never force, reset accepted history or bypass native checks.
+Preserve the draft, diagnostics, original submit arguments and Core's pending journals. A failure may mean `not_accepted`, `accepted_incomplete` or `unknown`; an exit failure does not prove nothing was saved. If main is already accepted but a dirty home, retrieval refresh or cleanup blocks finishing, report the accepted SHA separately and preserve the dirty work. Never reset accepted history or manually delete journals/caches to clear a refusal.
 
-An interruption can leave a prepared combined draft before acceptance, or accepted history with home refresh/cleanup unfinished. A refusal reports `not_accepted`, `accepted_incomplete`, or `unknown` when acceptance cannot be established; finishing errors identify the checked accepted commit when known. Exit failure or suppressed diagnostics do not establish that nothing was saved. Preserve the original submit arguments and Core's pending-operation records in the home's Git directory. Retry that exact `submit` so Core can recheck recorded preparation or finish accepted home/derived recovery and cleanup. An already-accepted revision is recovered without another publication. Until completion returns, report the accepted revision and unfinished home/cleanup separately. Preserve a dirty or unexpectedly changed home/draft and return its refusal to the owner.
+For interruption or recorded preparation, retry the original arguments so Core can resume preparation or finish already-accepted work without republishing it. For an unaccepted candidate needing changes, inspect the actual prepared draft tip and Git state, repair within the grant, commit the repair, then resubmit its actual explicit commit with the original base and intended explicit UUIDs. Follow pending-request diagnostics if that request cannot yet proceed; do not invent acceptance or erase custody records. A repair must preserve prior prepared work, not reset back over it. Revisit meanings or ask the owner only when the repair exceeds existing authority.
 
-`accepted HOME` returns a separate checked detached reading view: `status:ready`, `accepted`, `version`, `view`, and `home_advanced:false`. Read from that `view`; the normal home has not moved. `advance HOME` explicitly refreshes an eligible clean detached home and returns `status:advanced`, or `status:current` when already there, with `accepted`, `version`, and `home`. Success requires verified derived retrieval. It retires only its own temporary checked view when safe; other retained views and unknown/edited copies remain untouched. A finishing error can follow reader movement: preserve files and retry without rollback. Normal successful `submit` completes home advancement itself. For an independently requested `advance`, inspect ownership and status first; preserve dirty, divergent, branch-owned, linked or unsafe readers. Core's cooperative locks do not prevent arbitrary external Git writers.
+Resolve Git conflicts in the retained draft, inspect affected nodes, finish the native merge and commit. Invalid fields, missing reasons, relationships or excessive body tokens need authored repair, not truncated evidence or cache edits. Non-chat artifacts in a draft refuse publication/cleanup: preserve them and follow Knowledge Layout's deliberate durable-home placement procedure. Inspect an uncertain partial operation before retrying so successful work is not duplicated. Missing authority, unsafe paths or unavailable external prerequisites stop dependent work; continue independent permitted work.
 
-## Recovery and completion
+## Accepted reading and completion
 
-For a lost/stale index run `sifttext index "$store"`; it rebuilds from authored files without importing knowledge. Do not delete an unknown cache or restore source files as a speculative repair. Inspect source/check errors first.
+`accepted HOME` returns a separate checked detached view (`status:ready`, `accepted`, `version`, `view`, `home_advanced:false`). Read that view when the normal home cannot move. `advance HOME` directly advances an eligible clean detached reader to already-accepted main and refreshes retrieval; it does not resubmit knowledge. Inspect ownership first. Dirty, divergent, branch-owned, linked or unsafe readers are preserved. A finishing failure can follow reader movement: retain files and retry without rollback. Only verified invocation-owned clean views may be retired; unknown or edited views remain.
 
-To undo accepted work, create a new private worktree and a new detached baseline at the then-accepted HEAD, inspect the offending commit, use a reviewed `git revert --no-commit SHA`, then normalize, validate and publish a new compensating commit against that baseline through this procedure. Never reset accepted history. Restore content deliberately; status normalization may correctly differ from historical status. Git may leave ignored outlines in deleted node directories; Core treats directories containing only known safe generated files as derived residue, not authored nodes. It does not delete them or conceal unrelated resources/unsafe links; those still require investigation on rejection. Successful submission removes its completed draft; preserve blocked/dirty drafts for continuation and remove only your own clean disposable baselines after their result is retained.
+For stale retrieval use `index STORE`, which refreshes the current parseable draft without certifying publication. Generated-only residue is retired only with verified cache ownership and safe native paths; unknown, corrupt, unsafe or artifact-bearing directories remain for investigation. Never delete arbitrary leftovers to obtain a clean result.
 
-Return actual file/relationship changes, commits, check output, derived version and any failures. Verify landed fields and references against the approved delta, including status side effects and affected consumers. A check pass, a commit, publication and independent use are separate claims. Human permission never proves that a write occurred.
+To undo accepted work, allocate a new draft at then-accepted main, inspect the offending commit, apply a reviewed `git revert --no-commit SHA`, inspect/stage/commit the intended authored changes and submit the compensating commit. Never reset main. Rehome durable artifacts deliberately before removing their owner; empty artifact containers are still protected.
+
+Return actual paths, relationship/status changes, candidate/accepted identities, customer receipts and remaining recovery work. Verify landed fields and affected continuation against the authorized delta. A diff review, commit, deterministic gate, accepted save and fresh-agent use are distinct evidence; a text walkthrough proves no behavioral improvement.

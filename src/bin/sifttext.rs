@@ -1,4 +1,5 @@
 mod account;
+mod sync;
 
 use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
@@ -56,15 +57,18 @@ sifttext init HOME                         Copy the embedded first-party KB (fro
 sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
 sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
                                           Existing recognized home/edits always unchanged
-sifttext instructions [STORE]              Print checked file-first version and entry path
-sifttext read STORE UUID [-y]              Check source; -y prints exact node.md above 15000 tokens
+sifttext instructions [STORE]              Print onboarding entry/order version and entry path
+sifttext read STORE UUID [-y]              Read node.md; -y prints exact bytes above 15000 tokens
 sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
                                           Check/save in draft, refresh HOME, remove completed draft
 sifttext accepted REPO [-y]                Checked separate view; does not advance normal home
 sifttext advance HOME                      Explicit ff-only clean home reader + derived refresh
-sifttext worktree HOME                     Allocate a private draft; prints worktree and durable artifact_home
+sifttext worktree HOME                     Allocate a sparse private draft; prints worktree and artifact_home
 sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
                                           Create a tree root or child; never commits
+sifttext sync enable|disable|status|once|run HOME
+                                          Opt-in accepted knowledge transport; no runner installed
+                                          Status/instructions stay local; login required only for transfer
 sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
                                           Copy and Git-checkpoint a validated Pi session
 sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
@@ -72,11 +76,9 @@ sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
 sifttext session-backup HOME                 Push the opted-in archive to its configured Git remote
 sifttext session-restore HOME ARCHIVE_ROOT Rebuild links; clone configured backup if archive is absent
 sifttext session-retention-config HOME  Read local session-retention/backup settings (default off)
-sifttext check STORE [BEFORE [EXPLICIT_UUID ...]] [-y]
-                                          Complete candidate check; -y allows >15000 output tokens
 sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]
                                           Apply native status activation/reopening; -y allows >15000 receipt tokens
-sifttext index STORE                       Refresh derived SQLite and LEAN outlines
+sifttext index STORE [--repair]            Refresh SQLite/outlines; --repair verifies/rebuilds outputs
 sifttext outline STORE UUID [full] [-y]  Refresh, verify, then print shallow/full LEAN
 sifttext search STORE QUERY [UNDER_UUID] [-y]
                                           Ranked hits + ancestors in LEAN; -y allows >15000 tokens
@@ -84,6 +86,10 @@ sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version LEAN; -y allow
 sifttext -h                               This reference
 
 Read node.md with ordinary file tools. Edit authored knowledge only in your private worktree.
+Expand draft paths at the same revision with: git -C WORKTREE sparse-checkout add nodes/UUID
+Use `sifttext read WORKTREE UUID` for omitted nodes without expanding them.
+New files use ordinary Git staging; `create` selects their paths automatically.
+Full draft fallback: git -C WORKTREE sparse-checkout disable. Keep the normal home complete.
 Task files belong in the durable artifact_home; follow Knowledge Layout's Node artifacts section.
 Git publication is explicit: inspect, validate the exact candidate, commit,
 then submit to combine accepted main, refresh the home and remove the saved draft.
@@ -98,7 +104,11 @@ fn run() -> Result<()> {
             writeln!(std::io::stdout().lock(), $($arg)*)?;
         };
     }
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Subcommand help must never be mistaken for a new knowledge-home path.
+    if args.len() == 2 && matches!(args[1].as_str(), "-h" | "--help") {
+        args.remove(0);
+    }
     if args.is_empty() || args == ["-h"] || args == ["--help"] {
         println!("{HELP}");
         return Ok(());
@@ -200,7 +210,11 @@ fn run() -> Result<()> {
     // Bundle/bootstrap assets belong to this packaged onramp, not the generic
     // native Policy contract (which also supports minimal policy-only fixtures).
     sifttext_file_graph::native_kb::verify_assets(&runtime)?;
-    sifttext_file_graph::graph_transition::Transition::checked(&policy)?;
+    if args.first().is_some_and(|arg| arg == "sync") {
+        let output = sync::run(&policy, &args)?;
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
     if args.first().is_some_and(|arg| arg == "instructions") {
         let path = match args.as_slice() {
             [_, path] => PathBuf::from(path),
@@ -210,11 +224,18 @@ fn run() -> Result<()> {
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
         let instructions = local::instructions(&policy, &path)?;
-        let output = json!({"version":instructions["version"],"path":instructions["path"]});
+        let output = json!({"version":instructions["version"],"version_scope":instructions["version_scope"],"path":instructions["path"]});
         println!(
             "{}",
             sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
         );
+        match sync::instructions(&path) {
+            Ok(repairs) => for repair in repairs {
+                println!("{}", sifttext_file_graph::lean_render::render(&repair)
+                    .map_err(std::io::Error::other)?);
+            },
+            Err(error) => eprintln!("Sync continuation unavailable: {error}. Local accepted instructions above remain usable; preserve sync state and inspect sifttext sync status HOME."),
+        }
         return Ok(());
     }
     let output = match args.as_slice() {
@@ -345,18 +366,6 @@ fn run() -> Result<()> {
             )?;
             json!({"id":created["id"],"path":created["path"]})
         }
-        [cmd, path, rest @ ..] if cmd == "check" => {
-            let force = rest.last().is_some_and(|arg| arg == "-y");
-            let rest = if force { &rest[..rest.len() - 1] } else { rest };
-            let report = local::check(
-                &policy,
-                Path::new(path),
-                rest.first().map(Path::new),
-                rest.iter().skip(1).cloned().collect(),
-            )?;
-            print_large_return(&format!("{}\n", report.cli_lean()?), force)?;
-            return Ok(());
-        }
         [cmd, before, after, rest @ ..] if cmd == "normalize" => {
             let force = rest.last().is_some_and(|arg| arg == "-y");
             let explicit = if force { &rest[..rest.len() - 1] } else { rest };
@@ -375,9 +384,12 @@ fn run() -> Result<()> {
             )?;
             normalized.cli_json()
         }
-        [cmd, path] if cmd == "index" => {
-            let v = local::refresh(&policy, Path::new(path))?;
-            let output = json!({"status":v.status,"version":v.version,"nodes":v.nodes.len()});
+        [cmd, path, rest @ ..] if cmd == "index" => {
+            let output = match rest {
+                [] => local::refresh(&policy, Path::new(path))?,
+                [flag] if flag == "--repair" => sifttext_file_graph::index::repair(&policy, Path::new(path))?,
+                _ => return Err("usage: sifttext index STORE [--repair]".into()),
+            };
             println!(
                 "{}",
                 sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
@@ -467,7 +479,13 @@ fn run() -> Result<()> {
 }
 
 fn print_read(output: &str, force: bool) -> Result<()> {
-    print_large_return(output, force)
+    // Every token consumes at least one byte. Small ordinary reads need no tokenizer.
+    if output.len() <= LARGE_RETURN_LIMIT {
+        std::io::stdout().lock().write_all(output.as_bytes())?;
+        Ok(())
+    } else {
+        print_large_return(output, force)
+    }
 }
 
 fn print_large_return(output: &str, force: bool) -> Result<()> {
@@ -477,11 +495,9 @@ fn print_large_return(output: &str, force: bool) -> Result<()> {
 }
 
 fn check_large_return(output: &str, force: bool) -> Result<()> {
-    if !force {
-        let tokens = tiktoken_rs::o200k_base_singleton()
-            .lock()
-            .encode_ordinary(output)
-            .len();
+    // Ordinary tokens consume at least one UTF-8 byte; small output needs no tokenizer.
+    if !force && output.len() > LARGE_RETURN_LIMIT {
+        let tokens = sifttext_file_graph::token_count::ordinary(output);
         if tokens > LARGE_RETURN_LIMIT {
             return Err(LargeReturnSuppressed {
                 tokens,
@@ -924,8 +940,6 @@ fn main() {
         .nth(1)
         .is_some_and(|arg| account::is_command(&arg));
     let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
-    let checking = std::env::args().nth(1).is_some_and(|arg| arg == "check");
-    let force = std::env::args().last().is_some_and(|arg| arg == "-y");
     let result = (|| -> Result<()> {
         let _operation = if updating || authentication {
             None
@@ -943,11 +957,7 @@ fn main() {
             } else {
                 format!("rejected: {error}\n")
             };
-            if checking && let Err(suppressed) = check_large_return(&rendered, force) {
-                let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
-            } else {
-                let _ = std::io::stderr().lock().write_all(rendered.as_bytes());
-            }
+            let _ = std::io::stderr().lock().write_all(rendered.as_bytes());
         }
         std::process::exit(1);
     }

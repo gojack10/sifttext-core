@@ -35,15 +35,39 @@ fn logical_inventory(inventory: &BTreeMap<PathBuf, Entry>) -> BTreeMap<PathBuf, 
 
 pub(crate) type Metadata = BTreeMap<String, BTreeMap<String, String>>;
 
+/// One Markdown grammar and intrinsic identity boundary for filesystem and Git.
+pub(crate) fn node_markdown<'a>(bytes: &'a [u8], id: &str) -> Result<crate::Markdown<'a>> {
+    let file = PathBuf::from(format!("nodes/{id}/node.md"));
+    let parsed = source_error::context(
+        (|| markdown(std::str::from_utf8(bytes)?))(), &file, None)?;
+    let authored = &parsed.authored;
+    structural_guard(authored.id == id, Some(id), Some(&authored.id),
+        "src/lib.rs:Store.read_view/node_uuid_identity", "duplicate/mismatched node UUID")?;
+    for (field, value) in [("name", &authored.name), ("micro_summary", &authored.micro_summary)] {
+        source_error::context(require(!value.trim().is_empty(), "blank node name/micro-summary"),
+            &file, Some(field))?;
+    }
+    for reference in &authored.see_also {
+        source_error::context(require(uuid(&reference.target), "reference target is not a UUID"),
+            &file, Some("see_also.target"))?;
+        source_error::context(require(!reference.reason.trim().is_empty(), "blank relationship reason"),
+            &file, Some("see_also.reason"))?;
+    }
+    Ok(parsed)
+}
+
 /// Group relationships once, then parse only the bytes held in the inventory.
 /// Physical checks are still performed for every canonical node/link; sparse
 /// inheritance changes a link's physical destination, never its authored target.
-pub(crate) fn from_inventory(
+pub(crate) fn from_inventory_mode(
     path: PathBuf,
     inventory: BTreeMap<PathBuf, Entry>,
     dirs: BTreeMap<String, PathBuf>,
     sparse: bool,
+    compact: bool,
 ) -> Result<(Store, Metadata)> {
+    let empty = |e: &Entry| e.file_identity().is_some_and(|(len, _)| len == 0);
+    let mut nonblank = BTreeSet::new();
     let mut members: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut roots = Vec::new();
     for (p, e) in &inventory {
@@ -54,7 +78,7 @@ pub(crate) fn from_inventory(
         if p == Path::new("nodes/.keep") {
             source_error::context(
                 require(
-                    matches!(e, Entry::File(b) if b.is_empty()),
+                    empty(e),
                     "nonempty node directory marker",
                 ),
                 p,
@@ -78,7 +102,7 @@ pub(crate) fn from_inventory(
         {
             if p.file_name().is_some_and(|n| n == ".keep") {
                 require(
-                    matches!(e,Entry::File(b) if b.is_empty()),
+                    empty(e),
                     if p.parent() == Some(Path::new("trees")) {
                         "nonempty root directory marker"
                     } else {
@@ -171,9 +195,9 @@ pub(crate) fn from_inventory(
         require(uuid(id), "node directory is not a canonical full UUID")?;
         crate::real_dir(dir)?;
         crate::real_dir(&dir.join("children"))?;
-        let bytes = |file: &str| -> Result<&[u8]> {
+        let bytes = |file: &str| -> Result<std::borrow::Cow<'_, [u8]>> {
             match inventory.get(&PathBuf::from(format!("nodes/{id}/{file}"))) {
-                Some(Entry::File(b)) => Ok(b),
+                Some(e @ (Entry::File(_) | Entry::FileRef { .. })) => e.bytes(),
                 _ => Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
                     "No such file or directory (missing captured node file)",
@@ -182,44 +206,17 @@ pub(crate) fn from_inventory(
             }
         };
         let file = PathBuf::from(format!("nodes/{id}/node.md"));
-        let parsed = source_error::context(
-            (|| markdown(std::str::from_utf8(bytes("node.md")?)?))(),
-            &file,
-            None,
-        )?;
-        let authored = parsed.authored;
-        structural_guard(
-            authored.id == *id,
-            Some(id),
-            Some(&authored.id),
-            "src/lib.rs:Store.read_view/node_uuid_identity",
-            "duplicate/mismatched node UUID",
-        )?;
-        for (field, value) in [
-            ("name", &authored.name),
-            ("micro_summary", &authored.micro_summary),
-        ] {
-            source_error::context(
-                require(!value.trim().is_empty(), "blank node name/micro-summary"),
-                &file,
-                Some(field),
-            )?;
-        }
-        for r in &authored.see_also {
-            source_error::context(
-                require(uuid(&r.target), "reference target is not a UUID"),
-                &file,
-                Some("see_also.target"),
-            )?;
-            source_error::context(
-                require(!r.reason.trim().is_empty(), "blank relationship reason"),
-                &file,
-                Some("see_also.reason"),
-            )?;
+        let node_bytes = source_error::context(bytes("node.md"), &file, None)?;
+        let parsed = node_markdown(&node_bytes, id)?;
+        let mut authored = parsed.authored;
+        if compact {
+            if !authored.content.trim().is_empty() { nonblank.insert(id.clone()); }
+            authored.content = String::new();
         }
         let order_file = PathBuf::from(format!("nodes/{id}/children.order"));
+        let order_bytes = source_error::context(bytes("children.order"), &order_file, None)?;
         let order: Vec<String> = source_error::context(
-            (|| Ok(std::str::from_utf8(bytes("children.order")?)?))(),
+            (|| Ok(std::str::from_utf8(&order_bytes)?))(),
             &order_file,
             None,
         )?
@@ -265,6 +262,7 @@ pub(crate) fn from_inventory(
             children,
             roots,
             inventory,
+            compact_bodies: compact.then_some(nonblank),
         },
         metadata,
     ))
@@ -541,15 +539,7 @@ pub(crate) fn residues(path: &Path) -> Result<Residues> {
         let parent = std::str::from_utf8(&parent)?.trim();
         let historical = tempfile::tempdir()?;
         reconstruct(path, parent, historical.path())?;
-        let view = crate::index::refresh(
-            &policy,
-            historical.path(),
-            None,
-            crate::index::Mode::Full,
-            None,
-        )?;
-        require(view.status == "current", "invalid historical source")?;
-        let proof = crate::outlines::ResidueProof::capture(&policy, historical.path(), None, id)?;
+        let proof = crate::outlines::ResidueProof::capture_revision(&policy, historical.path(), path, parent, id)?;
         let source = historical.path().join("nodes").join(id).join("node.md");
         let measurement = crate::token_metadata::Refresher::default()
             .refresh(&source, None)?
@@ -626,12 +616,7 @@ fn history_git_input(
         .env("GIT_OPTIONAL_LOCKS", "0")
         .arg("-C")
         .arg(path)
-        .args([
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.hooksPath=/dev/null",
-        ])
+        .args(["-c", "core.hooksPath=/dev/null"])
         .args(args)
         .stdin(stdin)
         .stdout(Stdio::piped())
@@ -1066,7 +1051,7 @@ pub(crate) struct Capture {
 }
 impl Capture {
     pub fn read(path: &Path, base: Option<&Path>) -> Result<Self> {
-        let capture = Self::capture(path, base)?;
+        let capture = Self::capture(path, base, false)?;
         capture.unchanged()?;
         Ok(capture)
     }
@@ -1075,7 +1060,7 @@ impl Capture {
     /// Keep the initial identity/ABA guard, but defer its duplicate byte inventory
     /// to that mandatory final barrier. No other consumer may accept this alone.
     pub(crate) fn read_for_validation(path: &Path) -> Result<Self> {
-        let capture = Self::capture(path, None)?;
+        let capture = Self::capture(path, None, true)?;
         capture.residues.unchanged()?;
         require(
             identities(&capture.store.path, &capture.residues)? == capture.physical,
@@ -1084,7 +1069,7 @@ impl Capture {
         Ok(capture)
     }
 
-    fn capture(path: &Path, base: Option<&Path>) -> Result<Self> {
+    fn capture(path: &Path, base: Option<&Path>, compact: bool) -> Result<Self> {
         source_error::context(crate::real_dir(path), Path::new("."), None)?;
         if let Some(base) = base {
             crate::real_dir(base)?;
@@ -1110,9 +1095,9 @@ impl Capture {
             .transpose()?;
         let base = base_path
             .as_deref()
-            .map(|p| Store::capture_classified(p, None, &base_residues).map(|s| s.0))
+            .map(|p| Store::capture_classified_mode(p, None, &base_residues, compact).map(|s| s.0))
             .transpose()?;
-        let (store, metadata) = Store::capture_classified(&path, base.as_ref(), &residues)?;
+        let (store, metadata) = Store::capture_classified_mode(&path, base.as_ref(), &residues, compact)?;
         Ok(Self {
             store,
             metadata,
@@ -1135,7 +1120,7 @@ impl Capture {
                 Some(identities(&base.path, &self.base_residues)?) == self.base_physical,
                 "changed base identity",
             )?;
-            let (now, _) = Store::inventory_classified(&base.path, None, &self.base_residues)?;
+            let (now, _) = Store::inventory_classified_mode(&base.path, None, &self.base_residues, true)?;
             require(
                 logical_inventory(&now) == logical(base),
                 "changed base bytes",
@@ -1144,13 +1129,14 @@ impl Capture {
         } else {
             None
         };
-        let (now, _) = Store::inventory_classified(
+        let (now, _) = Store::inventory_classified_mode(
             &self.store.path,
             self.base
                 .as_ref()
                 .zip(base.as_ref())
                 .map(|(b, files)| (b.path.as_path(), files)),
             &self.residues,
+            true,
         )?;
         require(
             identities(&self.store.path, &self.residues)? == self.physical,
@@ -1166,20 +1152,6 @@ impl Capture {
         self.base_residues.unchanged()?;
         Ok(now)
     }
-    /// Equal immutable inputs and physical identities let a full freshness check
-    /// on either capture protect both. Never use logical/version equality alone.
-    pub(crate) fn same_complete_source(&self, other: &Self) -> bool {
-        self.base.is_none()
-            && other.base.is_none()
-            && self.store.path == other.store.path
-            && self.store.inventory == other.store.inventory
-            && self.metadata == other.metadata
-            && self.physical == other.physical
-            && self.residues.owners == other.residues.owners
-            && self.residues.physical == other.residues.physical
-            && self.residues.history == other.residues.history
-    }
-
     pub fn unchanged(&self) -> Result<()> {
         require(
             logical_inventory(&self.current()?) == logical(&self.store),

@@ -160,6 +160,10 @@ pub(super) fn home_lock(home: &Path, wait: bool) -> Result<fs::File> {
     lock(&save_root(home)?.join("home.lock"), wait)
 }
 
+pub(super) fn publication_lock(home: &Path) -> Result<fs::File> {
+    lock(&save_root(home)?.join("publication.lock"), true)
+}
+
 // Only this module can construct a lease. Checked publication borrows it rather
 // than recursively acquiring the same lock; completion retains it through removal.
 pub(crate) struct DraftLease {
@@ -171,34 +175,26 @@ pub(crate) struct DraftLease {
 }
 impl DraftLease {
     pub(crate) fn acquire(repo: &Path, draft: &Path) -> Result<Self> {
-        // A concurrent fork can briefly retain another thread's CLOEXEC file
-        // descriptions until exec. Tolerate only that bounded admission handoff;
-        // scratch recovery still uses a single nonwaiting lifecycle_lock.
-        let start = std::time::Instant::now();
-        loop {
-            match Self::acquire_once(repo, draft) {
-                Err(error) if error.to_string().contains("save busy") && start.elapsed() < std::time::Duration::from_millis(50) => std::thread::sleep(std::time::Duration::from_millis(2)),
-                result => return result,
-            }
-        }
+        Self::acquire_once(repo, draft)
     }
 
     fn acquire_once(repo: &Path, draft: &Path) -> Result<Self> {
-        let mut lifecycle = lifecycle_lock(draft, false)?;
+        // Ordinary custody contention waits; scratch recovery remains nonwaiting.
+        let mut lifecycle = lifecycle_lock(draft, true)?;
         let root = save_root(repo)?;
         let key = draft_key(draft)?;
-        let file = lock(&root.join(format!("{key}.lock")), false)?;
+        let file = lock(&root.join(format!("{key}.lock")), true)?;
         if fs::symlink_metadata(draft.join(".git")).is_ok() {
             mark_git_lifecycle(&mut lifecycle)?;
         }
         // The low-level API also accepts a branch-owned primary worktree as a
         // draft. Its session operations use home.lock, unlike linked drafts.
         let home_file = if fs::symlink_metadata(draft).is_ok_and(|m| m.is_dir())
-            && fs::symlink_metadata(draft.join(".git")).is_ok()
+            && fs::symlink_metadata(draft.join(".git")).is_ok_and(|m| m.is_dir())
             && Path::new(&reader_git(draft, &["rev-parse", "--absolute-git-dir"])?)
                 == root.parent().ok_or("missing common Git directory")?
         {
-            Some(lock(&root.join("home.lock"), false)?)
+            Some(lock(&root.join("home.lock"), true)?)
         } else {
             None
         };
@@ -231,30 +227,14 @@ fn persist(path: &Path, pending: &Pending) -> Result<()> {
 }
 
 pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
-    submit_inner(policy, request, None, || Ok(())).map_err(|error| {
+    submit_inner(policy, request, || Ok(())).map_err(|error| {
         format!("submission completion unknown unless reported below; retain files and original submit arguments for retry: {error}").into()
     })
-}
-
-pub fn submit_reviewed(
-    policy: &Policy,
-    request: &checked_publication::Request,
-    mode: checked_publication::ReviewMode,
-    rules: &[u8],
-    mut review: impl FnMut(&str, &[u8], &[u8], &[u8]) -> Result<checked_publication::SemanticVerdict>,
-) -> Result<Value> {
-    require(request.draft.is_some(), "review requires a submitted draft")?;
-    submit_inner(policy, request, Some((mode, rules, &mut review)), || Ok(()))
 }
 
 fn submit_inner(
     policy: &Policy,
     request: &checked_publication::Request,
-    mut review: Option<(
-        checked_publication::ReviewMode,
-        &[u8],
-        &mut dyn FnMut(&str, &[u8], &[u8], &[u8]) -> Result<checked_publication::SemanticVerdict>,
-    )>,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
     require(
@@ -264,14 +244,23 @@ fn submit_inner(
     let home = &request.repo;
     let draft = request.draft.as_ref().ok_or("missing draft")?;
     require(draft.is_absolute(), "draft must be absolute")?;
-    if fs::symlink_metadata(draft).is_ok_and(|metadata| metadata.is_dir()) {
-        checked_publication::protect_local_artifacts(draft)?;
+    // CLI completion removes an allocated linked worktree. Refuse primary drafts
+    // before queueing: their low-level lease also owns home.lock. Missing completed
+    // drafts still recover through their journal below.
+    if let Ok(metadata) = fs::symlink_metadata(draft.join(".git")) {
+        require(metadata.is_file(), "submit cleanup requires an allocated linked private worktree")?;
     }
     let commit = request.commit.as_ref().ok_or("missing submitted commit")?;
     let base = request.base.as_ref().ok_or("missing submitted base")?;
     let draft_lease = DraftLease::acquire(home, draft)?;
     let _custody = draft_lease.custody()?;
-    reader_state(home)?; // Recheck after acquiring custody, before publication.
+    let publication_file = publication_lock(home)?;
+    let publication_custody = checked_publication::Custody::new(&[&publication_file])?;
+    // Tuple fields drop in order: pop inner custody before closing its file.
+    // Helpers inherit this description through the existing custody transport.
+    let mut publication = Some((publication_custody, publication_file));
+    // Accepted Git objects, not the mutable home reader, supply the baseline.
+    // Check reader cleanliness only before advancing it during finishing.
     let root = save_root(home)?;
     let key = draft_key(draft)?;
     let journal = root.join(format!("{key}.json"));
@@ -314,25 +303,73 @@ fn submit_inner(
         record
     };
     require(
-        pending.home == *home
-            && pending.draft == *draft
-            && pending.commit == *commit
-            && pending.base == *base
-            && pending.explicit == request.explicit,
-        "different submission is pending; retain files and resume its original request",
+        pending.home == *home && pending.draft == *draft && pending.base == *base,
+        "different home, draft or base is pending; retain the journal and retry its original arguments",
     )?;
     require(
         pending.branch.starts_with("refs/heads/sifttext/"),
         "unsafe pending branch",
     )?;
+    if pending.commit != *commit {
+        // A new explicit COMMIT is a repair request, not permission to adopt
+        // ambient HEAD. Never replace custody of an accepted/unfinished save.
+        require(pending.completed_head.is_none(),
+            "completed save is pending; retry its original arguments before another save")?;
+        crate::real_dir(home)?;
+        crate::real_dir(draft)?;
+        require(fs::canonicalize(home)? == *home && fs::canonicalize(draft)? == *draft
+            && reader_git(draft, &["rev-parse", "--show-toplevel"])? == draft.to_str().ok_or("non-UTF-8 draft")?
+            && reader_git(draft, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?
+                == home.join(".git").to_str().ok_or("non-UTF-8 home")?
+            && reader_git(draft, &["symbolic-ref", "--quiet", "HEAD"])? == pending.branch,
+            "repair must use the same canonical home, allocated draft and branch; retain original journal")?;
+        let ancestor = |from: &str, to: &str| -> Result<bool> {
+            let output = checked_publication::run_command(super::reader_command(home,
+                &["merge-base", "--is-ancestor", from, to]))?;
+            match output.status.code() {
+                Some(0) => Ok(true),
+                Some(1) => Ok(false),
+                _ => Err("cannot establish repair ancestry; retain original journal".into()),
+            }
+        };
+        let accepted = reader_git(home, &["rev-parse", "refs/heads/main"])?;
+        checked_publication::commit(home, &accepted)?;
+        checked_publication::commit(home, &pending.commit)?;
+        checked_publication::commit(home, base)?;
+        checked_publication::commit(home, commit)?;
+        require(!ancestor(&pending.commit, &accepted)?,
+            "original request is already accepted or baseline; finish its original retry, do not replace its journal")?;
+        let tip = if let Some((from, to)) = &pending.prepared_heads {
+            checked_publication::commit(home, from)?;
+            checked_publication::commit(home, to)?;
+            require(!ancestor(from, &accepted)? && !ancestor(to, &accepted)?
+                && ancestor(&pending.commit, from)? && ancestor(from, to)?,
+                "prepared request may already be accepted; retain journal and retry original arguments")?;
+            to
+        } else {
+            &pending.commit
+        };
+        require(ancestor(base, &pending.commit)? && ancestor(base, &accepted)?
+            && ancestor(tip, commit)? && reader_git(draft, &["rev-parse", "HEAD"])? == *commit,
+            "repair COMMIT must be the clean draft HEAD descended from the recorded preparation; retain original journal")?;
+        checked_publication::clean(draft, commit)?;
+        pending.commit = commit.clone();
+        pending.explicit = request.explicit.clone();
+        pending.prepared_heads = None;
+        persist(&journal, &pending)?;
+    }
+    require(pending.explicit == request.explicit,
+        "different status intents are pending; retry original arguments or commit an explicit repair first")?;
 
     let missing =
         fs::symlink_metadata(draft).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
-    let receipt = if missing {
-        require(
-            pending.completed_head.is_some(),
-            "missing uncompleted draft; retain journal",
-        )?;
+    require(!missing || pending.completed_head.is_some(),
+        "missing uncompleted draft; retain journal")?;
+    // Removal may have stopped after unlinking .git but before removing the
+    // directory. Completed custody recovers acceptance without reading that
+    // partially deleted draft as a new publication input.
+    let recovering_cleanup = pending.completed_head.is_some();
+    let receipt = if recovering_cleanup {
         checked_publication::submit(
             policy,
             &checked_publication::Request {
@@ -352,30 +389,15 @@ fn submit_inner(
             pending.prepared_heads = Some((from.to_owned(), to.to_owned()));
             persist(&journal, &pending)
         };
-        let receipt = if let Some((mode, rules, reviewer)) = review.as_mut() {
-            checked_publication::save_prepared_reviewed_leased(
-                policy,
-                request,
-                &draft_lease,
-                *mode,
-                *rules,
-                previous_heads
-                    .as_ref()
-                    .map(|(from, to)| (from.as_str(), to.as_str())),
-                &mut **reviewer,
-                record,
-            )
-        } else {
-            checked_publication::save_prepared_leased(
-                policy,
-                request,
-                &draft_lease,
-                previous_heads
-                    .as_ref()
-                    .map(|(from, to)| (from.as_str(), to.as_str())),
-                record,
-            )
-        };
+        let receipt = checked_publication::save_prepared_leased(
+            policy,
+            request,
+            &draft_lease,
+            previous_heads
+                .as_ref()
+                .map(|(from, to)| (from.as_str(), to.as_str())),
+            record,
+        );
         if receipt.status != "current" {
             // A refused retry can follow earlier acceptance. This invocation's
             // published=false says nothing about that prior attempt.
@@ -383,17 +405,35 @@ fn submit_inner(
                 checked_publication::commit(home, commit).is_ok()
                     && reader_git(home, &["merge-base", "--is-ancestor", commit, accepted]).is_ok()
             });
-            if !receipt.published && pending.completed_head.is_none() && accepted.is_none() {
-                // An uncompleted refusal returns to explicit repair/resubmission.
-                // Completed custody must survive a reused path's refusal so the
-                // original request remains recoverable after that path clears.
+            let retry_ref_race = pending.prepared_heads.is_some()
+                && matches!(receipt.check, "conditional_ref_race" | "source_or_ref_changed")
+                && receipt.accepted_before.as_ref().is_some_and(|before| {
+                    reader_git(home, &["rev-parse", "refs/heads/main"])
+                        .is_ok_and(|current| current != *before)
+                });
+            if !receipt.published
+                && pending.completed_head.is_none()
+                && pending.prepared_heads.is_none()
+                && accepted.is_none()
+                && !retry_ref_race
+            {
+                // Only a preflight refusal without prepared custody can discard
+                // the request. Normalization/combination records survive rejection
+                // so exact original arguments recheck the same prepared HEAD.
                 fs::remove_file(&journal)?;
                 fs::File::open(&root)?.sync_all()?;
             }
             let mut output = serde_json::to_value(&receipt)?;
             output["home"] = json!(home);
             output["draft"] = json!(draft);
-            output["publication"] = json!(if accepted.is_some() {
+            if retry_ref_race {
+                // Normalization may have authored a new prepared HEAD. Retain
+                // its exact journal pair so the original request can resume it.
+                output["next_action"] = json!(
+                    "accepted main advanced concurrently; retain the draft and retry the original submit arguments to recombine and recheck"
+                );
+            }
+            output["publication"] = json!(if receipt.published || accepted.is_some() {
                 "accepted_incomplete"
             } else if receipt.accepted_before.is_some()
                 && receipt.candidate.is_some()
@@ -405,6 +445,10 @@ fn submit_inner(
             });
             if let Some(accepted) = accepted {
                 output["accepted"] = json!(accepted);
+            } else if pending.prepared_heads.is_some() && !retry_ref_race {
+                output["next_action"] = json!(
+                    "retain the prepared draft; retry original arguments to recheck it, or commit a repair descended from its recorded HEAD and submit that new explicit COMMIT with the same home/draft/base"
+                );
             }
             return Ok(output);
         }
@@ -422,33 +466,24 @@ fn submit_inner(
         .version
         .as_deref()
         .ok_or("missing checked version")?;
-    // Save preparation stays concurrent; serialize only normal-home finishing.
     let finish = || -> Result<Value> {
-        let home_lock = home_lock(home, false)?;
-        let _home_custody = checked_publication::Custody::new(&[&home_lock])?;
-        let before = reader_state(home)?;
-        let advanced = advance_checked(policy, home, &before, target, version, None, || Ok(()))?;
-        require(
-            reader_state(home)? == target
-                && reader_git(home, &["rev-parse", "refs/heads/main"])? == target,
-            "home changed before cleanup; retry",
-        )?;
-        if !missing {
-            checked_publication::clean(draft, target)?;
-            require(
-                reader_git(draft, &["symbolic-ref", "--quiet", "HEAD"])? == pending.branch,
-                "completed draft changed; preserve it",
-            )?;
+        let advanced = {
+            let home_lock = home_lock(home, true)?;
+            let _home_custody = checked_publication::Custody::new(&[&home_lock])?;
+            let before = reader_state(home)?;
+            let advanced = advance_checked(policy, home, &before, target, Some(version), Some(draft), || Ok(()))?;
+            // advance_checked already verifies HEAD, accepted ref and the
+            // refreshed source version while this home custody is held.
+            advanced
+        };
+        // Home custody has already popped. Release publication custody then its
+        // file before recursive cleanup; the draft lease still protects removal.
+        drop(publication.take());
+        if !recovering_cleanup {
             pending.completed_head = Some(target.to_owned());
+            // Persist acceptance custody before deleting anything. A retry
+            // finishes this exact draft even if .git or the root is already gone.
             persist(&journal, &pending)?;
-            reader_git(
-                home,
-                &[
-                    "worktree",
-                    "remove",
-                    draft.to_str().ok_or("non-UTF-8 draft")?,
-                ],
-            )?;
         }
         let cleaned_head = pending
             .completed_head
@@ -459,34 +494,7 @@ fn submit_inner(
             &["merge-base", "--is-ancestor", &pending.commit, cleaned_head],
         )?;
         reader_git(home, &["merge-base", "--is-ancestor", cleaned_head, target])?;
-        if missing {
-            // Git removes the directory before its registration. Resume only this
-            // exact completed registration, never prune another agent's worktree.
-            let registered = reader_git(home, &["worktree", "list", "--porcelain", "-z"])?;
-            let wanted = format!("worktree {}", draft.to_str().ok_or("non-UTF-8 draft")?);
-            if let Some(entry) = registered
-                .split("\0\0")
-                .find(|entry| entry.split('\0').any(|row| row == wanted))
-            {
-                require(
-                    entry
-                        .split('\0')
-                        .any(|row| row == format!("branch {}", pending.branch))
-                        && entry
-                            .split('\0')
-                            .any(|row| row == format!("HEAD {cleaned_head}")),
-                    "missing draft registration changed; preserve it",
-                )?;
-                reader_git(
-                    home,
-                    &[
-                        "worktree",
-                        "remove",
-                        draft.to_str().ok_or("non-UTF-8 draft")?,
-                    ],
-                )?;
-            }
-        }
+        remove_completed_draft(home, draft, &pending.branch, cleaned_head)?;
         let refs = reader_git(
             home,
             &["for-each-ref", "--format=%(refname)", &pending.branch],
@@ -518,7 +526,7 @@ fn submit_inner(
                 ],
             )?;
         }
-        if missing {
+        if recovering_cleanup {
             let identity = fs::symlink_metadata(receipt.view.as_ref().ok_or("missing recovery view")?)?;
             checked_publication::remove_owned_view(home, &receipt, &identity)?;
         }
@@ -527,7 +535,7 @@ fn submit_inner(
         // cleanup must not make the original request unrecoverable; retries still
         // validate current accepted history rather than trust this record as proof.
         let mut output = serde_json::to_value(&receipt)?;
-        if missing {
+        if recovering_cleanup {
             output["published"] = json!(false);
         }
         output["view"] = json!(home);
@@ -537,10 +545,57 @@ fn submit_inner(
         before_return()?;
         Ok(output)
     };
-    finish().map_err(|error| format!(
-        "accepted save finishing incomplete (accepted {target}, version {version}, home {}, draft {}); home or cleanup may already have changed; retain files and retry the original submit request: {error}",
-        home.display(), draft.display()
-    ).into())
+    match finish() {
+        Ok(output) => Ok(output),
+        Err(error) => {
+            eprintln!("accepted save finishing incomplete: {error}");
+            let mut output = serde_json::to_value(&receipt)?;
+            output["status"] = json!("unavailable");
+            output["check"] = json!("accepted_finish_incomplete");
+            output["publication"] = json!("accepted_incomplete");
+            output["accepted"] = json!(target);
+            output["home"] = json!(home);
+            output["draft"] = json!(draft);
+            output["view"] = Value::Null;
+            output["next_action"] = json!(format!(
+                "accepted {target}, version {version}; home or cleanup may already have changed; preserve new work and retry the original submit arguments: {error}"
+            ));
+            Ok(output)
+        }
+    }
+}
+
+// The completed editing worktree is disposable, including ignored/untracked
+// files. Only its exact recorded registration may be retired; never prune peers.
+fn remove_completed_draft(home: &Path, draft: &Path, branch: &str, head: &str) -> Result<()> {
+    let registered = reader_git(home, &["worktree", "list", "--porcelain", "-z"])?;
+    let wanted = format!("worktree {}", draft.to_str().ok_or("non-UTF-8 draft")?);
+    let mut entries = registered.split("\0\0")
+        .filter(|entry| entry.split('\0').any(|row| row == wanted));
+    let entry = entries.next();
+    require(entries.next().is_none(), "ambiguous completed draft registration")?;
+    if let Some(entry) = entry {
+        require(entry.split('\0').any(|row| row == format!("branch {branch}"))
+            && entry.split('\0').any(|row| row == format!("HEAD {head}")),
+            "completed draft registration changed; preserve it")?;
+    }
+    match fs::symlink_metadata(draft) {
+        Ok(_) => {
+            require(entry.is_some(), "unregistered completed draft path reused; preserve it")?;
+            crate::real_dir(draft)?;
+            require(fs::canonicalize(draft)? == draft, "completed draft path changed")?;
+            // No status, ignored-file inventory or artifact/cleanliness gate.
+            // Stdlib recursive deletion also resumes a partially removed .git.
+            fs::remove_dir_all(draft)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error.into()),
+    }
+    if entry.is_some() {
+        reader_git(home, &["worktree", "remove", "--force",
+            draft.to_str().ok_or("non-UTF-8 draft")?])?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

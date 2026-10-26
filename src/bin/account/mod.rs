@@ -24,13 +24,15 @@ pub fn is_command(command: &str) -> bool {
     matches!(command, "login" | "account" | "logout")
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 struct Credentials {
     origin: String,
     client_id: String,
     access_token: String,
     refresh_token: String,
     expires_at: u64,
+    #[serde(default)]
+    resource: String,
 }
 
 fn now() -> Result<u64> {
@@ -200,7 +202,7 @@ fn config_string(value: &str) -> Result<String> {
     ))
 }
 
-fn http(
+pub(super) fn http(
     origin: &str,
     path: &str,
     bearer: Option<&str>,
@@ -230,7 +232,7 @@ fn http(
             "--max-time",
             "20",
             "--max-filesize",
-            "1048576",
+            if path.starts_with("/sync/v1/") { "12582912" } else { "1048576" },
             "--proto",
             "=http,https",
             "--write-out",
@@ -294,10 +296,12 @@ fn tokens(origin: &str, client_id: &str, fields: &[(&str, &str)]) -> Result<Cred
         access_token: text(&value, "access_token")?.into(),
         refresh_token: text(&value, "refresh_token")?.into(),
         expires_at: now()?.saturating_add(lifetime),
+        resource: fields.iter().find(|(key, _)| *key == "resource")
+            .map(|(_, value)| (*value).to_owned()).unwrap_or_default(),
     })
 }
 
-fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
+fn refresh_for(store: &Store, credentials: &mut Credentials, resource: &str) -> Result<()> {
     *credentials = tokens(
         &credentials.origin,
         &credentials.client_id,
@@ -305,18 +309,60 @@ fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
             ("grant_type", "refresh_token"),
             ("client_id", &credentials.client_id),
             ("refresh_token", &credentials.refresh_token),
-            ("resource", &format!("{}/mcp", credentials.origin)),
+            ("resource", resource),
         ],
     )?;
     // Persist rotation before any later account/network failure loses the new refresh token.
     store.save(credentials)
 }
 
+fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
+    let resource = format!("{}/mcp", credentials.origin);
+    refresh_for(store, credentials, &resource)
+}
+
+// Keep one login/rotation lease for the complete sync exchange. Renewal never
+// silently reloads a different account; sync verifies its stable home before replay.
+pub(super) struct SyncAccess {
+    store: Store,
+    credentials: Credentials,
+}
+impl SyncAccess {
+    pub(super) fn open(resource: &str) -> Result<Self> {
+        let store = Store::open()?;
+        let mut credentials = store.load()?;
+        if credentials.origin != origin()? {
+            return Err("saved login belongs to another Platform".into());
+        }
+        let saved_resource = if credentials.resource.is_empty() {
+            format!("{}/mcp", credentials.origin)
+        } else {
+            credentials.resource.clone()
+        };
+        if saved_resource != resource || credentials.expires_at <= now()?.saturating_add(60) {
+            refresh_for(&store, &mut credentials, resource)?;
+        }
+        Ok(Self { store, credentials })
+    }
+    pub(super) fn token(&self) -> Result<&str> {
+        if self.store.load()? != self.credentials {
+            return Err("saved login changed during sync; no further transfer attempted".into());
+        }
+        Ok(&self.credentials.access_token)
+    }
+    pub(super) fn renew(&mut self, resource: &str) -> Result<()> {
+        self.token()?;
+        refresh_for(&self.store, &mut self.credentials, resource)
+    }
+}
+
 fn account(store: &Store, credentials: &mut Credentials) -> Result<Value> {
     if credentials.origin != origin()? {
         return Err("saved login belongs to a different Platform; run sifttext login".into());
     }
-    if credentials.expires_at <= now()?.saturating_add(30) {
+    if (!credentials.resource.is_empty()
+        && credentials.resource != format!("{}/mcp", credentials.origin))
+        || credentials.expires_at <= now()?.saturating_add(30) {
         refresh(store, credentials)?;
     }
     let mut response = http(

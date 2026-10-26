@@ -152,6 +152,7 @@ pub fn neighborhood(
         hash.update(path.as_bytes());
         let (kind, bytes) = match e {
             Entry::File(b) => (0, b.as_slice()),
+            Entry::FileRef { .. } => return Err("neighborhood requires a full capture".into()),
             Entry::Link(p) => (1, p.to_str().ok_or("non-UTF-8 snapshot link")?.as_bytes()),
             Entry::Dir => (2, &[][..]),
         };

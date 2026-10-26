@@ -9,7 +9,7 @@ warnings: "No remote connector grants access to local knowledge. Model and harne
 ---
 ## Current execution
 
-Read the child named Maintain Memory Continuity through this node's `children.order` and `children/` directory. Use its complete local access, setup, migration and return procedure, reusing unchanged reads. Its actions depend on the actual setup/migration trigger and permission; reading this entry alone does not authorize client configuration or source replacement.
+Read the child named Maintain Memory Continuity through this node's `children.order` and `children/` directory. Use its complete local access, setup, migration and return procedure, reusing unchanged reads. Its actions depend on the actual setup/migration trigger and permission; reading this entry alone does not authorize client configuration or source replacement. `instructions` supplies an entry/order-scoped version and path, not collection acceptance; read the actual selected node bytes. For authorized writes, Worktree Publication owns native edit/inspect/commit and submit-owned normalization/validation against the immutable base SHA.
 
 ## Preserved earlier procedure
 

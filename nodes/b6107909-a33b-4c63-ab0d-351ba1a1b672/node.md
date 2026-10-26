@@ -9,7 +9,7 @@ warnings: ""
 ---
 ## Locate the source
 
-Input: the assigned knowledge home, named explicitly on every command; the delivered command has no default `$HOME/sifttext` home. Do not confuse it with the Core source checkout or the bundle it was copied from. Inspect `git -C "$home" rev-parse --show-toplevel` and `git -C "$home" status --short`. If missing, follow CLI Operations for authorized setup. If unfamiliar or dirty, establish ownership before writes. Flagless `init` copies the first-party KB compiled from Core's readable `nodes/` and `trees/`; `init --bundle` chooses another one-time copy source. Neither is live cloud sharing. Normal knowledge work belongs in a private worktree of the separate user-owned knowledge repository, usually `~/sifttext`, not inside the software installation or contributor checkout. All nodes and tree shortcuts are Git-tracked directories/files in that one knowledge repository, not individual Git repositories. A node-owned project code repository remains separate.
+Input: the assigned knowledge home, normally named explicitly on commands; `instructions` alone defaults to `$HOME/sifttext`. Do not confuse it with the Core source checkout or the bundle it was copied from. Inspect `git -C "$home" rev-parse --show-toplevel` and `git -C "$home" status --short`. If missing, follow CLI Operations for authorized setup. If unfamiliar or dirty, establish ownership before writes. Flagless `init` copies the first-party KB compiled from Core's readable `nodes/` and `trees/`; `init --bundle` chooses another one-time copy source. Neither is live cloud sharing. Normal knowledge work belongs in a private worktree of the separate user-owned knowledge repository, usually `~/sifttext`, not inside the software installation or contributor checkout. All nodes and tree shortcuts are Git-tracked directories/files in that one knowledge repository, not individual Git repositories. A node-owned project code repository remains separate.
 
 ```text
 HOME/
@@ -21,7 +21,7 @@ HOME/
   .sifttext/index.sqlite       derived, ignored, per working copy
 ```
 
-Empty directories use empty `.keep` files. UUIDs, not names, are identity. Local tree roots are node UUIDs, not hosted tree-container IDs. Parentage comes from child symlinks; order comes from `children.order`. Every node belongs to one rooted tree. Read `nodes/UUID/node.md` directly or follow the tree shortcut. Do not physically nest node directories to express depth.
+Empty directories use empty `.keep` files. UUIDs, not names, are identity. Local tree roots are node UUIDs, not hosted tree-container IDs. Parentage comes from child symlinks; order comes from `children.order`. Accepted knowledge requires every node to belong to one rooted tree; an unfinished draft may temporarily violate that structure. Read `nodes/UUID/node.md` directly or follow the tree shortcut. Direct reads do not certify the collection. Do not physically nest node directories to express depth.
 
 ## Node artifacts
 
@@ -39,7 +39,7 @@ Submission refuses non-chat artifacts in a private draft before publication or c
 
 ## Authored grammar
 
-`node.md` starts with `---` and newline, then one `key: JSON-value` per line, then `---` and newline, then the Markdown body. This is restricted metadata, not general YAML. Required: `id`, nonblank `name`, nonblank `micro_summary`, `status`, `see_also`. The `id` must equal its canonical lowercase UUID directory. Optional `scope` and `warnings` are JSON strings. The body holds content; no duplicate `content` field.
+`node.md` starts with `---` and newline, then one `key: JSON-value` per line, then `---` and newline, then the Markdown body. This is restricted metadata, not general YAML. Required at submission: `id`, nonblank `name`, nonblank `micro_summary`, `status`, `see_also`. Blank name/summary may remain an unfinished draft, not accepted knowledge. The `id` must equal its canonical lowercase UUID directory. Optional `scope` and `warnings` are JSON strings. The body holds content; no duplicate `content` field.
 
 `see_also` is an array of `{"target":"UUID","reason":"Nonblank explanation"}`. Targets must exist; no self or duplicate references. Prose links do not author graph edges. Do not author `parent`, `parents`, `children` or `ruled_out` metadata. Preserve unknown JSON fields rather than inventing their meaning.
 
@@ -49,6 +49,10 @@ States: `not_examined`, `in_progress`, `resolved`, `stuck`, `deferred`, `discard
 
 ## Derived state and limits
 
-`.sifttext/`, `node.meta.json`, `outline.lean`, `outline.full.lean` and their metadata sidecars are disposable. Never commit them or edit them to repair authored errors. The delivered command imposes no fixed node-count ceiling. It enforces checked resource boundaries instead: each authored file must stay within 1 MiB and is otherwise refused as `unsafe or oversized authored file`, symlinked or hard-linked authored files are refused the same way, and each content body must stay within 5000 `o200k_base` tokens, which `check` rejects per node as `content_over_limit` with measured `tokens` and `limit:5000`. Native inventory and process-resource guards still bound a store, so these are error boundaries rather than a capacity promise: no node count, store size or latency is claimed to be affordable. A passing check reports only `nodes`, `status` and the knowledge `version`; a refusal reports actual problems rather than successful per-node token totals. This is not full-store import or resource qualification. Stop on a limit rather than truncate content or change caps.
+`.sifttext/`, `node.meta.json`, `outline.lean`, `outline.full.lean` and their sidecars are derived, never knowledge Git input. Do not edit them to repair authored errors or delete unknown files as speculative cache repair. Native SQL/search/outline/index refresh the current parseable uncommitted draft without publication certification; raw generated files can be old between edits and refresh. Malformed or unsafe authored reads refuse, never silently return stale or partial success. SQL remains usable for structural draft defects; outlines report `invalid_draft` where honest navigation is impossible.
+
+Each working copy has its own `.sifttext/index.sqlite`. Refresh maintains SQL and eager outlines together, reusing unchanged hashes/records and rebuilding dependent outlines. Unchanged reads use read transactions; one refresh producer per view coordinates publication, with dirty-generation/boot-epoch repair after interruption. Command `version` values compare the same authored inventory across SQL/search/outline: `authored-merkle-v2` is an opaque 64-hex identity, not a Git commit or JSON-file hash. Old version/cache formats invalidate once; `instructions` has a separate entry/order scope.
+
+There is no fixed node-count ceiling or universal latency/memory promise. Authored files are bounded at 1 MiB; symlinked/hard-linked authored files refuse. Submit enforces a 5000 `o200k_base` content-body token ceiling, excluding metadata; counting uses the exact pinned vocabulary, regex and upstream BPE semantics. Structural/field/status/token acceptance belongs to submit, not draft retrieval or a standalone `check` command. Keep native guards intact; repair or decompose within authority rather than truncate evidence or raise caps. Full-submit and warm-SQL resource targets remain unmet.
 
 Return the confirmed home/worktree, source path and relevant UUID to the assigned task. Continue with retrieval for a read task, or Worktree Publication before changing knowledge.

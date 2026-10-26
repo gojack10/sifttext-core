@@ -230,11 +230,7 @@ impl Refresher {
         let measurement = if reused {
             self.cached.as_ref().unwrap().1.clone()
         } else {
-            let bpe = tiktoken_rs::o200k_base_singleton();
-            let tokens = bpe
-                .lock()
-                .encode_ordinary(std::str::from_utf8(&captured.bytes)?)
-                .len();
+            let tokens = crate::token_count::ordinary(std::str::from_utf8(&captured.bytes)?);
             Measurement {
                 tokens,
                 hash: sha256(&captured.bytes),

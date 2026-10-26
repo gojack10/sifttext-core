@@ -155,7 +155,7 @@ Credentials are private native files under `~/.config/sifttext/account`. Keep th
 
 Offline knowledge commands and official release updates remain available without payment or cloud login.
 
-Local trees stay on disk during login.
+Local trees stay on disk during login. Where the installed help lists `sync`, its enable/status/disable operations are local opt-in controls for the native Git-backed queue; transfer requires login and retains identity/ownership guards. This source port does not newly qualify cloud service compatibility or install a background runner. Use that version's `sifttext -h` for operations.
 
 ## Updates and recovery
 
@@ -173,7 +173,7 @@ The receipt is **not an atomic snapshot** across state and marker, and does not 
 
 `update --status` retains its existing meaning: explicitly fetch/check releases and record attempt/success/cache state without installing a release. It requires the exclusive application-update mutex and can report `update busy` while an ordinary managed command holds a shared lock. `SIFTTEXT_NO_UPDATE=1` skips opportunistic checks only; it does not make `--status` read-only or disable an explicit update. Older installations without `--local-status` have no equivalent safe inspection flag: consult their guide and inspect the recorded files with ordinary read-only tools instead of treating `--status` as a lock probe.
 
-For a blocked update, read the installed Managed Releases and Updates guide and inspect `sifttext update --local-status` (or the older version's documented status operation, with its release-check side effects understood). Reconcile any conflicting knowledge draft under that guide, then check and commit the resolution before `sifttext update --resume`. Actual updates, install initialization and recovery retain exclusion against ordinary operations; local inspection never bypasses those safeguards.
+For a blocked update, read the installed Managed Releases and Updates guide and inspect `sifttext update --local-status` (or the older version's documented status operation, with its release-check side effects understood). Reconcile any conflicting knowledge draft under that guide, inspect and commit the intended resolution, then use `sifttext update --resume` for its checked submission. Actual updates, install initialization and recovery retain exclusion against ordinary operations; local inspection never bypasses those safeguards.
 
 To restore the retained previous release, use `sifttext update --rollback` under the installed recovery guide. Preserve any required checked knowledge reversal and follow that version's instructions to finish activation.
 
@@ -194,7 +194,7 @@ sifttext instructions
 
 `instructions` defaults to `~/sifttext`. For a custom home, run `sifttext instructions /absolute/knowledge-home`. If PATH is not yet refreshed, use the actual application launcher's absolute path.
 
-Follow the returned entry file for the installed version's task-specific instructions. During authorized setup:
+Read the returned entry file and follow its selected task-specific instructions, not a hardcoded child count. Its `version_scope:onboarding_entry_and_order` fingerprints that entry and order only; it is not a whole-home acceptance certificate. Ordinary node reads likewise do not certify the collection. During authorized setup:
 
 1. Follow Maintain Memory Continuity to establish the selected harness's persistent entrance while preserving existing instructions.
 
@@ -202,7 +202,7 @@ Follow the returned entry file for the installed version's task-specific instruc
 
 3. Return to the user's task, or ask what they would like to work on if none is established.
 
-4. Publish knowledge worth retaining through the local worktree procedure and retrieve the saved result to verify it.
+4. Within knowledge-write authority, follow the local worktree procedure: edit native files, inspect and commit intended paths, then submit the commit and returned base SHA. Submit owns normalization and the exact combined deterministic gate; it reports semantic checking as deferred. Retrieve the accepted result and distinguish unfinished recovery from completion.
 
 If a required instruction file is missing or unreadable, report its exact path and preserve the installation for repair. Resume at that file after an authorized repair so the remaining project work uses the installed version's guidance.
 

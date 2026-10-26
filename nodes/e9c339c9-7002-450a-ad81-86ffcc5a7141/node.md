@@ -36,7 +36,8 @@ An unavailable required input stops the work that depends on it.
 
 Dialogue owns source reconstruction and exact proposal presentation.
 Forcing Pass owns proposal review. Persistence and Worktree Publication
-own local file, baseline, native-check and publication mechanics.
+own native file editing, the immutable base SHA and submit-owned normalization,
+exact-candidate validation and publication mechanics.
 The finishing section below owns reconciliation and verification for
 this route; the earlier separate bodies are historical references.
 
@@ -95,8 +96,9 @@ unchanged reviewed work needs no repeated full pass.
 ### Save and finish the affected understanding
 
 Use Persistence to apply only authorized edits in the private knowledge
-worktree. Preserve concurrent work, fixed-baseline checks, supported
-status transitions and failed drafts. Inspect uncertain operations
+worktree. Preserve concurrent work, the fixed base SHA, supported
+status transitions and failed drafts; no detached baseline checkout is
+needed merely for transition checks. Inspect uncertain operations
 before retrying them.
 
 Before candidate handoff or checked publication, inspect the resulting
@@ -123,14 +125,18 @@ unfinished. Repair within the grant and recheck the changed parts.
 If evidence or authority is missing, report that exact gap and suspend
 dependent work; continue independent authorized work.
 
-Repeat applicable normalization and complete native candidate checks
-after repairs. Native checks establish their declared structural and
-storage properties, not semantic correctness.
+After repairs, inspect the actual files and complete diff, retain relevant
+ad hoc evidence, stage intended paths and commit. This is not full-graph
+certification. Optional normalization is mechanical editing, not required
+preflight; submission normalizes and validates the exact combined candidate.
 
-The bounded worker returns its checked private candidate and findings.
-An authorized publisher follows Worktree Publication's checked
-submission and recovery procedure, then verifies the landed result and
-receipt identities. Refresh and recheck affected meaning if integration
+The bounded worker returns its private commit, base SHA, evidence and open
+issues. An authorized publisher follows Worktree Publication's submission
+and recovery procedure, then verifies the landed result and receipt identities.
+On refusal, inspect, repair within the same authority, commit and resubmit;
+retain drafts and journals rather than reset work or change frozen limits.
+Native acceptance establishes declared structural/storage properties, with
+semantic checking deferred, not passed. Refresh and recheck affected meaning if integration
 changes the reviewed content. Neither a private commit nor a successful
 submission substitutes for the semantic check above.
 

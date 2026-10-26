@@ -89,6 +89,26 @@ fn sql_suppresses_only_oversized_returns_and_y_preserves_the_complete_response()
 }
 
 #[test]
+fn sql_bounds_native_allocations_and_aggregate_escaped_output_even_with_y() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().canonicalize().unwrap().join("home");
+    let home = home.to_str().unwrap();
+    assert!(cli(&["init", home, "--empty"]).status.success());
+    for (query, reason) in [
+        ("SELECT hex(zeroblob(5 * 1024 * 1024))", "too big"),
+        ("SELECT printf('%.*c', 5 * 1024 * 1024, 'x')", "4 MiB"),
+        ("SELECT printf('%.*c', 3 * 1024 * 1024, 'x') UNION ALL SELECT printf('%.*c', 3 * 1024 * 1024, 'x')", "4 MiB"),
+        ("SELECT replace(hex(zeroblob(1024 * 1024)), '00', char(1))", "4 MiB"),
+    ] {
+        let out = cli(&["sql", home, query, "-y"]);
+        assert!(!out.status.success(), "{query}: {out:?}");
+        assert!(out.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&out.stderr).contains(reason), "{query}: {out:?}");
+    }
+    assert!(cli(&["sql", home, "SELECT 1", "-y"]).status.success());
+}
+
+#[test]
 fn sql_lean_keeps_column_positions_storage_classes_and_empty_schema() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().canonicalize().unwrap().join("home");

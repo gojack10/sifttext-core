@@ -33,34 +33,6 @@ enum Request {
         #[serde(default)]
         pause_before_accept: Option<sifttext_file_graph::index::PauseBeforeAccept>,
     },
-    #[serde(rename = "outline_inspect")]
-    OutlineInspect {
-        store: PathBuf,
-        #[serde(default)]
-        base_store: Option<PathBuf>,
-    },
-    #[serde(rename = "index")]
-    Index {
-        store: PathBuf,
-        mode: sifttext_file_graph::index::Mode,
-        #[serde(default)]
-        base_store: Option<PathBuf>,
-        #[serde(default)]
-        pause_before_accept: Option<sifttext_file_graph::index::PauseBeforeAccept>,
-    },
-    #[serde(rename = "index_prepared")]
-    IndexPrepared {
-        store: PathBuf,
-        accepted_main: PathBuf,
-        #[serde(default)]
-        prepared_worktree: Option<PathBuf>,
-        #[serde(default)]
-        base_store: Option<PathBuf>,
-        #[serde(default)]
-        prepared_base: Option<PathBuf>,
-        #[serde(default)]
-        pause_before_accept: Option<sifttext_file_graph::index::PauseBeforeAccept>,
-    },
     #[serde(rename = "token_refresh")]
     TokenRefresh {
         path: PathBuf,
@@ -218,70 +190,6 @@ fn run(diagnostics: &mut bool) -> Result<CommandStatus> {
                 &sifttext_file_graph::search::observation(&output),
                 output.status,
                 output.refusal,
-                *diagnostics,
-            )
-        }
-        Request::OutlineInspect { store, base_store } => {
-            let output =
-                sifttext_file_graph::outlines::inspect(&policy, &store, base_store.as_deref())?;
-            emit(&output, output.status)
-        }
-        Request::Index {
-            store,
-            mode,
-            base_store,
-            pause_before_accept,
-        } => {
-            let output = sifttext_file_graph::index::refresh(
-                &policy,
-                &store,
-                base_store.as_deref(),
-                mode,
-                pause_before_accept.as_ref(),
-            )?;
-            emit_retrieval(&output, output.status, output.refusal.clone(), *diagnostics)
-        }
-        Request::IndexPrepared {
-            store,
-            accepted_main,
-            prepared_worktree,
-            base_store,
-            prepared_base,
-            pause_before_accept,
-        } => {
-            use sifttext_file_graph::index;
-            let main = index::prepare_reuse(&policy, &accepted_main, None)?;
-            let prepared = prepared_worktree
-                .as_deref()
-                .map(|p| index::prepare_reuse(&policy, p, prepared_base.as_deref()))
-                .transpose()?
-                .flatten();
-            let (view, reuse) = if let Some(main) = &main {
-                index::refresh_prepared(
-                    &policy,
-                    &store,
-                    base_store.as_deref(),
-                    main,
-                    prepared.as_ref(),
-                    pause_before_accept.as_ref(),
-                )?
-            } else {
-                (
-                    index::refresh(
-                        &policy,
-                        &store,
-                        base_store.as_deref(),
-                        index::Mode::Incremental,
-                        pause_before_accept.as_ref(),
-                    )?,
-                    index::Reuse::default(),
-                )
-            };
-            let status = view.status;
-            emit_retrieval(
-                &serde_json::json!({"view":view,"reuse":reuse,"accepted_main_available":main.is_some(),"prepared_worktree_available":prepared.is_some()}),
-                status,
-                view.refusal,
                 *diagnostics,
             )
         }
