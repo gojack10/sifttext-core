@@ -843,8 +843,9 @@ fn resume(
 /// Agent-facing next step in a release notice. A human decides whether to update.
 const UPDATE_NOTICE_ASK: &str =
     "Ask the user to update SiftText for latest speed and stability fixes.";
-/// With a standing grant the agent may update without asking again.
-const UPDATE_NOTICE_STANDING: &str = "Update SiftText for latest speed and stability fixes.";
+/// With a standing grant no confirmation is needed, so the next step is urgent.
+const UPDATE_NOTICE_STANDING: &str =
+    "Update SiftText immediately for latest speed and stability fixes.";
 const STANDING_GRANT_COMMAND: &str = "sifttext update --grant standing";
 
 fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
