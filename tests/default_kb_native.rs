@@ -13,13 +13,14 @@ use std::{
 };
 const ENTRY: &str = "5e565245-14fe-406c-977c-cf94a9be246b";
 const ROOT: &str = "38a9fc79-8a84-494d-a962-2ec5134bc856";
-const ORDER: [&str; 6] = [
+const ORDER: [&str; 7] = [
+    "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
     "b6107909-a33b-4c63-ab0d-351ba1a1b672",
-    "f961a20f-1df5-4c0f-a263-9730e2a28aca",
-    "0278c212-d51f-46db-8bd6-b537593ef186",
     "4cc0b396-4b55-415e-bb26-b51c97e6ca78",
     "fb1e0c9f-8c04-4baf-91e6-4688856a14af",
     "a472e05c-9bbf-48f2-89d7-6c6092c339ed",
+    "31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8",
+    "221ca2fc-1caf-4c40-92e5-d9f55501ba1e",
 ];
 fn text(p: &Path) -> &str {
     p.to_str().unwrap()

@@ -22,13 +22,14 @@ const ARTIFACTS_RULE: &str = "/nodes/*/artifacts/";
 /// `instructions` resolves; they are not a second hierarchy.
 
 
-const PIPELINE: [&str; 6] = [
+const PIPELINE: [&str; 7] = [
+    "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
     "b6107909-a33b-4c63-ab0d-351ba1a1b672",
-    "f961a20f-1df5-4c0f-a263-9730e2a28aca",
-    "0278c212-d51f-46db-8bd6-b537593ef186",
     "4cc0b396-4b55-415e-bb26-b51c97e6ca78",
     "fb1e0c9f-8c04-4baf-91e6-4688856a14af",
     "a472e05c-9bbf-48f2-89d7-6c6092c339ed",
+    "31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8",
+    "221ca2fc-1caf-4c40-92e5-d9f55501ba1e",
 ];
 
 /// Points at this home's own entry file and the ordered children it already
@@ -124,7 +125,7 @@ fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
 }
 
 /// True only when a store carries the complete canonical pipeline: the entry and
-/// its six ordered children. Empty and custom bundles without it get no pointer.
+/// its ordered children. Empty and custom bundles without it get no pointer.
 fn carries_pipeline(store: &Store) -> bool {
     store.nodes.contains_key(ENTRY)
         && store.children.get(ENTRY).is_some_and(|children| {
