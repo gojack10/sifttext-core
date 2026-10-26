@@ -21,6 +21,8 @@ rm -f build/candidate.sha256 build/graph-policy.sha256 build/graph-transition bu
 "$BEND" laws/successor/ValidationRuntime.bend -o build/graph-policy
 shasum -a 256 build/graph-policy > build/graph-policy.sha256
 "$BEND" laws/successor/GraphTransition.bend --check-only
+"$BEND" laws/successor/GraphTransition.bend -o build/graph-transition
+shasum -a 256 build/graph-transition > build/graph-transition.sha256
 case "${1:-}" in
   '') cargo build --locked ;;
   --release) cargo build --locked --release --bin sifttext ;;
