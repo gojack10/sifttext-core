@@ -1065,7 +1065,7 @@ impl Policy {
 
     fn verify_stamp(&self) -> Result<()> {
         let project = &self.project;
-        for manifest in ["build/candidate.sha256", "build/graph-policy.sha256"] {
+        for manifest in ["build/candidate.sha256", "build/graph-policy.sha256", "build/graph-transition.sha256"] {
             let contents = fs::read_to_string(project.join(manifest)).map_err(|error| {
                 // Keep the OS error kind so an absent stamp is not reported as unknown.
                 std::io::Error::new(
@@ -1074,13 +1074,14 @@ impl Policy {
                 )
             })?;
             require(!contents.trim().is_empty(), "empty build stamp")?;
-            if manifest == "build/graph-policy.sha256" {
+            if manifest.ends_with("sha256") && manifest != "build/candidate.sha256" {
+                let expected_path = manifest.trim_end_matches(".sha256");
                 require(
                     contents.lines().count() == 1
                         && contents
                             .lines()
                             .next()
-                            .is_some_and(|l| l.ends_with("  build/graph-policy")),
+                            .is_some_and(|l| l.ends_with(&format!("  {expected_path}"))),
                     "incorrect executable stamp",
                 )?;
             }
