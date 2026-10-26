@@ -841,8 +841,10 @@ fn resume(
     )
 }
 /// Agent-facing next step in a release notice. A human decides whether to update.
-const UPDATE_NOTICE_ASK: &str =
-    "Ask the user to update SiftText for latest speed and stability fixes.";
+const UPDATE_NOTICE_ASK: &str = "Ask the user to update SiftText as soon as possible.";
+/// Why the interruption is worth it. The ask notice carries this on its own line
+/// because a purpose clause after "as soon as possible" reads as obscured prose.
+const UPDATE_NOTICE_REASON: &str = "The latest release fixes speed and stability.";
 /// With a standing grant no confirmation is needed, so the next step is urgent.
 const UPDATE_NOTICE_STANDING: &str =
     "Update SiftText immediately for latest speed and stability fixes.";
@@ -884,6 +886,7 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
     } else {
         notice["permission"] = json!(permission);
         notice["grant_command"] = json!(STANDING_GRANT_COMMAND);
+        notice["reason"] = json!(UPDATE_NOTICE_REASON);
     }
     if let Some(pinned) = config["pinned"].as_str() {
         notice["pinned"] = json!(pinned);
@@ -1330,6 +1333,7 @@ pub fn update_with_receipt_preflight(
                     "command",
                     "permission",
                     "grant_command",
+                    "reason",
                     "config",
                     "guide",
                 ] {
@@ -1755,8 +1759,8 @@ mod tests {
         assert_eq!(
             crate::lean_render::render(&notice).unwrap(),
             format!(
-                "application:v1\ncommand:sifttext update\ngrant_command:{}\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nstatus:update_available",
-                STANDING_GRANT_COMMAND, UPDATE_NOTICE_ASK
+                "application:v1\ncommand:sifttext update\ngrant_command:{}\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nreason:{}\nstatus:update_available",
+                STANDING_GRANT_COMMAND, UPDATE_NOTICE_ASK, UPDATE_NOTICE_REASON
             )
         );
         assert_eq!(
