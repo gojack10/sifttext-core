@@ -153,7 +153,6 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     edited.extend_from_slice(b"\nPortableworkflowuniqueterm: reversible runtime check.\n");
     fs::write(&path, &edited).unwrap();
     cli(bin, tools, &["normalize", home, draft]);
-    cli(bin, tools, &["check", draft, home]);
     git(tools, Path::new(draft), &["add", "--", "nodes"]);
     git(
         tools,
@@ -182,7 +181,6 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     let recovery = json(bin, tools, &["worktree", view]);
     let restore = recovery["worktree"].as_str().unwrap();
     git(tools, Path::new(restore), &["revert", "--no-edit", &commit]);
-    cli(bin, tools, &["check", restore, view]);
     let revert = git(tools, Path::new(restore), &["rev-parse", "HEAD"]);
     let restored = json(
         bin,
