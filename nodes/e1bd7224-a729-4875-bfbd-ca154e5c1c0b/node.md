@@ -7,8 +7,12 @@ see_also: []
 scope: "Orient an independent local Core user before their first knowledge contribution."
 warnings: ""
 ---
-SiftText Core supports structured thinking in a local Git repository. A tree organizes nodes in a hierarchy; each node has a scope, a Markdown body for what you know, and metadata such as status and a stable micro-summary.
+SiftText gives you a local, structured knowledge home that the current agent can read and maintain with your permission.
 
-The first-party Knowledge Base is copied into a new independent knowledge home during initialization. It is not created by signup, linked to a cloud account or silently updated when Core changes. Keep that home separate from the software installation and contributor checkout.
+A tree groups related nodes, and each node records understanding about a question or topic.
 
-Read the home's AGENTS.md and follow the entrypoint's task-applicable selected methods before commands or edits. During authorized setup, its Maintain Memory Continuity route establishes the selected harness's persistent entrance while preserving prior instructions. If your copy has no pointer, the verified command's instructions operation locates the pipeline. CLI Operations explains setup and Worktree Publication owns safe editing and checked publication. You can use ordinary file tools yourself or authorize an external agent; Core supplies no built-in assistant.
+Initialization copies the bundled instructions into your own Git repository, normally ~/sifttext.
+
+Keep that knowledge home separate from the software installation.
+
+Begin with [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] for the current agent's reading and writing procedures.

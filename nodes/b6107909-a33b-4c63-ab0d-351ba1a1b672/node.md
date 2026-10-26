@@ -7,52 +7,69 @@ see_also: []
 scope: "Locate the local knowledge home and understand its native identity, content and hierarchy before using retrieval or editing tools."
 warnings: ""
 ---
-## Locate the source
+## Locate the home
 
-Input: the assigned knowledge home, normally named explicitly on commands; `instructions` alone defaults to `$HOME/sifttext`. Do not confuse it with the Core source checkout or the bundle it was copied from. Inspect `git -C "$home" rev-parse --show-toplevel` and `git -C "$home" status --short`. If missing, follow CLI Operations for authorized setup. If unfamiliar or dirty, establish ownership before writes. Flagless `init` copies the first-party KB compiled from Core's readable `nodes/` and `trees/`; `init --bundle` chooses another one-time copy source. Neither is live cloud sharing. Normal knowledge work belongs in a private worktree of the separate user-owned knowledge repository, usually `~/sifttext`, not inside the software installation or contributor checkout. All nodes and tree shortcuts are Git-tracked directories/files in that one knowledge repository, not individual Git repositories. A node-owned project code repository remains separate.
+Use the knowledge home named on the command, normally ~/sifttext.
+
+Inspect git status there before writing.
+
+Keep it separate from the Core source checkout and the software installation.
+
+## Layout
 
 ```text
-HOME/
-  nodes/UUID/node.md           authored metadata and Markdown body
-  nodes/UUID/children.order    full child UUIDs, one per line
-  nodes/UUID/children/UUID     symlink -> ../../UUID
-  nodes/UUID/artifacts/NAME    local task files/projects; ignored, not knowledge Git
-  trees/ROOT_UUID              symlink -> ../nodes/ROOT_UUID
-  .sifttext/index.sqlite       derived, ignored, per working copy
+nodes/UUID/node.md
+nodes/UUID/children.order
+nodes/UUID/children/UUID
+nodes/UUID/artifacts/NAME
+trees/ROOT_UUID
+.sifttext/index.sqlite
 ```
 
-Empty directories use empty `.keep` files. UUIDs, not names, are identity. Local tree roots are node UUIDs, not hosted tree-container IDs. Parentage comes from child symlinks; order comes from `children.order`. Accepted knowledge requires every node to belong to one rooted tree; an unfinished draft may temporarily violate that structure. Read `nodes/UUID/node.md` directly or follow the tree shortcut. Direct reads do not certify the collection. Do not physically nest node directories to express depth.
+The UUID identifies a node.
+
+Parentage comes from child symlinks, and order comes from children.order.
+
+Accepted knowledge belongs to one rooted tree.
+
+Read node.md directly or follow the tree shortcut.
 
 ## Node artifacts
 
-Task files such as spreadsheets, PDFs, reports and code projects belong under `nodes/UUID/artifacts/` of the deepest node owning that work, in the durable knowledge home, not an expendable client workspace or editing worktree. A user-selected external location remains valid; retain its relationship in the owning node rather than silently moving it.
+Task files belong under the artifacts directory of the deepest node that owns the work, in the durable knowledge home.
 
-Run `sifttext worktree HOME` before placing files in an older or cloned home. Its `artifact_home` is the canonical durable home; `worktree` is the disposable knowledge draft. Initialization installs the artifact exclusion, and worktree allocation, save and reader advancement reapply it locally without changing the home's recognized `.gitignore`. For a new owner, publish the knowledge node first, then place its files in that accepted home's node directory. Verify the owning node and real `artifacts/` directory before writing; create the directory if absent, never replace an existing path or make the container itself a symlink. Use recognizable file names. A nested project can keep its own independent Git repository.
+For a new owner, publish the knowledge node first, then place the files in its accepted home.
 
-In the private knowledge draft, record a meaningful home-relative artifact path in the owner's body, and the external destination relationship for any aliases. Knowledge validation does not open, recursively scan, hash, tokenize or copy artifact contents. Knowledge Git must not track them; do not force-add them, use Git LFS, or treat dependencies/build caches as knowledge. `artifacts/chats/` remains reserved for the separate optional session-evidence workflow; its archive and tracked association metadata retain that workflow's rules.
+Verify that the artifact directory exists and that Git ignores the files.
 
-A symlink inside `artifacts/` is an alias, not a snapshot or backup. Inspect and obtain appropriate scope before modifying or traversing its external target. Editing through the link edits that target. A missing target stays unresolved: report it and reconnect deliberately, never guess from a similar filename. No local artifact files, directories or aliases are transported by knowledge Git, clones, release updates or session restore; keep a separately authorized backup if needed.
+A symlink inside artifacts is an alias, so editing through it edits the target.
 
-After a save, verify the actual task file at its durable path, not only the knowledge receipt. Check that `git -C HOME check-ignore -- nodes/UUID/artifacts/NAME` names the file and `git -C HOME ls-files -- nodes/UUID/artifacts` is empty. The normal home's artifacts survive knowledge save, reader advance, draft cleanup and exact-request recovery because those operations do not relocate or delete them. Before removing or reverting away their owning node, deliberately rehome the files and update their references, then remove the old container, or retain the owner. Checked publication and reader advancement refuse owner removal while its durable artifact container remains, even if empty; they never inspect its contents to guess whether it is disposable. A source-less artifact directory is not valid knowledge and is not disposable residue.
+No artifact is transported by knowledge Git or release updates.
 
-Submission refuses non-chat artifacts in a private draft before publication or cleanup and preserves them. On that refusal, retain the files, verify the intended durable destination, and move them deliberately within the user's permission; never delete them to obtain a clean check. If their owner is new, preserve the files outside the disposable draft until the knowledge-only owner is accepted, then place them under that owner's home `artifacts/` and verify the bytes. Retry the normal knowledge publication procedure. This is local custody, not automatic artifact migration, backup, synchronization or cross-machine recovery.
+Keep a separate authorized backup when one is needed.
 
-## Authored grammar
+## Metadata
 
-`node.md` starts with `---` and newline, then one `key: JSON-value` per line, then `---` and newline, then the Markdown body. This is restricted metadata, not general YAML. Required at submission: `id`, nonblank `name`, nonblank `micro_summary`, `status`, `see_also`. Blank name/summary may remain an unfinished draft, not accepted knowledge. The `id` must equal its canonical lowercase UUID directory. Optional `scope` and `warnings` are JSON strings. The body holds content; no duplicate `content` field.
+Optional scope and warnings are strings.
 
-`see_also` is an array of `{"target":"UUID","reason":"Nonblank explanation"}`. Targets must exist; no self or duplicate references. Prose links do not author graph edges. Do not author `parent`, `parents`, `children` or `ruled_out` metadata. Preserve unknown JSON fields rather than inventing their meaning.
+see_also holds target/reason pairs whose targets exist in the same knowledge forest.
 
-A micro-summary describes stable responsibility and helps readers choose a node; it is not a progress report. Keep independently meaningful questions visible as nodes. Keep mechanical steps for one task together. Do not duplicate an answer in ancestors or add redundant parent/child references. Explain meaningful rejected attempts rather than erase their evidence.
+The status values and their required fields are defined in [[Status|17c42051-88c0-4e41-a151-5d1bab4be83b]].
 
-States: `not_examined`, `in_progress`, `resolved`, `stuck`, `deferred`, `discarded`. Stuck needs `blocker`; deferred needs `deferred_reason` with a resume condition; discarded needs `discard_reason`. Resolved needs a nonblank body and no active direct child. Evidence must prove the node's own claim. Worktree Publication owns activation/reopening and explicit status requests.
+## Derived state
 
-## Derived state and limits
+.sifttext and outline files are derived views, not authored knowledge.
 
-`.sifttext/`, `node.meta.json`, `outline.lean`, `outline.full.lean` and their sidecars are derived, never knowledge Git input. Do not edit them to repair authored errors or delete unknown files as speculative cache repair. Native SQL/search/outline/index refresh the current parseable uncommitted draft without publication certification; raw generated files can be old between edits and refresh. Malformed or unsafe authored reads refuse, never silently return stale or partial success. SQL remains usable for structural draft defects; outlines report `invalid_draft` where honest navigation is impossible.
+Refresh them with the installed commands rather than editing them.
 
-Each working copy has its own `.sifttext/index.sqlite`. Refresh maintains SQL and eager outlines together, reusing unchanged hashes/records and rebuilding dependent outlines. Unchanged reads use read transactions; one refresh producer per view coordinates publication, with dirty-generation/boot-epoch repair after interruption. Command `version` values compare the same authored inventory across SQL/search/outline: `authored-merkle-v2` is an opaque 64-hex identity, not a Git commit or JSON-file hash. Old version/cache formats invalidate once; `instructions` has a separate entry/order scope.
+Authored files are bounded at 1 MiB.
 
-There is no fixed node-count ceiling or universal latency/memory promise. Authored files are bounded at 1 MiB; symlinked/hard-linked authored files refuse. Submit enforces a 5000 `o200k_base` content-body token ceiling, excluding metadata; counting uses the exact pinned vocabulary, regex and upstream BPE semantics. Structural/field/status/token acceptance belongs to submit, not draft retrieval or a standalone `check` command. Keep native guards intact; repair or decompose within authority rather than truncate evidence or raise caps. Full-submit and warm-SQL resource targets remain unmet.
+Submission enforces a 5000 o200k_base token ceiling on the content body.
 
-Return the confirmed home/worktree, source path and relevant UUID to the assigned task. Continue with retrieval for a read task, or Worktree Publication before changing knowledge.
+Keep the native guards intact and decompose evidence rather than truncating it.
+
+## Return
+
+Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] for a read task.
+
+Use [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]] before changing knowledge.

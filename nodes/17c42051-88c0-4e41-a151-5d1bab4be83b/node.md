@@ -7,15 +7,17 @@ see_also: []
 scope: "The status field and its six native lifecycle values, including required reasons and the distinction between a status and evidence."
 warnings: ""
 ---
-Every node has a status that indicates where it is in its lifecycle. Status helps you and any language model understand what still needs work, what is done, and what has been set aside.
+Status records a node's lifecycle disposition.
 
-The six native statuses describe a lifecycle:
+| Native value | Meaning | Required field |
+| --- | --- | --- |
+| not_examined | Identified work that is not yet examined | None |
+| in_progress | Active work or a partial answer | None |
+| resolved | The node's own completion condition is satisfied | A supporting result in the body |
+| stuck | A named external condition blocks continuation | blocker |
+| deferred | Deliberately postponed work | deferred_reason with a resume condition |
+| discarded | A rejected approach or interpretation | discard_reason |
 
-- **Not Examined** — the starting state. This node exists but has not been worked on yet.
-- **In Progress** — actively being worked on. Scope is defined, content is evolving.
-- **Resolved** — the node's own acceptance claim is proven; its nonblank body records the answer and evidence, and it has no active direct child.
-- **Stuck** — active work blocked by a named external condition; author a nonblank `blocker`.
-- **Deferred** — intentionally set aside for later. Not abandoned, but not active.
-- **Discarded** — considered and rejected. Kept for the historical record of what was tried.
+Submission applies native activation and parent reopening.
 
-The children explain the other status concepts. Knowledge Layout owns the complete native grammar: deferred requires `deferred_reason` and a resume condition; discarded requires `discard_reason`. Worktree Publication owns the immutable base SHA and submit-owned status normalization/validation. Pass explicitly authorized status UUIDs to submit; native drafting or optional mechanical normalization is not acceptance. Status is an authored claim, not proof that Core or an agent completed the work.
+Choose status from evidence about the node's own claim.

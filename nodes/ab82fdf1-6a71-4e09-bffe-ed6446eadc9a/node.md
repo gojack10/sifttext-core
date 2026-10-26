@@ -1,53 +1,34 @@
 ---
 id: "ab82fdf1-6a71-4e09-bffe-ed6446eadc9a"
 name: "Review Origin and Response Coverage"
-micro_summary: "Checks source fidelity, meaningful development and the reader's usable continuation before local changes are adopted."
+micro_summary: "Reviews source coverage, attribution, structure and the exact proposed stored text."
 status: "in_progress"
-see_also: [{"target":"b6107909-a33b-4c63-ab0d-351ba1a1b672","reason":"Native field, graph, state and resource contracts before reviewing local knowledge."},{"target":"957aa569-75be-4871-b376-6b1943cc4db4","reason":"Required procedure and walkthrough for changed executable instructions."},{"target":"fb1e0c9f-8c04-4baf-91e6-4688856a14af","reason":"Unchanged native validation, publication and recovery boundary."}]
-scope: "Review a source-grounded local delta from its origin to its proposed meaning and back, preserving native checks and authority."
+see_also: []
+scope: "Reviews source coverage, attribution, structure and the exact proposed stored text."
 ---
-## Observed conditions
+## Compare sources and candidate
+Receive the complete proposed change from [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]] within the permitted source range.
 
-The parent preserves the preceding local Forcing Pass, including ownership, field, frontier and native-check responsibilities. The source-origin review adds a two-direction fidelity check so initiating exchanges and later corrections survive in each affected unit and the visible proposal matches the intended saved body. This local adaptation preserves native mechanics while correcting the blanket exclusion of useful findings from discarded ancestry.
+Use [[Write Grounded Stable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]] and its examples to review each knowledge claim.
 
-## Inference and response
+Check each candidate claim against its actual source and version.
 
-### Entry and source fidelity
+Keep the actor's stated reason attributed even when contrary tool evidence exists.
 
-Receive the complete candidate, permitted source range, actual grant and source locators from Dialogue's current drafting method. Satisfy local Commit's required reads and reuse unchanged source/method reads. Read Knowledge Layout before relying on local fields and statuses. Read local Canopy when instructions change. Do not require an unavailable private framework or hosted tool.
+For evidence-only work, retain the source actors' rationale while excluding new diagnoses by the reviewer.
 
-Repair supported defects before presentation or persistence; do not invent violations. Identify the governing clause, observed mismatch and relevant exception before alleging a defect. A blocked write grants no retry authority: inspect its error and any landed result first.
+## Check structure and instructions
+Use [[Nest Meaningful Developments|5caf4b24-85b9-46cc-88b5-50b80feb1c19]] and [[Read One Meaningful Level|b7a734be-af2e-41d6-8415-9078c69ae5ab]] for structural changes.
 
-Review each affected node in both directions. From source to node, check its initiating conditions, consequential wording, stated reason, uncertainty, later corrections and bounded result. From node to source, check factual claims, quotations, authority and explanatory relationships against their actual sources. Repeated summaries of one observation are not independent evidence. Missing origins remain explicit rather than reconstructed.
+Use [[Write for the Reader|10f2d4ab-3318-45d8-9486-f26a817c829e]] to make the result understandable without stripping its grounds.
 
-Evidence-only work preserves source actors' reasons without adding the current author's diagnosis. Tool-origin findings need their actual observation, not a fictional human quote. Compare the human-visible proposal with the intended saved body; label any abridgment and never treat it as approval of omitted content.
+Compare the displayed candidate with the exact text intended for saving.
 
-### Ownership, development and references
+## Return
+Repair supported mismatches within scope and recheck the affected portion.
 
-Reuse the deepest existing meaningful owner and expose an independently changing answer, discovery or testable undertaking where it has its own lifecycle. Keep origins intact; complete bounded work with its supported disposition. A substantive correction or new method receives a meaningful development and complete current route. Preserve relevant source conditions and earlier procedures rather than rewrite the past with later knowledge.
+Return genuinely unresolved user choices without inventing an extra reviewer agent.
 
-Place alternatives under their common question and developments beneath the work they genuinely extend. Do not split or group by a fixed child count, paragraph, command or session. Keep a coherent observation with the inference it supports. A question and answer are not automatically duplicate state, nor must every answer become a separate node.
+An approved reviewed result continues through [[Save and Restore Continuation|a609e77c-8164-40d2-b391-e675194fd2ad]].
 
-Useful findings beneath a discarded approach retain their own evidential standing; keep them reachable from continuing work and preserve meaningful rejected attempts with their grounds. Do not move evidence merely because its parent was rejected. A small qualification without an independent lifecycle can remain in its owning body. Native metadata has no `ruled_out` field.
-
-Keep detailed volatile state with its owner rather than copy it into ancestors. Scope owns the bounded question, micro-summary its stable contribution, content its evidence and attributed answer, warnings its actionable guardrails, and `see_also` its explicit indexed references. Preserve unknown fields. Structural order/symlinks own parentage; do not add redundant direct parent/child edges or copied child inventories. An instruction sequence is operational behavior, not a table-of-contents violation.
-
-Check both endpoints before a substantive reference and both parents before a move. Every new reference operation must be visible in the delta; do not add links merely to satisfy notation. Prose citations do not create graph edges. Preserve UUIDs and material previous placement during reparenting.
-
-### Frontier, status and executable route
-
-For the affected current outcome, account for independently testable commitments as satisfied with evidence, visibly unfinished with an owner/check, or deliberately deferred/rejected with its actual reason. Diagnosis is not implementation; checked storage is not semantic correctness or fresh-agent use. Do not audit unrelated trees to satisfy this pass.
-
-Inspect the relevant outline and one meaningful descent. Identify the owner, actual inputs, dependencies, next action, success evidence and stop condition. Compare the exposed owners with known obligations. If continuation requires guessing or reconstructing the conversation, repair that route or name the exact missing decision.
-
-For planned work, establish scenario, observable result, judge, success check and stop before building. For completion claims require actual evidence. Newly planned untested work may remain open. Status follows the node's own claim and documented native effects. Active direct children keep parents open; deliberate deferrals retain a resume condition. Do not defer required work just to close a parent.
-
-For changed instructions, walk the actual entry, selected dependencies, roles, inputs, default/conditional actions, useful output, recipient, return, override and stop paths. Include the triggering case and a materially different case, one with a revisable agent method and one with a binding human constraint. Consider the least-capable intended executor. Returns do not recursively restart unchanged reads. Source descriptions, saved methods and runtime delivery are separate claims.
-
-### Native checks and return
-
-Retain Worktree Publication's immutable base SHA, explicit status intent and submit-owned normalization, exact combined-candidate gate and recovery. Before a private commit, inspect actual files/diff and relevant ad hoc evidence, not a standalone whole-graph certification. A worker returns commit/base/evidence/open issues; the authorized publisher submits and inspects receipts. Optional normalization is mechanical editing, not required preflight. After refusal inspect, repair, commit and resubmit within the same authority, preserving drafts and journals. Model effective statuses before showing a delta. A changed existing unexamined node activates; a newly created leaf may remain unexamined. Do not add unsupported metadata, change caps, truncate sources or treat a private Git commit as checked publication.
-
-The native size boundary is 5000 `o200k_base` tokens per content body, not the hosted all-field measure. Native acceptance does not judge truth or confer permission; the receipt's semantic check remains deferred. Keep the integrated reconciliation/readback in Commit Usable Understanding as the finishing contract; this review does not replace it.
-
-Repair supported in-scope defects, including affected current consumers not initially proposed, then recheck changed portions and dependencies. Preserve out-of-scope defects and actual blockers without silently expanding authority. Keep independent authorized work moving. Return the exact reviewed delta to Dialogue for approval where required or to Persistence within an existing grant. Author walkthroughs are not fresh-agent results.
+A proposal-only assignment ends with the inspectable candidate.

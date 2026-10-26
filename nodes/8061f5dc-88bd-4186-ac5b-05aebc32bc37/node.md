@@ -7,6 +7,4 @@ see_also: []
 scope: "Priority value. Nice to have. Can wait. Will not block anything."
 warnings: ""
 ---
-Low priority means this node is nice to have but not important right now. It will not block other work if it waits.
-
-Low priority nodes are still worth creating. They capture ideas that are not urgent but should not be forgotten. When you have time between higher-priority work, low-priority nodes are there waiting.
+Low priority identifies useful work that can wait without blocking the current goal.

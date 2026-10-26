@@ -1,4 +1,4 @@
-![SiftText. Understanding evolves from evidence.](docs/readme/hero-dark.svg)
+# SiftText
 
 ## Get started
 
@@ -24,9 +24,7 @@ The [website](https://sifttext.com/#plans) offers these plans:
 
 For setup details or an inspect-before-run option, follow [INSTALL.md](INSTALL.md).
 
-![Build an understanding that people and agents can keep developing.](docs/readme/tree-dark.svg)
-
-### Example as text
+### Example
 
 - **Choose a dependable supplier** (in progress)
   Customer orders need a supplier we can rely on, so compare quotes and check performance on real orders.
@@ -71,7 +69,7 @@ Continue local work during a blocked knowledge merge while your agent reconciles
 
 ## Ordinary Git compatibility
 
-For large homes, [explicit ordinary-Git acceleration](docs/git-compatibility.md)
+For large homes, `scripts/git-acceleration.sh`
 can reduce warm status work using Git's built-in monitor and untracked cache.
 It is opt-in, repository-local, capability/filesystem gated, and currently
 qualified only on local internal macOS APFS. Initialization does not enable it;

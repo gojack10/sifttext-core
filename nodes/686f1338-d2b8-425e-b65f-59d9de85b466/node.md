@@ -7,8 +7,12 @@ see_also: []
 scope: "Status value. Actively being worked on. Scope is defined, content is evolving."
 warnings: ""
 ---
-In progress means this node is actively being worked on. The scope is defined, the content is evolving, and someone (human or language model) is thinking through the content.
+Use in_progress while actively examining a question or completing its work.
 
-A node can stay in progress for a long time. Complex problems take time. The content grows incrementally as understanding deepens.
+Record partial results so another reader can continue the investigation.
 
-Move to resolved when the question is answered or the work is complete. Move to deferred if you are pausing intentionally. Do not leave a node in progress if you have stopped working on it with no plan to return soon.
+Resolve the node when its own completion condition is satisfied.
+
+Defer the work when deliberately postponing it.
+
+Mark it stuck when a named external condition blocks continuation.

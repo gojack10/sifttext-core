@@ -7,6 +7,14 @@ see_also: []
 scope: "What local Core provides, what an external agent contributes, and which client capabilities are needed."
 warnings: ""
 ---
-Local Core stores native Markdown knowledge, checks authored changes and supplies derived retrieval through a CLI. It does not include a SIFT assistant, model runtime, web interface or MCP server. You can work directly with files and commands without using any AI.
+SiftText stores knowledge in Markdown files with Git history.
 
-An external agent may help you reason, propose structure and edit authorized private drafts if its harness can read local files and execute commands. The user chooses the model and controls permissions; installing Core grants neither agent access nor model subscriptions. The local agent entrypoint supplies the required reading and checked publication workflow.
+The current agent can read those nodes through the tools its harness supplies and propose changes for your approval.
+
+Establish its actual access before asking it to operate on your knowledge.
+
+Use Maintain Memory Continuity for persistent setup.
+
+Use SiftText Read to recover relevant knowledge.
+
+Use SiftText Commit to save approved changes.

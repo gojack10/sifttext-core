@@ -7,28 +7,52 @@ see_also: [{"target":"fbaa3012-2235-49cb-88c0-67fdbc366c36","reason":"Explains t
 scope: "FAQ-shaped content for questions that do not map to a single concept node elsewhere. Receives links from other nodes. Catch-all for edge cases and common confusions."
 warnings: ""
 ---
-Common questions about local SiftText Core. For a question not answered here, read the relevant local nodes or ask the agent working with you; no built-in hosted assistant is required.
+## Can I delete a node?
 
-**Can I delete a node?**
-Yes, in an authorized private draft, but consider discarding it instead. Discarding keeps the reasoning visible in the current tree. Deletion removes it from the current tree; committed history remains recoverable through Git. Preserve relationships, check the complete candidate and publish through Worktree Publication. Do not delete accepted files directly or reset history to hide an attempt.
+Use a discarded node when you want to keep the reason an approach was rejected.
 
-**Can other people see my trees?**
-Knowledge is stored as ordinary files in your independent Git repository, not in a hosted account. Core does not upload it automatically. Anyone with access to those files, backups, a shared remote or an agent's permitted tools may read it. Filesystem and repository permissions, and what you send to a model provider, determine privacy; Core's cooperative worktrees are not an access-control sandbox. A reference grants no access to another repository.
+Committed Git history keeps earlier versions recoverable.
 
-**Can I export my trees?**
-The authored knowledge already consists of Git-tracked native files: `nodes/`, `trees/` and their relationships. Use ordinary Git cloning or a file copy that preserves symlinks to retain it. Generated SQLite and outlines are rebuildable views, not the authoritative export. The delivered local CLI does not supply a hosted export or automatic cloud-sync service. Sharing or pushing a knowledge repository requires the owner's permission and a content/privacy review.
+## Can other people see my trees?
 
-**What happens if I disconnect a model?**
-Local Core requires no model connection. Your knowledge files and Git history remain available to ordinary file tools and the local command. Ending an agent session does not remove them. Model-provider credentials, sessions and permissions belong to that agent's harness, not Core; stopping Core does not revoke access another program already has to your files.
+Knowledge stays in your independent Git repository.
 
-**Can an agent make mistakes?**
-Yes. An agent can misunderstand evidence or propose poor wording and structure. Read its proposed changes and their rationale before approving them. Native checks validate structure, fields, statuses, token limits and source consistency; they do not establish truth or the usefulness of an answer. Keep incorrect drafts inspectable and repair or undo them through the checked private-worktree/publication procedure.
+Core does not upload it automatically.
 
-**How many trees or nodes can I have?**
-There is no fixed node-count ceiling, but that is not an unlimited-capacity promise. Each authored file is bounded to 1 MiB and each content body to 5000 `o200k_base` tokens; complete operations also have resource guards. See Knowledge Layout for the delivered limits. A refusal requires diagnosis, not truncation or weakened checks. Outlines and scoped lexical search help navigation without proving that every store size is affordable.
+## Can I export my trees?
 
-**How is this different from automatic model memory?**
-Core keeps explicit, inspectable knowledge files and Git history. You or an authorized agent choose what to read, propose changes and save them through the agreed gate. It does not silently select and inject memory into every conversation. The control principle is explained in You Govern the Memory; another product's behavior depends on its own implementation and settings.
+Clone it or copy it while preserving symlinks.
 
-**How is this different from Obsidian or Notion?**
-Core emphasizes UUID-stable nodes, authored parent/child order, explicit references, local retrieval and checked Git publication for human–agent work. An agent can help maintain the knowledge under your approval; it is not guaranteed to keep itself current. The Binder explains the intended interaction metaphor, not a measured superiority claim about another product.
+Generated SQLite and outline files are rebuildable views.
+
+Sharing a repository requires the owner's permission and a privacy review.
+
+## What happens if I disconnect a model?
+
+Core needs no model connection.
+
+Knowledge files and Git history remain available to ordinary tools and the CLI.
+
+## Can an agent make mistakes?
+
+Yes, so read a proposed change and its evidence before approving it.
+
+Keep incorrect drafts inspectable and repair them through the checked workflow.
+
+## How many trees or nodes can I have?
+
+There is no fixed node-count ceiling.
+
+## How is this different from automatic model memory?
+
+Core keeps explicit knowledge files with Git history.
+
+You or an authorized agent choose what to read and what to save.
+
+Core does not inject memory into a conversation automatically.
+
+## How is this different from Obsidian or Notion?
+
+The current agent maintains the knowledge under your approval.
+
+See [[The Binder|5f146883-03c8-416c-be6b-c52cbcb055f2]] for the intended interaction metaphor.

@@ -7,8 +7,12 @@ see_also: []
 scope: "Identify a real question and useful initial structure before authoring a local tree."
 warnings: ""
 ---
-Start with a problem you care about: the outcome you want, what you know, constraints and unanswered questions. You may write this yourself or discuss it with an external agent that has authorized access to the local files.
+Start with a real question or outcome you care about.
 
-An agent can ask clarifying questions and propose separate concerns and dependencies. Review its interpretation: models can invent or misread details, and Core does not conduct the interview or verify the meaning. Distinguish your accepted decisions from suggestions and evidence still needed.
+Tell the current agent what you already know and which constraints matter.
 
-Once a concrete contribution is authorized, follow the local authoring pipeline to create or edit its private draft and validate it. A conversation alone does not save nodes. Return to the real question after each result rather than creating structure merely to fill a template.
+Review its interpretation and any proposed structure before approving knowledge changes.
+
+Save the resulting understanding through SiftText Commit.
+
+Return to the original problem.

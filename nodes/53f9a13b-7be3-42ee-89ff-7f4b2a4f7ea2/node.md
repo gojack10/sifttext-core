@@ -7,6 +7,8 @@ see_also: []
 scope: "Use browser-based discussion without claiming a delivered local Core connector."
 warnings: "Do not upload sensitive local knowledge without permission."
 ---
-Local Core supplies no Claude.ai connector or remote endpoint. Configuring a hosted SiftText connector does not connect this independent local knowledge repository, and no automatic device sync follows from installing Core.
+Check the current Claude web environment's available integrations before assuming it can access local knowledge.
 
-For browser discussion, you may manually provide permitted excerpts and inspect the suggestions yourself. The browser conversation does not read, edit or publish local files through Core. Save any approved result through the local authoring pipeline with a file/command-capable harness or manually. For executable agent work, use the parent node's local access contract; verify actual client capability rather than assume it.
+If local file access is unavailable, supply only excerpts you are permitted to share.
+
+Review the resulting suggestions and save approved changes through a file-capable agent or ordinary file tools using [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]].

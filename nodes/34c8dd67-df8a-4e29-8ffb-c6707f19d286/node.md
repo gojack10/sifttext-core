@@ -7,8 +7,10 @@ see_also: []
 scope: "Status value. Done. The question is answered, the decision is made, the work is complete."
 warnings: ""
 ---
-Resolved means this node is done. The question has been answered, the decision has been made, or the work is complete. The content contains the final state.
+Use resolved when the node's own completion condition is satisfied and its body records the supporting result.
 
-A resolved node is not frozen. You can reopen it if circumstances change. But resolving it signals to everyone (and every language model) that this piece is settled and can be relied upon.
+A captured report can satisfy that condition even when its explanation stays uncertain.
 
-Resolved nodes are valuable context. When a language model reads a resolved node, it knows this is a decided fact, not a work in progress. It can build on the conclusion without re-debating it.
+An active direct child prevents parent resolution under the native rules in [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]].
+
+New evidence can reopen the question, so preserve the earlier result and its grounds.

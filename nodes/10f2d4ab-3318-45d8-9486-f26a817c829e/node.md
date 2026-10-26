@@ -1,37 +1,29 @@
 ---
 id: "10f2d4ab-3318-45d8-9486-f26a817c829e"
 name: "Write for the Reader"
-micro_summary: "Removes prose that does not serve the reader while preserving source meaning and necessary actions."
+micro_summary: "Removes prose that does not serve the reader's purpose while preserving source meaning."
 status: "in_progress"
-see_also: [{"target":"957aa569-75be-4871-b376-6b1943cc4db4","reason":"Required design method when the prose is executable instruction content."},{"target":"c72d552d-3499-445b-a8d5-05d0ff7824f2","reason":"Actual authorization and local persistence route for knowledge changes."}]
-scope: "Edit agent-authored wording for the reader's purpose without compressing away evidence, authority or history."
+see_also: []
+scope: "Revise agent-authored prose for the intended reader's purpose while preserving material source meaning and explicit constraints."
 ---
-## Observed conditions
+Identify the reader and what the text must help them understand or do.
 
-The parent preserves the earlier local wording pass and its source-attribution safeguards. The reader-purpose method adds a test for whether a sentence belongs before shortening it. This local successor retains exact quotations, meaningful history and required boundaries while making that selection explicit.
+Remove a sentence when its absence loses no needed meaning.
 
-## Inference and response
+Keep a qualification when it changes a consequential interpretation or action.
 
-### Working pass
+Replace an abstract list with the concrete relationship it was meant to explain.
 
-Identify the reader and the job of the text before shortening it. Lead with what they need to understand or do. Remove a sentence when its absence loses no needed understanding or next action; keep a qualification when it changes a consequential meaning. Prefer a concrete use or example over rhetorical lists, stock contrasts and procedural self-commentary.
+Retain an actual inventory when the task needs its items.
 
-State the actual observation, judgment or action directly. Keep relevant actors, conditions, evidence and source. Distinguish supplied facts, interpretations and decisions where the distinction matters. Use ordinary sentences and vocabulary suitable for the reader. Splitting punctuation is not useful if the unnecessary second message remains.
+Use an example when it reveals the point more efficiently than explanation.
 
-Preserve exact source words, attribution, uncertainty, safety boundaries and complete historical sources. Mark omissions in quotations and editorial clarification visibly. Put an interpretation outside the quotation. Correcting agent-authored prose is different from rewriting the human's source. If shortening requires guessing, recover the source or preserve the uncertainty; ask only for a genuinely missing meaning or decision.
+Preserve exact quoted wording within marked excerpt boundaries.
 
-Keep material limitations at the claim they qualify. Preserve optional participation: a user may inspect or redirect work without being required to operate every step. Do not remove actual requirements, inventories or contrasts when they answer the reader's question. If one body contains independently meaningful developments, return that structural issue to the author rather than hide it with compression.
+Investigate a missing meaning rather than guessing to shorten the draft.
 
-### Illustrative comparisons
+Keep source attribution and required safety information intact.
 
-These cases are fictional editing examples, not product claims or measured benefits.
+Return the revised text to the invoking author.
 
-- For a current installation guide, replace “Install from source; a streamlined experience is being developed” with “Install from source.” The second message does not help that task.
-- Where only Linux ARM64 was tested, retain “Tested on Linux ARM64.” It changes the installation decision.
-- Replace “Revisit the incumbent procurement configuration against fulfillment constraints” with “Revisit the supplier choice when deliveries start arriving late” for a general reader; retain specialist terms where needed for precision.
-- Retain “This command permanently deletes the selected folder.” Brevity must not remove a consequential safety boundary.
-- Retain the distinction in “Two builds sharing one output directory produced inconsistent files. The team selected serial execution for that arrangement.” A scoped precaution is not a universal ban.
-
-### Return
-
-Read the result against the reader's actual purpose and source. Remove avoidable prose without weakening required actions or material distinctions. Return the wording to the invoking author. For instruction design reuse the current Canopy review; do not restart it. Knowledge writes still use local SiftText Commit under the actual grant. A shorter draft is not proof of improved reader or agent behavior.
+Use [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] for any knowledge changes.

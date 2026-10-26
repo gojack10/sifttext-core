@@ -7,6 +7,4 @@ see_also: []
 scope: "Priority value. Needs attention now. Blocking, deadline-driven, or critical."
 warnings: ""
 ---
-High priority means this node needs attention now. It is blocking other work, has an approaching deadline, or is critical to the tree's purpose.
-
-Use high priority sparingly. If everything is high priority, nothing is. Reserve it for nodes where delay has real consequences.
+High priority identifies work whose delay would materially harm the current goal.

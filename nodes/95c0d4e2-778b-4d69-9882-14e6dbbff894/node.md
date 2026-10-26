@@ -7,6 +7,8 @@ see_also: []
 scope: "Discuss permitted excerpts in ChatGPT without claiming a delivered local Core web integration."
 warnings: "Sharing a local excerpt with a hosted model requires permission."
 ---
-Local Core supplies no ChatGPT app, OAuth flow or remote MCP endpoint. A browser conversation does not gain access to your local Git repository by enabling developer mode or adding a hosted service.
+Check the current ChatGPT environment's available integrations before assuming it can access local knowledge.
 
-You may manually share authorized excerpts for discussion, then review proposed changes. This neither saves local nodes nor performs native checks. Carry an approved result through the local authoring pipeline yourself or through a separately authorized file/command-capable harness. Follow the parent node's contract if actual local agent access is available; do not assume a browser feature installs it.
+If local file access is unavailable, supply only excerpts you are permitted to share.
+
+Save approved results through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] using a file-capable environment.

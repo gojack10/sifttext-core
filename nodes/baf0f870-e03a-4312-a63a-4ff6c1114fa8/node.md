@@ -7,4 +7,4 @@ see_also: []
 scope: "Introduce manual or external-agent local knowledge work without requiring a hosted account or built-in assistant."
 warnings: ""
 ---
-Use this branch to understand the local workflow. For executable setup and authoring steps, read the Local Core Agent Entrypoint and its task-selected children in their stated order. This orientation does not replace their permissions, immutable base SHA, native edit/inspect/commit route or submit-owned acceptance and recovery procedure.
+Follow [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] for executable setup and applicable instruction reads.

@@ -1,3 +1,5 @@
+const LOGO: &str = "░▒▓█████████████████\n\n    ░▒▓█████████████\n\n        ░▒▓█████████\n\n            ░▒▓█████\n\n                ░▒▓█\n";
+
 //! Rust replacement for the retired Node release-bootstrap check. Exercises the public
 //! agent-facing `install.sh` release path only: the official release record, the published
 //! digest binding, and the refusals that must leave no partial application behind.
@@ -129,7 +131,7 @@ esac
                 stdout,
                 format!(
                     "{}Login with sifttext login.\nTell your agent to run sifttext instructions.\n",
-                    include_str!("../docs/sifttext-logo.txt")
+                    LOGO
                 )
             );
         } else {
@@ -334,7 +336,7 @@ fn banner_colors_only_commands_on_a_terminal_and_respects_no_color() {
             stdout,
             format!(
                 "{}Login with {start}sifttext login{end}.\nTell your agent to run {start}sifttext instructions{end}.\n",
-                include_str!("../docs/sifttext-logo.txt")
+                LOGO
             )
         );
     }

@@ -7,4 +7,6 @@ see_also: [{"target":"e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6","reason":"Owns local
 scope: "Locate local agent onboarding and distinguish file/command access from remote connectors."
 warnings: ""
 ---
-The Onboarding branch's Using an External Agent node and its client-specific children describe local file/command access and browser-only limitations. Use those instructions for your client; do not configure a hosted connector as a substitute for access to the independent local knowledge home.
+Follow [[Using an External Agent|e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6]] to establish the current agent's access and setup.
+
+Use the client-specific children as examples when they match the selected harness.

@@ -7,12 +7,14 @@ see_also: []
 scope: "How to express relative urgency in local knowledge without assuming automatic prioritization or a dedicated indexed field."
 warnings: ""
 ---
-Priority indicates how urgent or important a node is relative to its siblings. It helps you and language models decide what to work on next.
+Priority expresses a node's urgency relative to its siblings and the tree's current goal.
 
-- **High** — this needs attention now. It is blocking other work, has a deadline, or is critical to the tree's purpose.
-- **Medium** — important but not urgent. Should be addressed in the normal course of work.
-- **Low** — nice to have. Can wait. Will not block anything if deferred.
+Use high for work that needs prompt attention.
 
-Priority is relative, not absolute. A "high" priority in a low-stakes hobby tree is different from a "high" priority in a production system tree. Context matters.
+Use medium for important work in the normal course of the project.
 
-In local Core, priority is guidance you author in a node's scope or body for a human or separately configured agent to consider. Core does not choose your next task, supply an assistant, or order lexical search by priority. The three levels above are a useful writing convention, not a checked enum or dedicated retrieval field.
+Use low for useful work that can wait without blocking the current goal.
+
+Record priority in the node's scope or body when it helps choose work.
+
+The native metadata grammar is defined in [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]].

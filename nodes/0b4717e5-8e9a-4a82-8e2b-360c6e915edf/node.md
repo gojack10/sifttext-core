@@ -7,10 +7,8 @@ see_also: []
 scope: "Status value. Considered and rejected. Kept for the historical record."
 warnings: ""
 ---
-Discarded means this node was considered and deliberately rejected. The idea, approach, or line of inquiry was explored and found to be a dead end or not worth pursuing.
+Use discarded for an approach or interpretation that was considered and rejected.
 
-Discarded nodes are kept, not deleted. They are institutional memory. They prevent the same dead end from being re-explored by a future collaborator or language model.
+Supply discard_reason and preserve the evidence that explains the rejection.
 
-When you discard a node, write why in the content. "Discarded because the API does not support batch operations" is far more useful than a node that simply disappears. The reason is the value.
-
-Discarded is different from deferred. Deferred means "not now, but later." Discarded means "not ever, and here is why."
+A future reader can reconsider the approach if its original conditions change.

@@ -7,19 +7,14 @@ see_also: []
 scope: "The fundamental unit. What a node is, what its fields are. Children of this node explain each field in detail."
 warnings: ""
 ---
-A node is the fundamental unit of a tree. It holds one piece of your thinking.
+A node holds one meaningful piece of knowledge under a stable UUID.
 
-Every node has a name (2-5 words identifying what it is about) and a set of fields:
+Its name identifies the subject, and its micro-summary helps a reader decide whether to open it.
 
-- **Scope** — what this node is about. The boundary of what belongs here.
-- **Content** — what is known. Conclusions, decisions, working notes.
-- **Micro-summary** — stable responsibility that helps readers choose this node.
-- **Status** — not examined, in progress, resolved, stuck, deferred, or discarded; required reasons and evidence follow Knowledge Layout.
-- **Warnings** — cautions to check when reading the node; no automatic agent delivery is assumed.
-- **See Also** — explicit target/reason graph references, including useful dependencies.
-- **Children** — sub-nodes represented by child symlinks and `children.order`, not metadata fields.
-- **Links** — indexed `see_also` edges; narrative citations remain readable pointers.
+Scope defines what belongs in the node, while the Markdown body records the current understanding and its grounds.
 
-Native metadata has no priority or ruled_out field. Preserve distinct rejected approaches as discarded nodes with reasons and evidence; a small qualification can stay in its owning body. Knowledge Layout owns the complete supported grammar.
+Status records the lifecycle disposition.
 
-Each field is explained in detail in the children of this node.
+Warnings identify cautions needed before acting.
+
+Read [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]] for the exact native field and relationship formats.
