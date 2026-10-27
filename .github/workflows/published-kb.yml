@@ -1,0 +1,19 @@
+name: Published KB status
+on:
+  push:
+    branches: [main]
+    paths: ['nodes/**', 'trees/**']
+  pull_request:
+    paths: ['nodes/**', 'trees/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resolved-instructions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check-published-kb.mjs HEAD

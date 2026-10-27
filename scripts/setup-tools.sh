@@ -46,4 +46,6 @@ else
   tool_env_apply
   tool_env_verify_rust || { echo 'Rust 1.95.0 still unusable after repository-local acquisition' >&2; exit 1; }
 fi
+# Source contributors install the publication hook; release packages have no Git repo.
+if [ -e "$ROOT/.git" ]; then sh "$ROOT/scripts/setup-hooks.sh"; fi
 printf '%s\n' 'Tools prepared; run sh scripts/build.sh, or prefix any check with sh scripts/with-tools.sh. No shell/system configuration or existing knowledge was changed.'

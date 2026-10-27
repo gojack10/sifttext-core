@@ -98,6 +98,8 @@ sh install-local.sh "$HOME/sifttext-core-app"
 
 Prerequisites are Git, curl, tar, shasum, a C compiler/linker and Clang 14+. Use Xcode Command Line Tools on macOS. On Ubuntu/Debian, install `clang build-essential git curl ca-certificates perl` within your installation permissions.
 
+Source setup installs the Git publication hook through `scripts/setup-hooks.sh` (Node.js required). A commit that changes `nodes/` or `trees/` must have every published node marked `resolved`; the hook reads the staged Git snapshot, not unstaged edits. GitHub CI enforces the same rule on KB changes, and release packaging always checks the complete committed snapshot. Code-only commits remain possible while a KB correction awaits approval. Customer stores and private development trees are outside this publication policy. Existing custom hooks are preserved; chain `.githooks/pre-commit` from them.
+
 Setup acquires verified [Bend](https://github.com/bendlang/bend) 2.0.27 and Rust 1.95.0 into checkout-local `.tools/` when needed. Before initialization, select a Git name and email for the knowledge repository using the identity procedure in the local instructions.
 
 Choose a new absolute application path whose parent already exists, with no symlink components. To keep knowledge outside the application, use the default `~/sifttext` or supply another absolute path as the installer's second argument.

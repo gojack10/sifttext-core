@@ -12,6 +12,7 @@ platform_pins
 SOURCE=$(git rev-parse HEAD)
 KB=$(git rev-parse HEAD:nodes HEAD:trees | shasum -a 256 | cut -d ' ' -f 1)
 [ -z "$(git status --porcelain --untracked-files=all)" ] || { echo 'Release source must be committed and clean.' >&2; exit 1; }
+node scripts/check-published-kb.mjs HEAD
 sh scripts/build.sh --release
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
