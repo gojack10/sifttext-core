@@ -79,7 +79,6 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           cp install.sh release/install.sh
-          cp docs/update-recovery.md docs/update-repairs-release.md release/
           node scripts/release-manifest.mjs "$VERSION" release
           cd release
           sha256sum -c SHA256SUMS
