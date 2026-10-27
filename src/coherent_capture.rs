@@ -1,5 +1,5 @@
 //! Shared inventory-to-graph boundary and race-aware source captures.
-//! No persistent cache: every freshness barrier reads the actual working view.
+//! Freshness reads the working view; generated-file ownership uses the retained cache.
 use crate::{
     Entry, Result, Store,
     candidate_validation::{structural_context, structural_guard},
@@ -268,28 +268,26 @@ pub(crate) fn from_inventory_mode(
     ))
 }
 
-/// Checked historical resources, separate from current authored node identities.
+/// Source-less owners verified against the retained generated-byte cache.
 #[derive(Default)]
 pub(crate) struct Residues {
     owners: BTreeSet<String>,
-    receipts: Vec<crate::outlines::RecognizedResidue>,
+    cached: Option<(rusqlite::Connection, PathBuf)>,
     files: Vec<PathBuf>,
     physical: BTreeMap<PathBuf, Identity>,
-    history: Option<(PathBuf, Vec<u8>)>,
+    head: String,
 }
 impl Residues {
     pub(crate) fn contains(&self, id: &str) -> bool {
         self.owners.contains(id)
     }
     pub(crate) fn unchanged(&self) -> Result<()> {
-        if let Some((root, head)) = &self.history {
-            require(
-                history_git(root, &["rev-parse", "--verify", "HEAD^{commit}"])? == *head,
-                "changed historical Git source",
-            )?;
-        }
-        for receipt in &self.receipts {
-            receipt.unchanged()?;
+        if let Some((connection, root)) = &self.cached {
+            require(crate::local::reader_git(root, &["rev-parse", "HEAD"])? == self.head,
+                "changed residue Git source")?;
+            for owner in &self.owners {
+                crate::index::residue::verify(connection, root, owner)?;
+            }
         }
         for (p, expected) in &self.physical {
             let m = fs::symlink_metadata(p)?;
@@ -301,148 +299,13 @@ impl Residues {
         Ok(())
     }
     fn cleanup(&self) -> Result<()> {
-        self.cleanup_with_hook(|| {})
-    }
-    fn cleanup_with_hook(&self, mut after_inventory: impl FnMut()) -> Result<()> {
-        if self.owners.is_empty() {
-            return Ok(());
-        }
         self.unchanged()?;
-        let root = &self.history.as_ref().ok_or("missing residue history")?.0;
-        for owner in &self.owners {
-            let dir = root.join("nodes").join(owner);
-            let before = self
-                .physical
-                .get(&dir)
-                .ok_or("missing residue directory identity")?;
-            let metadata = fs::symlink_metadata(&dir)?;
-            require(
-                metadata.is_dir()
-                    && (
-                        metadata.dev(),
-                        metadata.ino(),
-                        metadata.ctime(),
-                        metadata.ctime_nsec(),
-                    ) == *before,
-                "changed residue directory before cleanup",
-            )?;
-            let files: Vec<_> = self
-                .files
-                .iter()
-                .filter(|path| path.parent() == Some(dir.as_path()))
-                .collect();
-            require(
-                crate::entries(&dir)?.len() == files.len(),
-                "unknown residue resource",
-            )?;
-            after_inventory();
-            for path in files {
-                // Remove only captured generated paths; never rename the owner
-                // directory, where a late unknown file could be swept along.
-                let metadata = fs::symlink_metadata(path)?;
-                let expected = self.physical.get(path).ok_or("missing residue identity")?;
-                require(
-                    metadata.is_file()
-                        && metadata.nlink() == 1
-                        && (
-                            metadata.dev(),
-                            metadata.ino(),
-                            metadata.ctime(),
-                            metadata.ctime_nsec(),
-                        ) == *expected,
-                    "changed residue before cleanup",
-                )?;
-                fs::remove_file(path)?;
+        if let Some((connection, root)) = &self.cached {
+            for owner in &self.owners {
+                crate::index::residue::retire(connection, root, owner)?;
             }
-            // rmdir is atomic with respect to emptiness: late unknown entries
-            // remain in place and make cleanup fail instead of being relocated.
-            fs::remove_dir(&dir)?;
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod residue_cleanup_tests {
-    use super::{Identity, Residues};
-    use std::{
-        collections::{BTreeMap, BTreeSet},
-        fs,
-        os::unix::fs::MetadataExt,
-        process::Command,
-    };
-
-    #[test]
-    fn late_unknown_file_survives_cleanup_refusal() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let mut git = Command::new("git");
-        assert!(
-            git.args(["init", "-q", root.to_str().unwrap()])
-                .status()
-                .unwrap()
-                .success()
-        );
-        assert!(
-            Command::new("git")
-                .current_dir(root)
-                .args([
-                    "-c",
-                    "user.name=Fixture",
-                    "-c",
-                    "user.email=fixture@example.invalid",
-                    "-c",
-                    "commit.gpgSign=false",
-                    "commit",
-                    "--allow-empty",
-                    "-qm",
-                    "fixture",
-                ])
-                .status()
-                .unwrap()
-                .success()
-        );
-        let owner = "71000000-0000-4000-8000-000000000002";
-        let dir = root.join("nodes").join(owner);
-        fs::create_dir_all(&dir).unwrap();
-        let generated = dir.join("outline.lean");
-        fs::write(&generated, "generated\n").unwrap();
-        let identity = |path: &std::path::Path| -> Identity {
-            let metadata = fs::symlink_metadata(path).unwrap();
-            (
-                metadata.dev(),
-                metadata.ino(),
-                metadata.ctime(),
-                metadata.ctime_nsec(),
-            )
-        };
-        let head = Command::new("git")
-            .current_dir(root)
-            .args(["rev-parse", "--verify", "HEAD^{commit}"])
-            .output()
-            .unwrap();
-        assert!(head.status.success());
-        let captured = Residues {
-            owners: BTreeSet::from([owner.to_owned()]),
-            receipts: Vec::new(),
-            files: vec![generated.clone()],
-            physical: BTreeMap::from([
-                (dir.clone(), identity(&dir)),
-                (generated.clone(), identity(&generated)),
-            ]),
-            history: Some((root.to_owned(), head.stdout)),
-        };
-
-        let result = captured.cleanup_with_hook(|| {
-            fs::write(dir.join("unknown.txt"), "preserve me\n").unwrap();
-        });
-
-        assert!(result.is_err(), "late unknown entry must refuse cleanup");
-        assert_eq!(fs::read(dir.join("unknown.txt")).unwrap(), b"preserve me\n");
-        assert!(
-            !generated.exists(),
-            "only the captured generated file is removed"
-        );
     }
 }
 
@@ -502,403 +365,19 @@ pub(crate) fn residues(path: &Path) -> Result<Residues> {
     if result.owners.is_empty() {
         return Ok(result);
     }
-    require(
-        fs::canonicalize(
-            std::str::from_utf8(&history_git(path, &["rev-parse", "--show-toplevel"])?)?.trim(),
-        )? == path,
-        "residue store must be its Git root",
-    )?;
-    let head = history_git(path, &["rev-parse", "--verify", "HEAD^{commit}"])?;
-    result.history = Some((path.to_owned(), head.clone()));
-    let head = std::str::from_utf8(&head)?.trim();
-    let policy = crate::Policy::checked(Path::new(env!("CARGO_MANIFEST_DIR")))?;
+    require(fs::canonicalize(crate::local::reader_git(path, &["rev-parse", "--show-toplevel"])?)? == path,
+        "residue store must be its Git root")?;
+    result.head = crate::local::reader_git(path, &["rev-parse", "HEAD"])?;
     for id in &result.owners {
-        require(
-            history_git(path, &["ls-tree", head, "--", &format!("nodes/{id}")])?.is_empty(),
-            "residue owner still belongs to current Git source",
-        )?;
-        // Select the nearest first-parent deletion of this exact owner. The output is
-        // one commit, and history_git bounds execution time and output; never scan all
-        // history or trust editable cache metadata. Partial current checkouts stay invalid.
-        let deleted = history_git(
-            path,
-            &[
-                "log",
-                "-1",
-                "--first-parent",
-                "--format=%H",
-                "--diff-filter=D",
-                "HEAD",
-                "--",
-                &format!("nodes/{id}"),
-            ],
-        )?;
-        let deleted = std::str::from_utf8(&deleted)?.trim();
-        require(!deleted.is_empty(), "missing prior node deletion")?;
-        let parent = history_git(path, &["rev-parse", "--verify", &format!("{deleted}^1")])?;
-        let parent = std::str::from_utf8(&parent)?.trim();
-        let historical = tempfile::tempdir()?;
-        reconstruct(path, parent, historical.path())?;
-        let proof = crate::outlines::ResidueProof::capture_revision(&policy, historical.path(), path, parent, id)?;
-        let source = historical.path().join("nodes").join(id).join("node.md");
-        let measurement = crate::token_metadata::Refresher::default()
-            .refresh(&source, None)?
-            .measurement;
-        for p in crate::entries(&path.join("nodes").join(id))? {
-            let rel = p.strip_prefix(path)?;
-            if crate::outlines::derived(rel) {
-                result.receipts.push(proof.recognize(path, rel)?);
-            } else {
-                require(
-                    crate::token_metadata::safe_derived(&p)?,
-                    "unrecognized token residue",
-                )?;
-                if p.file_name().is_some_and(|n| n == "node.meta.json") {
-                    require(
-                        serde_json::from_slice::<crate::token_metadata::Measurement>(
-                            &crate::read_regular(&p)?,
-                        )? == measurement,
-                        "forged historical token residue",
-                    )?;
-                }
-            }
-        }
+        require(crate::local::reader_git(path, &["ls-tree", &result.head, "--", &format!("nodes/{id}")])?.is_empty(),
+            "residue owner still belongs to current Git source")?;
     }
-    require(
-        history_git(path, &["rev-parse", "--verify", "HEAD^{commit}"])?
-            == format!("{head}\n").as_bytes(),
-        "changed historical Git source",
-    )?;
+    // Reuse exact recorded output bytes, not historical regeneration or the
+    // release builder's directory. Missing proof preserves every remaining file.
+    result.cached = Some(crate::index::cached(path).map_err(|error|
+        format!("preserved source-less nodes: ownership cache unavailable ({error}); restore authored files or recover the prior cache"))?);
     result.unchanged()?;
     Ok(result)
-}
-
-// Read-only object access. Never checkout, filters, hooks, replace objects,
-// inherited Git routing, remote fetching, or writes to the user's index.
-const HISTORY_CAP: usize = 64 * 1024 * 1024;
-fn history_git(path: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    history_git_input(path, args, None, HISTORY_CAP)
-}
-fn history_git_input(
-    path: &Path,
-    args: &[&str],
-    input: Option<&[u8]>,
-    cap: usize,
-) -> Result<Vec<u8>> {
-    use std::{
-        io::{Read, Seek, Write},
-        process::{Command, Stdio},
-        sync::mpsc,
-        thread,
-        time::{Duration, Instant},
-    };
-    // A regular input file avoids a pipe writer blocking on batched Git output.
-    let stdin = if let Some(input) = input {
-        let mut file = tempfile::tempfile()?;
-        file.write_all(input)?;
-        file.rewind()?;
-        Stdio::from(file)
-    } else {
-        Stdio::null()
-    };
-    let mut command = Command::new("git");
-    for (key, _) in std::env::vars_os() {
-        if key.as_encoded_bytes().starts_with(b"GIT_") {
-            command.env_remove(key);
-        }
-    }
-    let mut child = command
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_NO_REPLACE_OBJECTS", "1")
-        .env("GIT_NO_LAZY_FETCH", "1")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .arg("-C")
-        .arg(path)
-        .args(["-c", "core.hooksPath=/dev/null"])
-        .args(args)
-        .stdin(stdin)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let pipes: [Box<dyn Read + Send>; 2] = [
-        Box::new(child.stdout.take().ok_or("missing Git stdout")?),
-        Box::new(child.stderr.take().ok_or("missing Git stderr")?),
-    ];
-    let (tx, rx) = mpsc::channel();
-    for (tag, pipe) in pipes.into_iter().enumerate() {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let value = pipe
-                .take((cap + 1) as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
-            let _ = tx.send((tag, value));
-        });
-    }
-    drop(tx);
-    let start = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if start.elapsed() > Duration::from_secs(10) {
-            child.kill()?;
-            child.wait()?;
-            return Err("historical Git resource timeout".into());
-        }
-        thread::sleep(Duration::from_millis(2));
-    };
-    let mut out = [Vec::new(), Vec::new()];
-    for _ in 0..2 {
-        let (tag, bytes) = rx.recv_timeout(Duration::from_secs(1))?;
-        out[tag] = bytes?;
-    }
-    require(
-        status.success() && out.iter().map(Vec::len).sum::<usize>() <= cap,
-        "historical Git read rejected",
-    )?;
-    Ok(std::mem::take(&mut out[0]))
-}
-fn reconstruct(repo: &Path, commit: &str, destination: &Path) -> Result<()> {
-    let listing = history_git(
-        repo,
-        &[
-            "ls-tree",
-            "-rz",
-            "--full-tree",
-            commit,
-            "--",
-            "nodes",
-            "trees",
-        ],
-    )?;
-    let mut entries = Vec::new();
-    let mut request = Vec::new();
-    for record in listing.split(|b| *b == 0).filter(|r| !r.is_empty()) {
-        let text = std::str::from_utf8(record)?;
-        let (header, name) = text.split_once('\t').ok_or("malformed historical entry")?;
-        let fields: Vec<_> = header.split(' ').collect();
-        require(
-            fields.len() == 3
-                && fields[1] == "blob"
-                && matches!(fields[2].len(), 40 | 64)
-                && fields[2].bytes().all(|b| b.is_ascii_hexdigit()),
-            "unsafe historical object",
-        )?;
-        let rel = Path::new(name);
-        require(
-            rel.components()
-                .all(|c| matches!(c, std::path::Component::Normal(_))),
-            "unsafe historical path",
-        )?;
-        let parts: Vec<_> = name.split('/').collect();
-        let link = match parts.as_slice() {
-            ["trees", id] if crate::uuid(id) => Some(format!("../nodes/{id}")),
-            ["nodes", id, "children", child] if crate::uuid(id) && crate::uuid(child) => {
-                Some(format!("../../{child}"))
-            }
-            _ => None,
-        };
-        let regular = matches!(parts.as_slice(), ["trees" | "nodes", ".keep"])
-            || matches!(parts.as_slice(), ["nodes", id, "node.md" | "children.order"] if crate::uuid(id))
-            || matches!(parts.as_slice(), ["nodes", id, "children", ".keep"] if crate::uuid(id));
-        require(
-            (fields[0] == "120000" && link.is_some())
-                || (matches!(fields[0], "100644" | "100755") && regular),
-            "unsafe historical resource",
-        )?;
-        request.extend_from_slice(fields[2].as_bytes());
-        request.push(b'\n');
-        entries.push((rel, fields[0], fields[2], link));
-    }
-    // Each frame adds at most 128 bytes (SHA-256, type, decimal size, delimiters).
-    // Payload limits are checked separately; framing must not shrink their budget.
-    let cap = entries
-        .len()
-        .checked_mul(128)
-        .and_then(|n| HISTORY_CAP.checked_add(n))
-        .ok_or("historical resource overflow")?;
-    let response = history_git_input(repo, &["cat-file", "--batch"], Some(&request), cap)?;
-    let mut remaining = response.as_slice();
-    let mut total = 0usize;
-    for (rel, mode, id, link) in entries {
-        let bytes = history_blob(&mut remaining, id, &mut total)?;
-        let p = destination.join(rel);
-        fs::create_dir_all(p.parent().ok_or("missing historical parent")?)?;
-        match mode {
-            "100644" | "100755" => fs::write(&p, bytes)?,
-            "120000" => {
-                require(
-                    Some(std::str::from_utf8(bytes)?) == link.as_deref(),
-                    "unsafe historical link",
-                )?;
-                std::os::unix::fs::symlink(std::str::from_utf8(bytes)?, &p)?;
-            }
-            _ => return Err("unsafe historical file mode".into()),
-        }
-    }
-    require(remaining.is_empty(), "unexpected historical batch output")?;
-    for dir in crate::node_entries(&destination.join("nodes"))? {
-        crate::real_dir(&dir)?;
-        fs::create_dir_all(dir.join("children"))?;
-    }
-    crate::real_dir(&destination.join("trees"))?;
-    Ok(())
-}
-
-// Git batch bodies are binary and length-delimited, never line-delimited.
-fn history_blob<'a>(remaining: &mut &'a [u8], id: &str, total: &mut usize) -> Result<&'a [u8]> {
-    let end = remaining
-        .iter()
-        .position(|b| *b == b'\n')
-        .ok_or("malformed historical batch header")?;
-    require(end < 128, "oversized historical batch header")?;
-    let header = std::str::from_utf8(&remaining[..end])?;
-    let fields: Vec<_> = header.split(' ').collect();
-    require(
-        fields.len() == 3 && fields[0] == id && fields[1] == "blob",
-        "unsafe historical batch object",
-    )?;
-    require(
-        !fields[2].is_empty() && fields[2].bytes().all(|b| b.is_ascii_digit()),
-        "malformed historical batch size",
-    )?;
-    let size: usize = fields[2].parse()?;
-    *total = total
-        .checked_add(size)
-        .ok_or("historical resource overflow")?;
-    require(
-        size <= crate::LIMIT && *total <= HISTORY_CAP,
-        "historical reconstruction resource limit",
-    )?;
-    let body = &remaining[end + 1..];
-    require(
-        body.get(size) == Some(&b'\n'),
-        "truncated historical batch body",
-    )?;
-    let bytes = &body[..size];
-    *remaining = &body[size + 1..];
-    Ok(bytes)
-}
-
-#[cfg(test)]
-mod history_batch_tests {
-    use super::*;
-
-    #[test]
-    fn binary_frames_preserve_bytes_and_refuse_malformed_or_oversized_objects() {
-        let id = "a".repeat(40);
-        let frame = format!("{id} blob 4\n").into_bytes();
-        let body = b"\0\n\xffx";
-        let response = [frame.as_slice(), body, b"\n", frame.as_slice(), body, b"\n"].concat();
-        let mut rest = response.as_slice();
-        let mut total = 0;
-        assert_eq!(history_blob(&mut rest, &id, &mut total).unwrap(), body);
-        assert_eq!(history_blob(&mut rest, &id, &mut total).unwrap(), body);
-        assert!(rest.is_empty());
-        assert_eq!(total, 8);
-        for response in [
-            format!("{id} missing\n"),
-            format!("{} blob 0\n\n", "b".repeat(40)),
-            format!("{id} tree 0\n\n"),
-            format!("{id} blob -1\n"),
-            format!("{id} blob 9999999999999999999999999999999999999\n"),
-            format!("{id} blob {}\n", crate::LIMIT + 1),
-            format!("{id} blob 1\nx"),
-            format!("{id} blob 1\nx!"),
-            format!("{id} blob 2\nx\n"),
-            format!("{id} blob  0\n\n"),
-            "unterminated".into(),
-        ] {
-            assert!(
-                history_blob(&mut response.as_bytes(), &id, &mut 0).is_err(),
-                "{response:?}"
-            );
-        }
-        let response = format!("{id} blob 1\nx\n");
-        let mut total = HISTORY_CAP;
-        assert!(history_blob(&mut response.as_bytes(), &id, &mut total).is_err());
-        let response = format!("{id} blob {}\n", crate::LIMIT);
-        // At the object boundary it must fail for truncation, not the size limit.
-        assert_eq!(
-            history_blob(&mut response.as_bytes(), &id, &mut 0)
-                .unwrap_err()
-                .to_string(),
-            "truncated historical batch body"
-        );
-    }
-
-    #[test]
-    fn batched_git_reconstructs_exact_committed_bytes_and_canonical_links() {
-        let repo = tempfile::tempdir().unwrap();
-        let id = "71000000-0000-4000-8000-000000000001";
-        let dir = repo.path().join("nodes").join(id);
-        fs::create_dir_all(dir.join("children")).unwrap();
-        fs::create_dir(repo.path().join("trees")).unwrap();
-        for (file, bytes) in [
-            ("node.md", b"raw\0\n\xff".as_slice()),
-            ("children.order", b""),
-            ("children/.keep", b""),
-        ] {
-            fs::write(dir.join(file), bytes).unwrap();
-        }
-        std::os::unix::fs::symlink(format!("../nodes/{id}"), repo.path().join("trees").join(id))
-            .unwrap();
-        let git = |args: &[&str]| history_git(repo.path(), args).unwrap();
-        git(&["init", "-q"]);
-        git(&["add", "."]);
-        git(&[
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "commit",
-            "-qm",
-            "fixture: historical bytes",
-        ]);
-        let commit = git(&["rev-parse", "HEAD"]);
-        let commit = std::str::from_utf8(&commit).unwrap().trim();
-        let destination = tempfile::tempdir().unwrap();
-        reconstruct(repo.path(), commit, destination.path()).unwrap();
-        for file in ["node.md", "children.order", "children/.keep"] {
-            assert_eq!(
-                fs::read(destination.path().join("nodes").join(id).join(file)).unwrap(),
-                fs::read(dir.join(file)).unwrap()
-            );
-        }
-        assert_eq!(
-            fs::read_link(destination.path().join("trees").join(id)).unwrap(),
-            PathBuf::from(format!("../nodes/{id}"))
-        );
-        assert!(history_git_input(repo.path(), &["--version"], None, 1).is_err());
-        assert!(history_git(repo.path(), &["cat-file", "blob", "unknown-object"]).is_err());
-        // The committed source, not the mutable working bytes, selects content.
-        fs::write(dir.join("node.md"), b"uncommitted").unwrap();
-        let destination = tempfile::tempdir().unwrap();
-        reconstruct(repo.path(), commit, destination.path()).unwrap();
-        assert_eq!(
-            fs::read(destination.path().join("nodes").join(id).join("node.md")).unwrap(),
-            b"raw\0\n\xff"
-        );
-        fs::remove_file(repo.path().join("trees").join(id)).unwrap();
-        std::os::unix::fs::symlink("/unsafe", repo.path().join("trees").join(id)).unwrap();
-        git(&["add", "."]);
-        git(&[
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "commit",
-            "-qm",
-            "fixture: unsafe link",
-        ]);
-        let destination = tempfile::tempdir().unwrap();
-        assert!(reconstruct(repo.path(), "HEAD", destination.path()).is_err());
-        assert!(!destination.path().join("trees").join(id).exists());
-    }
 }
 
 type Identity = (u64, u64, i64, i64);
@@ -940,6 +419,7 @@ pub(crate) fn identities_with_workers(
         out.insert(dir, (m.dev(), m.ino(), times.0, times.1));
     }
     let paths = crate::node_entries(&path.join("nodes"))?;
+    let owners = &residues.owners;
     let marker = path.join("nodes/.keep");
     match fs::symlink_metadata(&marker) {
         Ok(m) => {
@@ -964,7 +444,7 @@ pub(crate) fn identities_with_workers(
                 }
                 match std::thread::Builder::new().spawn_scoped(scope, move || {
                     let mut batch = BTreeMap::new();
-                    node_identities(chunk, residues, &mut batch)
+                    node_identities(chunk, owners, &mut batch)
                         .map(|()| batch)
                         .map_err(source_error::WorkerError::capture)
                 }) {
@@ -989,7 +469,7 @@ pub(crate) fn identities_with_workers(
             out.extend(batch);
         }
     } else {
-        node_identities(&paths, residues, &mut out)?;
+        node_identities(&paths, owners, &mut out)?;
     }
     identity_walk(&path.join("trees"), &mut out)?;
     Ok(out)
@@ -1006,7 +486,7 @@ fn identity_walk(p: &Path, out: &mut BTreeMap<PathBuf, Identity>) -> Result<()> 
 }
 fn node_identities(
     paths: &[PathBuf],
-    residues: &Residues,
+    owners: &BTreeSet<String>,
     out: &mut BTreeMap<PathBuf, Identity>,
 ) -> Result<()> {
     for dir in paths {
@@ -1020,7 +500,7 @@ fn node_identities(
             &relative,
             None,
         )?;
-        if residues.contains(&crate::name(&dir)?) {
+        if owners.contains(&crate::name(&dir)?) {
             continue;
         }
         out.insert(dir.clone(), (m.dev(), m.ino(), 0, 0));

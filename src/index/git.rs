@@ -112,7 +112,6 @@ fn output(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
 pub(super) struct Snapshot {
     pub identity: String,
     pub repo: PathBuf,
-    revision: Option<String>,
     tree: String,
     changes: BTreeMap<PathBuf, Option<Source>>,
 }
@@ -146,20 +145,10 @@ impl Snapshot {
         // A concurrent checkout is a retry, not a different baseline for this capture.
         require(crate::local::reader_git(root, &["rev-parse", "--verify", "HEAD^{tree}"])? == tree,
             "changed source identity")?;
-        Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), revision: None, tree, changes })
-    }
-    pub fn revision(repo: &Path, revision: &str) -> Result<Self> {
-        require(valid_oid(revision), "historical input must be an exact Git commit")?;
-        let tree = crate::local::reader_git(repo, &["rev-parse", "--verify", &format!("{revision}^{{tree}}")])?;
-        require(valid_oid(&tree), "invalid historical Git tree")?;
-        Ok(Self { identity: format!("{:x}", Sha256::digest(tree.as_bytes())), repo: repo.to_owned(),
-            revision: Some(revision.to_owned()), tree, changes: BTreeMap::new() })
+        Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), tree, changes })
     }
     pub fn unchanged(&self) -> Result<bool> {
-        let after = match &self.revision {
-            Some(revision) => Self::revision(&self.repo, revision)?,
-            None => Self::read(&self.repo)?,
-        };
+        let after = Self::read(&self.repo)?;
         Ok(after.identity == self.identity)
     }
     pub fn stage(&self, connection: &mut Connection, root: &Path) -> Result<()> {

@@ -50,7 +50,7 @@ fn file(connection: &Connection, root: &Path, id: &str, name: &str) -> Result<()
 
 /// No authored/unknown entry is permitted, including symlinks or node metadata.
 /// Previous processor outputs remain owned bytes; processor currency is irrelevant.
-pub(super) fn verify(connection: &Connection, root: &Path, id: &str) -> Result<()> {
+pub(crate) fn verify(connection: &Connection, root: &Path, id: &str) -> Result<()> {
     require(crate::uuid(id), "invalid residue owner")?;
     let root_id = directory(root)?;
     let nodes_id = directory(&root.join("nodes"))?;

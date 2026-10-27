@@ -263,6 +263,14 @@ fn current(connection: &Connection, snapshot: &Snapshot) -> Result<Option<(Strin
 // A donor is an optional exact-input memo, never an acceptance or source-freshness
 // authority. Hold its read transaction for the complete record/artifact reuse.
 fn donor(path: &Path) -> Result<(Connection, PathBuf)> {
+    let (connection, root) = cached(path)?;
+    require(compatible(&connection)?, "incompatible prepared cache")?;
+    Ok((connection, root))
+}
+
+// Ownership hashes remain useful after a processor upgrade. Read the retained
+// generation without refreshing away the removed owner's evidence.
+pub(crate) fn cached(path: &Path) -> Result<(Connection, PathBuf)> {
     let root = working_path(path, None)?;
     crate::real_dir(&root.join(".sifttext"))?;
     let db = root.join(".sifttext/index.sqlite");
@@ -276,7 +284,6 @@ fn donor(path: &Path) -> Result<(Connection, PathBuf)> {
     }
     let connection = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW)?;
     connection.execute_batch("PRAGMA cache_size=-1024; PRAGMA mmap_size=0; PRAGMA temp_store=FILE; BEGIN;")?;
-    require(compatible(&connection)?, "incompatible prepared cache")?;
     Ok((connection, root))
 }
 fn memo(connection: &Connection, id: &str, hash: &str) -> Option<(Value, String)> {
@@ -612,21 +619,6 @@ pub(crate) fn with_current_from<T>(
     _policy: &Policy,
     path: &Path,
     prepared: Option<&Path>,
-    query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
-) -> Result<(String, T)> {
-    with_source(path, prepared, None, query)
-}
-
-/// Historical residue repair uses the same object-backed index without creating
-/// a temporary repository or importing a mutable working version into its proof.
-pub(crate) fn with_revision<T>(
-    _policy: &Policy, path: &Path, repo: &Path, revision: &str,
-    query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
-) -> Result<(String, T)> {
-    with_source(path, None, Some((repo, revision)), query)
-}
-fn with_source<T>(
-    path: &Path, prepared: Option<&Path>, revision: Option<(&Path, &str)>,
     mut query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
     let mut work = Work::default();
@@ -636,10 +628,7 @@ fn with_source<T>(
     let database = directory.join("index.sqlite");
     let database_id = identity(&database)?;
     let donor = prepared.and_then(|p| donor(p).ok());
-    let capture = || match revision {
-        Some((repo, revision)) => Snapshot::revision(repo, revision),
-        None => Snapshot::read(&root),
-    };
+    let capture = || Snapshot::read(&root);
     for _ in 0..4 {
         let snapshot = capture()?;
         let tx = connection.transaction()?;

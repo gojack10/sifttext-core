@@ -221,16 +221,9 @@ impl ResidueProof {
         owner: &str,
     ) -> Result<Self> {
         require(base.is_none(), "unsupported old sparse adapter; use native Git sparse checkout")?;
-        Self::capture_source(policy, source, owner, None)
+        Self::capture_source(policy, source, owner)
     }
-    pub(crate) fn capture_revision(
-        policy: &crate::Policy, source: &Path, repo: &Path, revision: &str, owner: &str,
-    ) -> Result<Self> {
-        Self::capture_source(policy, source, owner, Some((repo, revision)))
-    }
-    fn capture_source(
-        policy: &crate::Policy, source: &Path, owner: &str, revision: Option<(&Path, &str)>,
-    ) -> Result<Self> {
+    fn capture_source(policy: &crate::Policy, source: &Path, owner: &str) -> Result<Self> {
         require(crate::uuid(owner), "invalid residue owner")?;
         let source = fs::canonicalize(source)?;
         let query = |tx: &rusqlite::Transaction<'_>, _: &str| {
@@ -265,10 +258,7 @@ impl ResidueProof {
             }
             Ok(files)
         };
-        let (source_version, files) = match revision {
-            Some((repo, revision)) => crate::index::with_revision(policy, &source, repo, revision, query)?,
-            None => crate::index::with_current(policy, &source, query)?,
-        };
+        let (source_version, files) = crate::index::with_current(policy, &source, query)?;
         Ok(Self {
             owner: owner.to_owned(),
             source_version,
