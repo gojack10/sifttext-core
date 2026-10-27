@@ -23,4 +23,6 @@ const manifest = {
 writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 asset('manifest.json');
 asset('install.sh');
+asset('update-recovery.md');
+asset('update-repairs-release.md');
 writeFileSync(join(directory, 'SHA256SUMS'), `# SiftText release ${version} source ${info.source}\n` + [...hashes].map(([file, hash]) => `${hash}  ${file}\n`).join(''));
