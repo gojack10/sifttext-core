@@ -2,7 +2,7 @@
 id: "4036d3c5-e596-4a9c-b432-1c4ccc3162b4"
 name: "Present the Reviewable Delta"
 micro_summary: "Presents brief explanations beside exact changes and structural context before approval."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Presents brief explanations beside exact changes and structural context before approval."
 ---

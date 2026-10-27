@@ -2,7 +2,7 @@
 id: "b5cfbee3-dda0-4caf-ade0-0f132444eb5a"
 name: "Claude Code Local Setup"
 micro_summary: "Applies local file-first entry and scoped command permissions to a separately configured terminal agent."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Use Claude Code as an external local harness without a remote SiftText configuration."
 warnings: ""

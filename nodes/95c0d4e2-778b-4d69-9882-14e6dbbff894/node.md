@@ -2,7 +2,7 @@
 id: "95c0d4e2-778b-4d69-9882-14e6dbbff894"
 name: "ChatGPT Web and Local Core"
 micro_summary: "Keeps manually shared browser discussion distinct from local file access and checked publication."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Discuss permitted excerpts in ChatGPT without claiming a delivered local Core web integration."
 warnings: "Sharing a local excerpt with a hosted model requires permission."

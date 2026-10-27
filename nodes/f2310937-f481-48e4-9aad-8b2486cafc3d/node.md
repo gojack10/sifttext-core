@@ -2,7 +2,7 @@
 id: "f2310937-f481-48e4-9aad-8b2486cafc3d"
 name: "Reconciliation"
 micro_summary: "Routes post-save reconciliation to the affected knowledge and its consumers."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Routes post-save reconciliation to the affected knowledge and its consumers."
 ---

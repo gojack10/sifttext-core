@@ -2,7 +2,7 @@
 id: "a472e05c-9bbf-48f2-89d7-6c6092c339ed"
 name: "CLI Operations"
 micro_summary: "Guides authorized use of the local Core command."
-status: "in_progress"
+status: "resolved"
 see_also: [{"target":"6da0b35a-955a-4ad2-bdce-2994ba26119c","reason":"Use the diagnosed-problem path to matching source and maintenance guidance."}]
 scope: "Operate local Core within the user's permissions."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "d96c84a8-ce99-4474-94ef-7ae1d1db4a1b"
 name: "Draft From Originating Conditions"
 micro_summary: "Drafts source-grounded knowledge changes with meaningful ownership and exact approval content."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Drafts source-grounded knowledge changes with meaningful ownership and exact approval content."
 ---

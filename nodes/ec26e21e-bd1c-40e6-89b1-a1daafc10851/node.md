@@ -2,7 +2,7 @@
 id: "ec26e21e-bd1c-40e6-89b1-a1daafc10851"
 name: "Messy In, Structured Out"
 micro_summary: "Removes the requirement to be organized first: rambling input becomes clean nodes because structuring is the model's job."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "You do not need to be organized to use SiftText. The language model's superpower is turning messy, chaotic human output into clean structure. Your job is to think. The model's job is to organize."
 warnings: ""

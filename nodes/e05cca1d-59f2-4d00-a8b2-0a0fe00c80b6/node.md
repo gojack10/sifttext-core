@@ -2,7 +2,7 @@
 id: "e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6"
 name: "Using an External Agent"
 micro_summary: "Establishes the current agent’s actual access, setup guidance and permission boundaries."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "What an external agent needs to work with local Core, and how browser-only clients differ."
 ---

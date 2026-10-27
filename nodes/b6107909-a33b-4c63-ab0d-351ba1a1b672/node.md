@@ -2,7 +2,7 @@
 id: "b6107909-a33b-4c63-ab0d-351ba1a1b672"
 name: "Knowledge Layout"
 micro_summary: "Explains how repository locations, UUID folders, authored fields and ordered child relationships fit together for local knowledge navigation."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Locate the local knowledge home and understand its native identity, content and hierarchy before using retrieval or editing tools."
 warnings: ""

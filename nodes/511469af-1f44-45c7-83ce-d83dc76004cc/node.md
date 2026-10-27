@@ -2,7 +2,7 @@
 id: "511469af-1f44-45c7-83ce-d83dc76004cc"
 name: "Compose Applicable Reading"
 micro_summary: "Makes each branch's purpose, inputs, output and reading obligations clear without recursive context expansion."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Compose a complete prompt from meaningful responsibilities and explicit applicable dependencies while keeping historical grounds selectively available."
 ---

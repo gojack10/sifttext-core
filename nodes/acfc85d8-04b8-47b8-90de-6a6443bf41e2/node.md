@@ -2,7 +2,7 @@
 id: "acfc85d8-04b8-47b8-90de-6a6443bf41e2"
 name: "Warnings"
 micro_summary: "Keeps actionable cautions in the authored metadata while leaving detailed rationale with its owning node."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "The warnings field. Cautions for anyone reading or working on this node. Safety rails and gotchas."
 warnings: ""

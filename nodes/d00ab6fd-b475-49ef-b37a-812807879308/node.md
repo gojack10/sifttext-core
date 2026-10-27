@@ -2,7 +2,7 @@
 id: "d00ab6fd-b475-49ef-b37a-812807879308"
 name: "Dialogue"
 micro_summary: "Forms a reviewable change with the user and preserves the approval boundary."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Recover meaningful changes and prepare an exact local tree delta under the current approval or standing-write boundary."
 ---

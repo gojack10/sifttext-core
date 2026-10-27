@@ -2,7 +2,7 @@
 id: "da56a037-af73-469c-a941-a2b7c5f290b7"
 name: "What is a Node"
 micro_summary: "Anatomy reference for the fundamental unit, naming every field and delegating each field's detailed meaning to its own child."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "The fundamental unit. What a node is, what its fields are. Children of this node explain each field in detail."
 warnings: ""

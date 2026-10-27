@@ -2,7 +2,7 @@
 id: "e1bd7224-a729-4875-bfbd-ca154e5c1c0b"
 name: "Welcome to SiftText"
 micro_summary: "Introduces the local tree/node model and distinguishes the supplied knowledge copy from software and hosted services."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Orient an independent local Core user before their first knowledge contribution."
 warnings: ""

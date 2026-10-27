@@ -2,7 +2,7 @@
 id: "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8"
 name: "Retrieve SiftText Knowledge"
 micro_summary: "Finds relevant source nodes efficiently with files, rg, fd, bounded outlines and indexed queries."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Guide a fresh agent from an unfamiliar question to source-grounded understanding without unnecessary scanning or unbounded outline reads."
 ---

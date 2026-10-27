@@ -2,7 +2,7 @@
 id: "edaefe20-50b7-4859-8645-e4c23f4e07ac"
 name: "Commit Usable Understanding"
 micro_summary: "Checks what a later reader can conclude or do after reconciled and verified changes."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Checks what a later reader can conclude or do after reconciled and verified changes."
 ---

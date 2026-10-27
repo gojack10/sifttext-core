@@ -2,7 +2,7 @@
 id: "b98297d7-820d-497e-a97c-f1c6d5c620a3"
 name: "Establish Instruction Contract"
 micro_summary: "Separates requirements, observations and author-selected methods and defines what the resulting procedure must accomplish."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Ground an instruction revision in the actual human request, observed need, available inputs and authority before choosing its procedure."
 ---

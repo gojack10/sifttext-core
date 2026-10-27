@@ -2,7 +2,7 @@
 id: "9e8c7056-c3e2-41d2-98d8-c544154ebe8a"
 name: "Professional Naming"
 micro_summary: "Chooses precise names while preserving required identities and quoted source wording."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Chooses precise names while preserving required identities and quoted source wording."
 ---

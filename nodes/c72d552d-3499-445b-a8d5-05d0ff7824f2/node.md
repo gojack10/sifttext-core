@@ -2,7 +2,7 @@
 id: "c72d552d-3499-445b-a8d5-05d0ff7824f2"
 name: "SiftText Commit"
 micro_summary: "Carries source-grounded knowledge changes through approval, checked saving and usable continuation."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Carries source-grounded knowledge changes through approval, checked saving and usable continuation."
 ---

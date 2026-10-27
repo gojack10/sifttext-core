@@ -2,7 +2,7 @@
 id: "dcdd97b3-9557-41e3-b7cb-1f6f9744267d"
 name: "Git Commit Skill"
 micro_summary: "Tree-native Git commit procedure: inspect the worktree, split unrelated changes, use Scoped Commit messages, commit only intended files, and report the resulting hash."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Turn a working-tree diff into clean, reviewable Scoped Commits: inspect and separate unrelated changes, write repository-appropriate commit messages, commit only the intended files, and report the landed commit."
 ---

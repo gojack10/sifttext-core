@@ -2,7 +2,7 @@
 id: "ab82fdf1-6a71-4e09-bffe-ed6446eadc9a"
 name: "Review Origin and Response Coverage"
 micro_summary: "Reviews source coverage, attribution, structure and the exact proposed stored text."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Reviews source coverage, attribution, structure and the exact proposed stored text."
 ---

@@ -2,7 +2,7 @@
 id: "f2d4825e-7e98-4775-b363-c50de7ee62ed"
 name: "Brain, Tree, Beam"
 micro_summary: "Foundational framework pairing the brain's associative breadth with a model's focused depth, translated through nodes and links."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "The foundational framework for why tree thinking works. Human brains evolved for breadth and association. Language models are powerful but one-dimensional. The tree is the translation layer that lets both sides contribute what they are best at."
 warnings: ""

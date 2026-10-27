@@ -2,7 +2,7 @@
 id: "98892306-f87b-4361-9d91-fac2e0023a11"
 name: "Harness Bootstrap and Migration"
 micro_summary: "Installs the current harness entrance and safely migrates selected memory."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Installs the current harness entrance and safely migrates selected memory."
 ---

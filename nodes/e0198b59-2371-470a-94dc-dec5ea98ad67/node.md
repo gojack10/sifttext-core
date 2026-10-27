@@ -2,7 +2,7 @@
 id: "e0198b59-2371-470a-94dc-dec5ea98ad67"
 name: "See Also"
 micro_summary: "Explains explicit indexed references and how their reasons distinguish required dependencies from optional context."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Use the native see_also field for indexed target/reason relationships, including dependencies, without confusing narrative citations with graph edges."
 warnings: ""

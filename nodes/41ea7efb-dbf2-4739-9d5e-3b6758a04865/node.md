@@ -2,7 +2,7 @@
 id: "41ea7efb-dbf2-4739-9d5e-3b6758a04865"
 name: "Priority"
 micro_summary: "Explains relative urgency as authored context for human or agent work selection, not an automatic Core scheduler."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "How to express relative urgency in local knowledge without assuming automatic prioritization or a dedicated indexed field."
 warnings: ""

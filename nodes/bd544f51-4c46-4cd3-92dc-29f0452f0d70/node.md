@@ -2,7 +2,7 @@
 id: "bd544f51-4c46-4cd3-92dc-29f0452f0d70"
 name: "Your First Tree"
 micro_summary: "Connects a reviewed problem structure to native files and a recoverable checked contribution."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Create and inspect a first local tree without assuming an automatic interview or web interface."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "42b1cde8-5478-4b14-938f-c10869ffda03"
 name: "Probing the Unknown"
 micro_summary: "Probe pattern for unmapped problems: cheap child experiments that are explored then kept or discarded, so the tree accumulates the actual map of dead ends."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "How to use the tree when you don't know the shape of the problem yet. The probe pattern: create child nodes as cheap experiments, explore them, discard what fails. The tree accumulates your map of dead ends and survivors."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "5e565245-14fe-406c-977c-cf94a9be246b"
 name: "Local Core Agent Entrypoint"
 micro_summary: "Routes the current agent through retrieval, reading, setup and approved knowledge changes."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Routes the current agent through retrieval, reading, setup and approved knowledge changes."
 ---

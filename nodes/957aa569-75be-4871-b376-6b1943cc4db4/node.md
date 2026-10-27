@@ -2,7 +2,7 @@
 id: "957aa569-75be-4871-b376-6b1943cc4db4"
 name: "Canopy (Prompt Authoring Framework)"
 micro_summary: "Guides the design and review of complete, navigable agent instructions."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Guides the design and review of complete, navigable agent instructions."
 ---

@@ -2,7 +2,7 @@
 id: "da24ff95-9d07-4e15-9571-9313d6b90f94"
 name: "Forcing Pass"
 micro_summary: "Reviews source fidelity, meaning, structure and instructions before approved saving."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Reviews source fidelity, meaning, structure and instructions before approved saving."
 ---

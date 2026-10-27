@@ -2,7 +2,7 @@
 id: "1e1b2959-562b-48a8-8094-8f099c8e3cc4"
 name: "Deslopifier"
 micro_summary: "Removes avoidable prose while preserving the meaning needed by its reader."
-status: "in_progress"
+status: "resolved"
 scope: "Simplify agent-authored text while preserving material source meaning, attribution, evidence and the action the reader needs."
 see_also: []
 ---

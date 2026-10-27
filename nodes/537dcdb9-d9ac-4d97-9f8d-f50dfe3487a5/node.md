@@ -2,7 +2,7 @@
 id: "537dcdb9-d9ac-4d97-9f8d-f50dfe3487a5"
 name: "Growing Your Trees"
 micro_summary: "Explains decomposition as knowledge grows, distinguishing a brief body qualification from an independently meaningful rejected approach."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "How local tree structure evolves from large nodes to focused children, and when a rejected approach needs its own visible owner."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "d0549d1b-e8b2-4160-81ed-62115597464a"
 name: "Write Grounded Stable Nodes"
 micro_summary: "Connects evidence to attributed interpretation, action and lifecycle status."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Connects evidence to attributed interpretation, action and lifecycle status."
 ---

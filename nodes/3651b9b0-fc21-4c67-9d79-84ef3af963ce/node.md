@@ -2,7 +2,7 @@
 id: "3651b9b0-fc21-4c67-9d79-84ef3af963ce"
 name: "Session Evidence"
 micro_summary: "Associates session evidence during Commit and distinguishes links, retained copies and opt-in backup."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Document shipped opt-in session-retention behavior, verified configuration fields and commands, and the private-data and backup boundaries."
 ---

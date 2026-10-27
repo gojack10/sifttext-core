@@ -2,7 +2,7 @@
 id: "17c42051-88c0-4e41-a151-5d1bab4be83b"
 name: "Status"
 micro_summary: "Explains the native lifecycle values and delegates their validation and publication mechanics to the local entry pipeline."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "The status field and its six native lifecycle values, including required reasons and the distinction between a status and evidence."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "38a9fc79-8a84-494d-a962-2ec5134bc856"
 name: "SiftText Knowledge Base"
 micro_summary: "Introduces user instructions, general methods and the independent evolving knowledge home."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Orient users to the first-party knowledge bundled with local SiftText Core."
 ---

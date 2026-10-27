@@ -2,7 +2,7 @@
 id: "d6f8402b-a2af-4658-b6cc-943062361297"
 name: "Reconcile Affected Branches"
 micro_summary: "Reconciles the branches and consumers actually affected without rewriting histories or sweeping unrelated trees."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Restore coherent local meaning, current selection and material consumer instructions after the authorized delta is saved."
 ---

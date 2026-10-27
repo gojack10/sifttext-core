@@ -2,7 +2,7 @@
 id: "a609e77c-8164-40d2-b391-e675194fd2ad"
 name: "Save and Restore Continuation"
 micro_summary: "Saves the approved delta and restores coherent continuation through reconciliation and readback."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Saves the approved delta and restores coherent continuation through reconciliation and readback."
 ---

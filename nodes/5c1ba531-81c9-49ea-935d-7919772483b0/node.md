@@ -2,7 +2,7 @@
 id: "5c1ba531-81c9-49ea-935d-7919772483b0"
 name: "Reconsider Preserved Understanding"
 micro_summary: "Reconsiders changed evidence and current applicability without erasing earlier knowledge."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Reconcile changed grounds and judgments with their current uses while preserving source history and meaningful alternatives."
 ---

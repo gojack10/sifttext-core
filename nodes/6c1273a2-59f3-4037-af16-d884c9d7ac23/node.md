@@ -2,7 +2,7 @@
 id: "6c1273a2-59f3-4037-af16-d884c9d7ac23"
 name: "Author Navigable Procedures"
 micro_summary: "Authors complete instruction routes from meaningful responsibilities and explicit reading dependencies."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Authors complete instruction routes from meaningful responsibilities and explicit reading dependencies."
 ---

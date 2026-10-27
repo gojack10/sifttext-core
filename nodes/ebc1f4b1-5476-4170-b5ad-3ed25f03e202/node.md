@@ -2,7 +2,7 @@
 id: "ebc1f4b1-5476-4170-b5ad-3ed25f03e202"
 name: "Review Instruction Route"
 micro_summary: "Tests the proposed prompt's meaning and required-reading path, including its own authoring dependencies, without claiming fresh-agent proof."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Review a complete candidate instruction branch set against its source, actual execution route and authority before adoption."
 ---

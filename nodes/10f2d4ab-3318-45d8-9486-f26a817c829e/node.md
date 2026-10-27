@@ -2,7 +2,7 @@
 id: "10f2d4ab-3318-45d8-9486-f26a817c829e"
 name: "Write for the Reader"
 micro_summary: "Removes prose that does not serve the reader's purpose while preserving source meaning."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Revise agent-authored prose for the intended reader's purpose while preserving material source meaning and explicit constraints."
 ---

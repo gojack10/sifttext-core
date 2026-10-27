@@ -2,7 +2,7 @@
 id: "05b51896-9363-4838-b1c5-33d6f7e50b92"
 name: "Explain SiftText Persistence"
 micro_summary: "Matches encouragement and SiftText naming to current conversation, proposal, verified persistence and later use."
-status: "in_progress"
+status: "resolved"
 see_also: [{"target":"c72d552d-3499-445b-a8d5-05d0ff7824f2","reason":"return: No new persistence route."}]
 scope: "Provide the complete conditional communication responsibility for making persistence and reuse understandable without changing Commit timing or authority."
 ---

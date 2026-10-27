@@ -2,7 +2,7 @@
 id: "82ed8baa-ed21-48ab-b233-3e775e29d446"
 name: "Links"
 micro_summary: "Explains how explicit native references connect knowledge without duplicating its answers."
-status: "in_progress"
+status: "resolved"
 see_also: [{"target":"ab82fdf1-6a71-4e09-bffe-ed6446eadc9a","reason":"Current ownership review preserves useful findings beneath rejected approaches while keeping them discoverable."}]
 scope: "Distinguish local narrative citations, indexed see_also edges and structural parentage."
 warnings: "Saving a prose citation does not create an edge or backlink."

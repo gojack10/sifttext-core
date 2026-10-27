@@ -2,7 +2,7 @@
 id: "045dd71e-24ae-4125-8957-20ece3d3f7a5"
 name: "What is a Tree"
 micro_summary: "Defines a tree as one persisted domain of nodes and gives the new-tree versus child-node test, with the root's scope as the boundary."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Top-level concept. What a tree is, when to create one, what makes a good root node."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "4cc0b396-4b55-415e-bb26-b51c97e6ca78"
 name: "SQLite Queries"
 micro_summary: "Explains read-only discovery and filtering of the local derived index, including freshness checks and its distinction from hosted PostgreSQL."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Use the actual local SQLite schema safely, including parent/root filtering, and return verifiable source identities."
 warnings: ""

@@ -2,7 +2,7 @@
 id: "baf0f870-e03a-4312-a63a-4ff6c1114fa8"
 name: "Onboarding"
 micro_summary: "Guides independent users from a local knowledge home to their first checked contribution and continued use."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Introduce manual or external-agent local knowledge work without requiring a hosted account or built-in assistant."
 warnings: ""

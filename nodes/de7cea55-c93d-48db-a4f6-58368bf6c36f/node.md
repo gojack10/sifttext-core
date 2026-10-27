@@ -2,7 +2,7 @@
 id: "de7cea55-c93d-48db-a4f6-58368bf6c36f"
 name: "Associate External Artifact Directories"
 micro_summary: "Links directories materially used by nodes while preserving external storage and artifact custody."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Complete per-node directory associations during SiftText Commit without moving external projects, recursively inventorying them, or claiming artifact backup."
 ---

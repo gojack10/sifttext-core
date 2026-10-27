@@ -2,7 +2,7 @@
 id: "d04227c1-0ccd-4d52-98dc-dba4d4c7f0e3"
 name: "Choosing an External Model"
 micro_summary: "Keeps model capability, cost and source-access decisions separate from Core's local knowledge operations."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "How to choose external reasoning support without assuming Core includes an assistant or subscription."
 warnings: ""

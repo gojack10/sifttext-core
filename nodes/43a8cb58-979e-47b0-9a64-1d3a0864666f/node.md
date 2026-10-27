@@ -2,7 +2,7 @@
 id: "43a8cb58-979e-47b0-9a64-1d3a0864666f"
 name: "What Are You Working On?"
 micro_summary: "Helps turn a real problem into human-reviewed scope and structure rather than a template or invented answer."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Identify a real question and useful initial structure before authoring a local tree."
 warnings: ""

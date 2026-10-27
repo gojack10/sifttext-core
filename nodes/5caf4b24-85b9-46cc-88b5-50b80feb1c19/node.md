@@ -2,7 +2,7 @@
 id: "5caf4b24-85b9-46cc-88b5-50b80feb1c19"
 name: "Nest Meaningful Developments"
 micro_summary: "Places meaningful knowledge developments beneath the work they extend and respects each tree’s audience."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Choose stable semantic units and parentage that make the development of an undertaking understandable and selectively readable."
 ---

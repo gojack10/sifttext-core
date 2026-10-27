@@ -2,7 +2,7 @@
 id: "53f9a13b-7be3-42ee-89ff-7f4b2a4f7ea2"
 name: "Claude Web and Local Core"
 micro_summary: "Explains why a browser connector is not access to a local knowledge repository."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Use browser-based discussion without claiming a delivered local Core connector."
 warnings: "Do not upload sensitive local knowledge without permission."

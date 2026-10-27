@@ -2,7 +2,7 @@
 id: "072ccc69-a259-4eeb-b0bc-bf0a7630ad1a"
 name: "Inline Links"
 micro_summary: "Distinguishes readable narrative citations from explicit native graph edges."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Cite local nodes in prose without claiming that saving text creates indexed references or backlinks."
 warnings: "Prose citations do not author graph edges; use a validated see_also target/reason for an indexed relationship."

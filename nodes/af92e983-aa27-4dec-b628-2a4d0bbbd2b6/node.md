@@ -2,7 +2,7 @@
 id: "af92e983-aa27-4dec-b628-2a4d0bbbd2b6"
 name: "Persistence"
 micro_summary: "Saves approved changes through native publication and verifies the resulting knowledge."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Execute only approved local knowledge changes after Dialogue and Forcing Pass; return actual file and publication evidence."
 ---

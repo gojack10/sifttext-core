@@ -2,7 +2,7 @@
 id: "314e5c0a-063d-4a81-9214-11f49747703b"
 name: "Task-Relevant Project Rules"
 micro_summary: "Applies general naming, evidence, ownership and navigation rules to authorized knowledge work."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Route an authorized project contribution through its applicable semantic, evidence, action and communication methods without imposing unrelated historical reading."
 ---

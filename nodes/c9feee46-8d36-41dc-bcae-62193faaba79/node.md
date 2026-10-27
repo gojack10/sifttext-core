@@ -2,7 +2,7 @@
 id: "c9feee46-8d36-41dc-bcae-62193faaba79"
 name: "Encourage Useful Contributions"
 micro_summary: "Recognizes useful contributions and develops missing understanding without needless questioning."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Recognizes useful contributions and develops missing understanding without needless questioning."
 ---

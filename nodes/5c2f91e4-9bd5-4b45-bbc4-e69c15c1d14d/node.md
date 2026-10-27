@@ -2,7 +2,7 @@
 id: "5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d"
 name: "SiftText Read"
 micro_summary: "Recovers relevant knowledge and makes the current interpretation understandable and actionable."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Recover relevant current understanding and continue the user's authorized task with enough context to answer or act."
 ---

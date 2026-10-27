@@ -1,7 +1,7 @@
 ---
 id: "8b5361e1-20d7-42a9-9dca-26ba3bac9f25"
 name: "Managed Releases and Updates"
-status: "in_progress"
+status: "resolved"
 micro_summary: "Guides verified managed updates while preserving user knowledge."
 see_also: []
 ---

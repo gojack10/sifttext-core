@@ -2,7 +2,7 @@
 id: "b7a734be-af2e-41d6-8415-9078c69ae5ab"
 name: "Read One Meaningful Level"
 micro_summary: "Uses bounded local views and relevant descent without compulsory whole-tree reading."
-status: "in_progress"
+status: "resolved"
 see_also: []
 scope: "Select a bounded local view and expand relevant branches while preserving access to current work, original grounds and rejected alternatives."
 ---

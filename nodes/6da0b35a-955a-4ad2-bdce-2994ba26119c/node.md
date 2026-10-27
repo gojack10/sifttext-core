@@ -2,7 +2,7 @@
 id: "6da0b35a-955a-4ad2-bdce-2994ba26119c"
 name: "Core Maintenance"
 micro_summary: "Guides agents from a diagnosed SiftText problem into matching source and authorized local repair."
-status: "in_progress"
+status: "resolved"
 see_also: [{"target":"a472e05c-9bbf-48f2-89d7-6c6092c339ed","reason":"Use the supported CLI, source-build and checked-worktree operations."},{"target":"8b5361e1-20d7-42a9-9dca-26ba3bac9f25","reason":"Read the supported configuration guide before relying on persisted permissions."}]
 scope: "Guide local diagnosis, adaptation, repair and contribution from the installed Core source-code entrance."
 warnings: "Matching source does not grant permission to publish code, project data or credentials."

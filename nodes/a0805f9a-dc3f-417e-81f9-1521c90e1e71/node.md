@@ -2,7 +2,7 @@
 id: "a0805f9a-dc3f-417e-81f9-1521c90e1e71"
 name: "Common Questions"
 micro_summary: "FAQ catch-all for confusions that don't map to a single concept node: deleting vs discarding, privacy, export, plus how SiftText differs from auto-memory and from Obsidian. Open when a question doesn't fit a concept node cleanly."
-status: "in_progress"
+status: "resolved"
 see_also: [{"target":"fbaa3012-2235-49cb-88c0-67fdbc366c36","reason":"Explains the human's control over reading and saving memory."},{"target":"5f146883-03c8-416c-be6b-c52cbcb055f2","reason":"Offers the binder metaphor for explicit, inspectable knowledge."}]
 scope: "FAQ-shaped content for questions that do not map to a single concept node elsewhere. Receives links from other nodes. Catch-all for edge cases and common confusions."
 warnings: ""
