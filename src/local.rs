@@ -223,6 +223,15 @@ fn git_config_value(path: &Path, key: &str) -> Result<String> {
     Ok(value)
 }
 
+/// Resolve both identity fields before preparation, retaining only those settings.
+pub(crate) fn configure_git_identity(path: &Path) -> Result<()> {
+    let name = git_config_value(path, "user.name")?;
+    let email = git_config_value(path, "user.email")?;
+    git(path, &["config", "--local", "user.name", &name])?;
+    git(path, &["config", "--local", "user.email", &email])?;
+    Ok(())
+}
+
 // Reader movement must not run inherited filters, hooks, fsmonitor or lazy fetch.
 pub(crate) fn reader_command(path: &Path, args: &[&str]) -> Command {
     let mut cmd = git_command(path);

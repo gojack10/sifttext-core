@@ -772,7 +772,16 @@ fn resume(
         return resume_rollback(root, state, previous.clone());
     }
     let policy = checked_runtime(&root.join(&pending.application))?;
+    local::configure_git_identity(&state.home)?;
     if pending.commit.is_none() {
+        // The journal precedes the merge. Restart only the untouched draft;
+        // conflicts and customer resolutions keep their existing recovery path.
+        if git(&pending.draft, &["rev-parse", "HEAD"])? == pending.base
+            && git(&pending.draft, &["rev-parse", "--verify", "MERGE_HEAD"]).is_err()
+            && git(&pending.draft, &["status", "--porcelain"])?.is_empty()
+        {
+            git(&pending.draft, &["merge", "--no-ff", "--no-edit", &pending.upstream])?;
+        }
         require(
             git(&pending.draft, &["diff", "--name-only", "--diff-filter=U"])?.is_empty(),
             "resolve the reported KB conflicts in the retained worktree",
@@ -923,6 +932,12 @@ fn apply(
     if !app_changed && !kb_changed {
         return Ok(json!({"status":"current","application":current.version}));
     }
+    // A pinned update does not prepare anything and need not select identity.
+    if kb_changed && !(app_changed && config["pinned"].is_string()) {
+        require(state.baseline.is_some(),
+            "existing home has no verified upstream baseline; keep current knowledge and ask the agent to establish its source revision")?;
+        local::configure_git_identity(&state.home)?;
+    }
     let app = if app_changed {
         // A customer who pinned their own build keeps it: the candidate is reported, never staged
         // or activated, so a local fix survives an update without anyone noticing and rolling back.
@@ -949,8 +964,10 @@ fn apply(
         if destination.exists() {
             verify_cached_application(&destination, manifest, asset)?;
         } else {
-            unpack(asset, &destination)?;
-            let info = package(&destination)?;
+            let stage = tempfile::tempdir_in(root.join("releases"))?;
+            let prepared = stage.path().join("package");
+            unpack(asset, &prepared)?;
+            let info = package(&prepared)?;
             require(
                 info.version == manifest.application.version
                     && info.source == manifest.application.source
@@ -958,7 +975,7 @@ fn apply(
                 "staged package identity differs from manifest",
             )?;
             persist(
-                &destination.join(".sifttext-cache.json"),
+                &prepared.join(".sifttext-cache.json"),
                 &CachedApplication {
                     version: info.version,
                     source: info.source,
@@ -966,6 +983,7 @@ fn apply(
                     asset_sha256: asset.sha256.clone(),
                 },
             )?;
+            fs::rename(&prepared, &destination)?;
         }
         match patched_candidate(root, &state.home, &destination, manifest) {
             Ok(Some(candidate)) => candidate.strip_prefix(root)?.to_owned(),
@@ -988,15 +1006,10 @@ fn apply(
     if !kb_changed {
         return finish(root, state, manifest, &app, None, None, state.baseline.clone());
     }
-    require(
-        state.baseline.is_some(),
-        "existing home has no verified upstream baseline; keep current knowledge and ask the agent to establish its source revision",
-    )?;
-    let kb = root.join(format!("knowledge-{}", manifest.knowledge.revision));
-    require(
-        !kb.exists(),
-        "unactivated knowledge package already exists; inspect it before retrying",
-    )?;
+    // Unique, updater-owned staging can be abandoned without touching prior
+    // attempts or customer work. A crash never blocks the next preparation.
+    let stage = tempfile::tempdir_in(root)?;
+    let kb = stage.path().join("knowledge");
     unpack(&manifest.knowledge.asset, &kb)?;
     merge_knowledge(root, state, manifest, app, &policy, &kb, preflight)
 }
@@ -1014,41 +1027,24 @@ fn merge_knowledge(
         .clone()
         .ok_or("no verified upstream baseline")?;
     local::check(policy, kb, None, BTreeSet::new())?;
-    // Form an upstream branch from the last incorporated snapshot, not the customer's HEAD.
-    let upstream_dir = root.join("upstream-worktree");
-    git(
-        &state.home,
-        &[
-            "worktree",
-            "add",
-            "--detach",
-            text(&upstream_dir)?,
-            &baseline,
-        ],
-    )?;
-    for name in ["nodes", "trees"] {
-        let dest = upstream_dir.join(name);
-        if dest.exists() {
-            fs::remove_dir_all(&dest)?;
-        }
-        copy_tree(&kb.join(name), &dest)?;
-    }
-    git(&upstream_dir, &["add", "--", "nodes", "trees"])?;
-    git(
-        &upstream_dir,
-        &[
-            "commit",
-            "--allow-empty",
-            "-m",
-            &format!("knowledge: import official {}", manifest.knowledge.revision),
-        ],
-    )?;
-    let upstream = git(&upstream_dir, &["rev-parse", "HEAD"])?;
-    git(
-        &state.home,
-        &["update-ref", "refs/sifttext/upstream-candidate", &upstream],
-    )?;
-    git(&state.home, &["worktree", "remove", text(&upstream_dir)?])?;
+    // Form the official revision from the previous upstream in a private Git
+    // index. Failed imports cannot strand a registered worktree or customer index.
+    let stage = tempfile::tempdir_in(root)?;
+    let import = |args: &[&str]| -> Result<String> {
+        let mut command = local::reader_command(&state.home, &[
+            "-c", "core.sparseCheckout=false", "--work-tree", text(kb)?,
+        ]);
+        command.env("GIT_INDEX_FILE", stage.path().join("index")).args(args);
+        let output = crate::checked_publication::run_command(command)?;
+        require(output.status.success(), &String::from_utf8_lossy(&output.stderr))?;
+        Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+    };
+    import(&["read-tree", &baseline])?;
+    import(&["add", "--all", "--", "nodes", "trees"])?;
+    let tree = import(&["write-tree"])?;
+    let upstream = import(&["commit-tree", &tree, "-p", &baseline, "-m",
+        &format!("knowledge: import official {}", manifest.knowledge.revision)])?;
+    git(&state.home, &["update-ref", "refs/sifttext/upstream-candidate", &upstream])?;
     let allocation = local::worktree(&policy, &state.home)?;
     let draft = PathBuf::from(allocation["worktree"].as_str().ok_or("missing draft")?);
     let base = allocation["base"]
