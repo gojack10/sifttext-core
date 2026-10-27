@@ -159,11 +159,9 @@ Local trees stay on disk during login. Where the installed help lists `sync`, it
 
 ## Updates and recovery
 
-Managed installations can report compatible official updates without applying them automatically. Check the selected release's update policy before setup so the user can choose whether to disable background checks.
+Managed installations report cached release notices without waiting for the network. When a check is due, a detached CLI process fetches the release manifest for later commands. Checks run at most every four hours after success, with a five-minute retry cooldown after failure. They do not install updates.
 
 Run `sifttext update` with the user's update permission. When they authorize routine updates, record that grant with `sifttext update --grant standing`. This changes only the `updates` object of the knowledge home's `.sifttext/config.json`. Inspect the setting with `sifttext update --config`.
-
-To skip background checks, run `sifttext update --mode disabled`. Alternatively set `SIFTTEXT_NO_UPDATE=1` during installation and every subsequent invocation. Explicit updates remain available with either setting.
 
 For older installations, consult their installed command help and update guide before using settings flags. If standing grants are unsupported, ask before each update.
 
@@ -171,7 +169,7 @@ For local diagnosis, use `sifttext update --local-status` if the installed help 
 
 The receipt is **not an atomic snapshot** across state and marker, and does not verify the current launcher, accepted knowledge HEAD, pin/settings, lock ownership or publication readiness. During concurrent activation it may show last recorded identities and a marker observed at a different moment. Preserve these observations and any refusal; do not infer permission to resume, publish or remove a lock.
 
-`update --status` retains its existing meaning: explicitly fetch/check releases and record attempt/success/cache state without installing a release. It requires the exclusive application-update mutex and can report `update busy` while an ordinary managed command holds a shared lock. `SIFTTEXT_NO_UPDATE=1` skips opportunistic checks only; it does not make `--status` read-only or disable an explicit update. Older installations without `--local-status` have no equivalent safe inspection flag: consult their guide and inspect the recorded files with ordinary read-only tools instead of treating `--status` as a lock probe.
+`update --status` retains its existing meaning: explicitly fetch/check releases and record attempt/success/cache state without installing a release. It requires the exclusive application-update mutex and can report `update busy` while an ordinary managed command holds a shared lock. Older installations without `--local-status` have no equivalent safe inspection flag: consult their guide and inspect the recorded files with ordinary read-only tools instead of treating `--status` as a lock probe.
 
 For a blocked update, read the installed Managed Releases and Updates guide and inspect `sifttext update --local-status` (or the older version's documented status operation, with its release-check side effects understood). Reconcile any conflicting knowledge draft under that guide, inspect and commit the intended resolution, then use `sifttext update --resume` for its checked submission. Actual updates, install initialization and recovery retain exclusion against ordinary operations; local inspection never bypasses those safeguards.
 

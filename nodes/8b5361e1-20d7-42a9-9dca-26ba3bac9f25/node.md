@@ -31,22 +31,29 @@ Local knowledge work and official release updates need no payment or cloud login
 
 ## Release notices
 
-A newer compatible release produces an update_available notice without activating it.
+Ordinary managed commands check official releases four hours after the last successful check, with a five-minute retry cooldown after failure.
 
-Finish the current operation before acting on the notice.
+Release checks run in a detached CLI process so ordinary commands do not wait for the network. Later commands display the cached result.
+
+A newer compatible release produces an `update_available` notice without activating it automatically.
+
+Act on the update notice at the earliest convenient pause in your work. Do not interrupt important work to update.
+
+- With the user's recorded standing permission, run `"$BIN" update`.
+- Otherwise, ask whether the user authorizes this update or routine updates.
+
+Record routine permission only after the user's approval:
 
 ```sh
 "$BIN" update --grant standing
 "$BIN" update --config
 ```
 
-The grant command changes only the updates object in the knowledge home's .sifttext/config.json.
+The grant command changes only the `updates` object in the knowledge home's `.sifttext/config.json`, preserving other settings. Settings receipts show permission, file path and the pin only when set; an omitted pin means none.
 
-Revoke a grant with "$BIN" update --grant ask.
+Revoke a grant with `"$BIN" update --grant ask`. Never grant permission for yourself or copy it from another machine.
 
-Skip background checks with "$BIN" update --mode disabled or SIFTTEXT_NO_UPDATE=1.
-
-These settings exist in managed v0.2.0 and v0.3.0.
+These settings exist in managed v0.2.0 and v0.3.0. Older v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`, so ask before each update there.
 
 ## Inspect and apply
 

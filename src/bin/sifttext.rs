@@ -47,9 +47,8 @@ sifttext update --local-status              Read recorded update state only; no 
 sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
 sifttext update --rollback                  Restore the previous release through checked KB reversal
 sifttext update --rebuild                   Rebuild the selected local source and retain its pin
-sifttext update --config                    Read the user's update mode and standing grant
+sifttext update --config                    Read the user's standing grant and application pin
 sifttext update --grant standing|ask        Record or revoke the user's routine-update grant
-sifttext update --mode notify|disabled      Choose whether ordinary commands check releases
 sifttext update --attach-node=UUID          Register the repair undertaking for a pending update
 sifttext update --pin IDENTITY              Keep a chosen build through later official updates
 sifttext update --unpin                     Let official updates activate again
@@ -174,6 +173,7 @@ fn run() -> Result<()> {
                     "--config",
                     "--unpin",
                     "--rebuild",
+                    "--opportunistic", // Detached release check; not a public update operation.
                 ]
                 .contains(&mode.as_str()) =>
             {
@@ -187,8 +187,7 @@ fn run() -> Result<()> {
             [_, flag, value] if flag == "--attach-node" => format!("--attach-node={value}"),
             [_, flag, value] if flag == "--pin" => format!("--pin={value}"),
             [_, flag, value]
-                if (flag == "--grant" && ["standing", "ask"].contains(&value.as_str()))
-                    || (flag == "--mode" && ["notify", "disabled"].contains(&value.as_str())) =>
+                if flag == "--grant" && ["standing", "ask"].contains(&value.as_str()) =>
             {
                 format!("{flag}={value}")
             }
@@ -629,7 +628,6 @@ fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String
         output = status;
     } else if mode == "--config"
         || mode.starts_with("--grant=")
-        || mode.starts_with("--mode=")
         || mode.starts_with("--pin=")
     {
         let settings = output.as_object_mut().ok_or("update settings must be an object")?;

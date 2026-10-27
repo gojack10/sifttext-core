@@ -6,9 +6,12 @@ use std::{
     collections::BTreeSet,
     fs,
     io::Write,
-    os::unix::fs::{OpenOptionsExt, symlink},
+    os::unix::{
+        fs::{OpenOptionsExt, symlink},
+        process::CommandExt,
+    },
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -841,13 +844,11 @@ fn resume(
     )
 }
 /// Agent-facing next step in a release notice. A human decides whether to update.
-const UPDATE_NOTICE_ASK: &str = "Ask the user to update SiftText as soon as possible.";
-/// Why the interruption is worth it. The ask notice carries this on its own line
-/// because a purpose clause after "as soon as possible" reads as obscured prose.
+const UPDATE_NOTICE_ASK: &str =
+    "At the earliest convenient pause in your work, ask the user for permission to update SiftText.";
 const UPDATE_NOTICE_REASON: &str = "The latest release fixes speed and stability.";
-/// With a standing grant no confirmation is needed, so the next step is urgent.
 const UPDATE_NOTICE_STANDING: &str =
-    "Update SiftText immediately for latest speed and stability fixes.";
+    "Update SiftText at the earliest convenient pause in your work under the user's standing permission.";
 const STANDING_GRANT_COMMAND: &str = "sifttext update --grant standing";
 
 fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
@@ -1127,7 +1128,7 @@ fn update_config(home: &Path) -> Result<Value> {
     let file: Value = match fs::symlink_metadata(&path) {
         Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(json!({"mode":"notify","permission":"ask","source":"default","path":path}));
+            return Ok(json!({"permission":"ask","source":"default","path":path}));
         }
         Err(error) => return Err(error.into()),
     };
@@ -1135,9 +1136,10 @@ fn update_config(home: &Path) -> Result<Value> {
     let updates = file.get("updates").unwrap_or(&empty);
     let updates = updates.as_object().ok_or("updates must be an object")?;
     for key in updates.keys() {
+        // Ignore the removed mode setting in older installations.
         require(
             key == "mode" || key == "permission" || key == "pinned",
-            "updates accepts only mode, permission and pinned",
+            "updates accepts only permission and pinned",
         )?;
     }
     let pinned = match updates.get("pinned") {
@@ -1163,7 +1165,6 @@ fn update_config(home: &Path) -> Result<Value> {
         Ok(text.to_owned())
     };
     Ok(json!({
-        "mode": choice("mode", &["notify", "disabled"], "notify")?,
         "permission": choice("permission", &["standing", "ask"], "ask")?,
         "pinned": pinned,
         "source": "file",
@@ -1176,9 +1177,8 @@ fn update_config(home: &Path) -> Result<Value> {
 /// or another sibling key by rewriting the file, and an unsupported value is refused before any
 /// write.
 fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
-    let allowed: &[&str] = if name == "mode" {
-        &["notify", "disabled"]
-    } else if name == "pinned" {
+    require(name == "permission" || name == "pinned", "unknown update setting")?;
+    let allowed: &[&str] = if name == "pinned" {
         &["", "current"]
     } else {
         &["standing", "ask"]
@@ -1211,6 +1211,7 @@ fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or("updates must be an object")?;
+    updates.remove("mode");
     if name == "pinned" && value == "current" {
         updates.remove(name);
     } else {
@@ -1288,6 +1289,10 @@ pub fn update_with_receipt_preflight(
     if mode == "--local-status" {
         return local_status(root);
     }
+    if mode == "--opportunistic" {
+        return check_releases(root);
+    }
+    require(!mode.starts_with("--mode="), "unknown update argument")?;
     let _lock = lock(root, false)?;
     let mut state: State = load(&root.join("state.json"))?;
     if mode == "--config" {
@@ -1295,9 +1300,6 @@ pub fn update_with_receipt_preflight(
     }
     if let Some(value) = mode.strip_prefix("--grant=") {
         return set_update_config(&state.home, "permission", value);
-    }
-    if let Some(value) = mode.strip_prefix("--mode=") {
-        return set_update_config(&state.home, "mode", value);
     }
     if let Some(value) = mode.strip_prefix("--pin=") {
         return set_update_config(&state.home, "pinned", value);
@@ -1428,66 +1430,19 @@ pub fn update_with_receipt_preflight(
             "worktree":pending.draft,
             "resume":"sifttext update --resume",
         });
-        // Ordinary commands only report a pending update. Resolving the repair undertaking reads
-        // the whole knowledge store and can publish the maintenance tree, so it belongs to the
-        // explicit update the agent runs after reading the guide, not to every release check.
-        if mode != "--opportunistic" {
-            let policy = checked_runtime(&root.join(&state.application))?;
-            let mut repair = repair_paths(&policy, &state.home)?;
-            if let Some(id) = &pending.repair_node {
-                repair["repair_node"] = json!(id);
-                repair["repair_node_path"] = json!(local::maintenance_node_path(&state.home, id)?);
-            }
-            result["repair"] = repair;
+        let policy = checked_runtime(&root.join(&state.application))?;
+        let mut repair = repair_paths(&policy, &state.home)?;
+        if let Some(id) = &pending.repair_node {
+            repair["repair_node"] = json!(id);
+            repair["repair_node_path"] = json!(local::maintenance_node_path(&state.home, id)?);
         }
+        result["repair"] = repair;
         return Ok(result);
-    }
-    if mode == "--opportunistic" {
-        if !due(&state, &now()) {
-            // The interval throttles network checks, not repeat notices for the cached release.
-            let cached = root.join("last_manifest.json");
-            if cached.exists() {
-                if let Ok(config) = update_config(&state.home) {
-                    if config["mode"] == "disabled" {
-                        return Ok(json!({"status":"update_disabled"}));
-                    }
-                    if let Ok(manifest) = load::<Manifest>(&cached) {
-                        if validate_manifest(&manifest).is_ok() {
-                            let current = package(&root.join(&state.application))?;
-                            return opportunistic_notice(&current, &state, &manifest);
-                        }
-                    }
-                }
-            }
-            return Ok(json!({"status":"not_due"}));
-        }
-        let config = match update_config(&state.home) {
-            Ok(config) => config,
-            // A background release check reports a broken settings file at most once per retry
-            // window, the way a failed download does, rather than on every command. The explicit
-            // update and --config paths report the same refusal immediately.
-            Err(error) => {
-                state.attempt = Some(now());
-                persist(&root.join("state.json"), &state)?;
-                return Ok(json!({
-                    "status":"update_config_invalid",
-                    "error":error.to_string(),
-                }));
-            }
-        };
-        if config["mode"] == "disabled" {
-            return Ok(json!({"status":"update_disabled"}));
-        }
     }
     state.attempt = Some(now());
     persist(&root.join("state.json"), &state)?;
     let manifest = fetch_manifest(root)?;
-    let result = if mode == "--opportunistic" {
-        let current = package(&root.join(&state.application))?;
-        opportunistic_notice(&current, &state, &manifest)?
-    } else {
-        apply(root, &mut state, &manifest, &mut preflight)?
-    };
+    let result = apply(root, &mut state, &manifest, &mut preflight)?;
     state.success = now();
     persist(&root.join("state.json"), &state)?;
     Ok(result)
@@ -1678,25 +1633,73 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result
     fs::remove_file(root.join("activation.json"))?;
     Ok(json!({"status":"rolled_back","application":state.application,"knowledge":state.knowledge}))
 }
-pub fn opportunistic() {
-    if std::env::var_os("SIFTTEXT_NO_UPDATE").is_some_and(|value| value == "1") {
-        return;
+/// Read cached observations only. Ordinary commands never recover or apply an update here.
+fn cached_notice(root: &Path, state: &State) -> Result<Value> {
+    if let Some(pending) = &state.pending {
+        return Ok(json!({
+            "status":"needs_agent",
+            "worktree":pending.draft,
+            "resume":"sifttext update --resume",
+        }));
     }
-    if let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") {
-        match update(Path::new(&root), "--opportunistic") {
-            Ok(value)
-                if value["status"] != "not_due"
-                    && value["status"] != "current"
-                    && value["status"] != "update_disabled" =>
-            {
-                match crate::lean_render::render(&value) {
-                    Ok(notice) => eprintln!("{notice}"),
-                    Err(error) => eprintln!("SiftText update deferred: invalid notice: {error}"),
-                }
+    let cached = root.join("last_manifest.json");
+    if !cached.exists() {
+        return Ok(json!({"status":"not_due"}));
+    }
+    let manifest: Manifest = load(&cached)?;
+    validate_manifest(&manifest)?;
+    let current = package(&root.join(&state.application))?;
+    opportunistic_notice(&current, state, &manifest)
+}
+
+/// Run in a detached CLI process. The existing attempt clock also prevents concurrent checks.
+fn check_releases(root: &Path) -> Result<Value> {
+    let journal = lock(root, false)?;
+    let mut state: State = load(&root.join("state.json"))?;
+    if state.pending.is_some() || root.join("activation.json").exists() || !due(&state, &now()) {
+        return cached_notice(root, &state);
+    }
+    state.attempt = Some(now());
+    persist(&root.join("state.json"), &state)?;
+    // Never hold the operation/update lock during network I/O.
+    drop(journal);
+    fetch_manifest(root)?;
+    let _journal = lock(root, false)?;
+    // An explicit update may have changed the journal while the download ran.
+    let mut state: State = load(&root.join("state.json"))?;
+    state.success = now();
+    persist(&root.join("state.json"), &state)?;
+    cached_notice(root, &state)
+}
+
+pub fn opportunistic() {
+    let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") else {
+        return;
+    };
+    let root = Path::new(&root);
+    let result = (|| -> Result<()> {
+        let state: State = load(&root.join("state.json"))?;
+        // The interval throttles network checks, not notices for an already cached release.
+        match cached_notice(root, &state) {
+            Ok(value) if value["status"] != "not_due" && value["status"] != "current" => {
+                eprintln!("{}", crate::lean_render::render(&value)?);
             }
             Err(error) => eprintln!("SiftText update deferred: {error}"),
             _ => (),
         }
+        if state.pending.is_none() && !root.join("activation.json").exists() && due(&state, &now()) {
+            Command::new(std::env::current_exe()?)
+                .args(["update", "--opportunistic"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .process_group(0)
+                .spawn()?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("SiftText update deferred: {error}");
     }
 }
 
