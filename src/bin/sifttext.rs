@@ -69,6 +69,7 @@ sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
 sifttext sync enable|disable|status|once|run HOME
                                           Opt-in accepted knowledge transport; no runner installed
                                           Status/instructions stay local; login required only for transfer
+                                          once HOME --quiet skips status JSON; errors still go to stderr
 sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
                                           Copy and Git-checkpoint a validated Pi session
 sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
@@ -206,15 +207,15 @@ fn run() -> Result<()> {
         return Ok(());
     }
     let runtime = local::runtime()?;
-    let policy = Policy::checked(&runtime)?;
-    // Bundle/bootstrap assets belong to this packaged onramp, not the generic
-    // native Policy contract (which also supports minimal policy-only fixtures).
-    sifttext_file_graph::native_kb::verify_assets(&runtime)?;
+    // Sync acquires checked policy only when it needs native recovery/publication.
     if args.first().is_some_and(|arg| arg == "sync") {
-        let output = sync::run(&policy, &args)?;
-        println!("{}", serde_json::to_string_pretty(&output)?);
+        let output = sync::run(&runtime, &args)?;
+        if !output.is_null() {
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
         return Ok(());
     }
+    let policy = checked_policy(&runtime)?;
     if args.first().is_some_and(|arg| arg == "instructions") {
         let path = match args.as_slice() {
             [_, path] => PathBuf::from(path),
@@ -476,6 +477,14 @@ fn run() -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn checked_policy(runtime: &Path) -> Result<Policy> {
+    let policy = Policy::checked(runtime)?;
+    // Bundle/bootstrap assets belong to this packaged onramp, not the generic
+    // native Policy contract (which also supports minimal policy-only fixtures).
+    sifttext_file_graph::native_kb::verify_assets(runtime)?;
+    Ok(policy)
 }
 
 fn print_read(output: &str, force: bool) -> Result<()> {

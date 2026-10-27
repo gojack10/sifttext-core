@@ -4,8 +4,9 @@ use super::account;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sifttext_file_graph::{Policy, Result, checked_publication, local};
+use sifttext_file_graph::{Result, checked_publication, local};
 use std::{
+    cell::RefCell,
     collections::BTreeSet,
     fs,
     io::{Read, Write},
@@ -80,6 +81,7 @@ impl State {
 struct Store {
     home: PathBuf,
     root: PathBuf,
+    persisted: RefCell<Option<Vec<u8>>>,
     _lock: Option<fs::File>,
 }
 
@@ -222,8 +224,13 @@ fn oid(value: &str) -> Result<&str> {
 fn head(home: &Path) -> Result<String> {
     git(home, &["rev-parse", "refs/heads/main"])
 }
+fn reader_tips(home: &Path) -> Result<(String, String)> {
+    let tips = git(home, &["rev-parse", "HEAD^{commit}", "refs/heads/main^{commit}"])?;
+    let (reader, accepted) = tips.split_once('\n').ok_or("missing reader/accepted tips")?;
+    Ok((oid(reader)?.into(), oid(accepted)?.into()))
+}
 fn ancestor(home: &Path, a: &str, b: &str) -> bool {
-    git(home, &["merge-base", "--is-ancestor", a, b]).is_ok()
+    a == b || git(home, &["merge-base", "--is-ancestor", a, b]).is_ok()
 }
 fn endpoint() -> Result<String> {
     let endpoint = std::env::var("SIFTTEXT_SYNC_ORIGIN").unwrap_or_else(|_| ENDPOINT.into());
@@ -288,10 +295,12 @@ impl Store {
         Ok(Self {
             home,
             root,
+            persisted: RefCell::new(None),
             _lock: locking.then_some(lock),
         })
     }
     fn load(&self) -> Result<State> {
+        *self.persisted.borrow_mut() = None;
         let mut file = fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -306,10 +315,22 @@ impl Store {
         }
         let mut bytes = Vec::new();
         (&mut file).take(1024 * 1024).read_to_end(&mut bytes)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        let state = serde_json::from_slice(&bytes)?;
+        // Compare logical state, not JSON whitespace or omitted legacy defaults.
+        *self.persisted.borrow_mut() = Some(serde_json::to_vec(&state)?);
+        Ok(state)
     }
     fn save(&self, state: &State) -> Result<()> {
-        atomic(&self.root.join("state.json"), &serde_json::to_vec(state)?)
+        let bytes = serde_json::to_vec(state)?;
+        if self.persisted.borrow().as_ref() == Some(&bytes) {
+            return Ok(());
+        }
+        // A failed atomic write may have renamed before directory fsync failed.
+        // Forget the old snapshot so even a reverted state must be persisted again.
+        *self.persisted.borrow_mut() = None;
+        atomic(&self.root.join("state.json"), &bytes)?;
+        *self.persisted.borrow_mut() = Some(bytes);
+        Ok(())
     }
 }
 struct Exchange {
@@ -404,45 +425,35 @@ fn scoped_history(store: &Store, revision: &str) -> Result<()> {
         .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
         return Err("sync requires complete reachable history, not a shallow repository".into());
     }
-    // Scope facts only: never acceptance evidence. A version change invalidates
-    // every entry. Unsafe, malformed or oversized caches fall back to real trees.
-    let cache_path = store.root.join("permitted-trees-v1.json");
-    let cached = (|| -> Result<BTreeSet<String>> {
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(&cache_path)?;
-        let meta = file.metadata()?;
-        if !meta.is_file()
-            || meta.nlink() != 1
-            || meta.uid() != unsafe { libc::geteuid() }
-            || meta.mode() & 0o777 != 0o600
-            || meta.len() > 1024 * 1024
-        {
-            return Err("unsafe scope cache".into());
-        }
-        let mut bytes = Vec::new();
-        file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
-        let trees: BTreeSet<String> = serde_json::from_slice(&bytes)?;
-        if trees.len() > 8192 || trees.iter().any(|tree| oid(tree).is_err()) {
-            return Err("malformed scope cache".into());
-        }
-        Ok(trees)
-    })()
-    .unwrap_or_default();
-    let mut permitted = cached.clone();
-    // One bounded native walk, not rev-list plus one subprocess per commit.
-    // Deduplicate identical root trees before inspecting actual paths/modes.
-    let inventory = git(
+    // This ref names a closure checked by the EXACT allowlist below, not native
+    // acceptance or an upload acknowledgement. Bump its version when that policy
+    // changes; the old installed/main v1 JSON tree sets are deliberately not reused.
+    const SCOPED: &str = "refs/sifttext-sync/scope/knowledge-paths-v2";
+    let boundary = git(
         &store.home,
-        &["rev-list", "--format=%T", "--no-commit-header", revision],
+        &[
+            "for-each-ref",
+            "--format=%(objectname) %(objecttype) %(symref)",
+            SCOPED,
+        ],
     )?;
+    let boundary = boundary
+        .split_once(' ')
+        .filter(|(sha, kind)| oid(sha).is_ok() && *kind == "commit")
+        .map(|(sha, _)| sha);
+    if boundary == Some(revision) {
+        return Ok(());
+    }
+    // Git excludes only the previously inspected closure. Initial/unrelated
+    // histories still walk their unknown closure; missing objects fail normally.
+    let mut args = vec!["rev-list", "--format=%T", "--no-commit-header", revision];
+    if let Some(boundary) = boundary {
+        args.extend(["--not", boundary]);
+    }
+    let inventory = git(&store.home, &args)?;
     let trees: BTreeSet<_> = inventory.lines().collect();
     for tree in trees {
         oid(tree)?;
-        if cached.contains(tree) {
-            continue;
-        }
         for line in git(&store.home, &["ls-tree", "-r", tree])?.lines() {
             let (meta, path) = line.split_once('\t').ok_or("invalid tree inventory")?;
             let parts: Vec<_> = path.split('/').collect();
@@ -470,12 +481,10 @@ fn scoped_history(store: &Store, revision: &str) -> Result<()> {
                 return Err("sync scope excludes non-knowledge history or session attachments; use a dedicated selected knowledge home (no data removed)".into());
             }
         }
-        if permitted.len() < 8192 {
-            permitted.insert(tree.to_owned());
-        }
     }
-    if permitted != cached {
-        atomic(&cache_path, &serde_json::to_vec(&permitted)?)?;
+    if !inventory.is_empty() {
+        // Only this subsystem's single boundary moves; no pruning of other refs.
+        git(&store.home, &["update-ref", "--no-deref", SCOPED, revision])?;
     }
     Ok(())
 }
@@ -574,23 +583,30 @@ fn upload(
     state: &mut State,
     exchange: &mut Exchange,
     remote: Option<&str>,
+    remote_pending: &Value,
+    commit: &str,
 ) -> Result<()> {
-    let commit = head(&store.home)?;
-    if remote == Some(&commit) {
-        if state.uploaded.as_deref() != Some(&commit) {
-            state.uploaded = Some(commit);
+    if remote == Some(commit) {
+        if state.uploaded.as_deref() != Some(commit) {
+            state.uploaded = Some(commit.into());
             store.save(state)?;
         }
         return Ok(());
     }
-    if remote.is_some() && state.uploaded.as_deref() == Some(&commit) {
+    // A stale acknowledgement plus ANY nonempty remote main is not custody.
+    // Reuse only a freshly retained exact contribution or known accepted ancestry.
+    if state.uploaded.as_deref() == Some(commit)
+        && (remote_pending.as_array().is_some_and(|records| {
+            records.iter().any(|p| p["incoming"] == commit)
+        }) || remote.is_some_and(|r| ancestor(&store.home, commit, r)))
+    {
         return Ok(());
     }
-    scoped_history(store, &commit)?;
+    scoped_history(store, commit)?;
     let bundle = tempfile::NamedTempFile::new_in(&store.root)?;
     let path = bundle.path().to_str().ok_or("non-UTF8 bundle")?;
     let exclusion = remote
-        .filter(|r| *r != commit && ancestor(&store.home, r, &commit))
+        .filter(|r| *r != commit && ancestor(&store.home, r, commit))
         .map(|r| format!("^{r}"));
     let mut args = vec!["bundle", "create", path, "refs/heads/main"];
     if let Some(exclusion) = &exclusion {
@@ -614,14 +630,14 @@ fn upload(
             "service did not acknowledge exact incoming commit; retain queued history".into(),
         );
     }
-    state.uploaded = Some(commit);
+    state.uploaded = Some(commit.into());
     state.remote_pending = response["pending"].clone();
     store.save(state)
 }
 fn receive(
     store: &Store,
     state: &mut State,
-    policy: &Policy,
+    runtime: &Path,
     incoming: &str,
     source_device: Option<String>,
 ) -> Result<()> {
@@ -712,7 +728,7 @@ fn receive(
         return store.save(state);
     };
     let receipt = local::submit(
-        policy,
+        &super::checked_policy(runtime)?,
         &checked_publication::Request {
             repo: store.home.clone(),
             accepted_ref: "refs/heads/main".into(),
@@ -744,7 +760,29 @@ fn receive(
     }
     store.save(state)
 }
-fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
+fn retained_conflict(store: &Store, state: &State, incoming: &str) -> bool {
+    let Some(pending) = state.repairs().find(|p| p.incoming == incoming) else {
+        return false;
+    };
+    // Only settled refusals, not interrupted publication or unfamiliar checks.
+    if !matches!(
+        pending.check.as_str(),
+        "git_file_conflict" | "unrelated_histories" | "candidate_validation_rejected"
+    ) {
+        return false;
+    }
+    // The imported object ref, not the mutable repair branch/guide, pins custody.
+    git(
+        &store.home,
+        &[
+            "for-each-ref",
+            "--format=%(objectname) %(objecttype) %(symref)",
+            &format!("refs/sifttext-sync/objects/{incoming}"),
+        ],
+    )
+    .is_ok_and(|value| value == format!("{incoming} commit"))
+}
+fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
     if !state.enabled {
         return Err("sync disabled; local knowledge unchanged".into());
     }
@@ -761,11 +799,12 @@ fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
         store.save(state)?; // Durable binding precedes the very first transfer.
     }
     // Complete a publication interrupted before its clean reader advance.
-    if git(&store.home, &["rev-parse", "HEAD"])? != head(&store.home)? {
-        local::advance(policy, &store.home)?;
+    let (reader, mut accepted) = reader_tips(&store.home)?;
+    if reader != accepted {
+        local::advance(&super::checked_policy(runtime)?, &store.home)?;
+        accepted = head(&store.home)?;
     }
     // Recover each exact mechanical journal, never replay a known conflict.
-    let accepted = head(&store.home)?;
     state.retain_repairs(|p| !ancestor(&store.home, &p.incoming, &accepted));
     store.save(state)?;
     let interrupted: Vec<_> = state
@@ -773,20 +812,59 @@ fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
         .filter(|p| ["received", "home_or_publication_busy"].contains(&p.check.as_str()))
         .map(|p| (p.incoming.clone(), p.source_device.clone()))
         .collect();
+    let recovering = !interrupted.is_empty();
     for (incoming, source) in interrupted {
-        receive(store, state, policy, &incoming, source)?;
+        receive(store, state, runtime, &incoming, source)?;
+    }
+    if recovering {
+        accepted = head(&store.home)?;
     }
     let remote_sha = remote["accepted"].as_str().map(oid).transpose()?;
-    upload(store, state, &mut exchange, remote_sha)?;
-    let have = head(&store.home)?;
-    let response = exchange.request(&format!("/sync/v1/objects?have={have}"), None)?;
+    upload(
+        store, state, &mut exchange, remote_sha, &remote["pending"], &accepted,
+    )?;
+    // A request or native recovery can race another accepted publication.
+    let (reader, have) = reader_tips(&store.home)?;
+    // The authenticated observation is enough only for a genuinely quiet cycle.
+    // Recovery may have moved main/HEAD; compare their current values, not uploaded.
+    if remote_sha == Some(accepted.as_str()) // No upload POST invalidated this observation.
+        && remote_sha == Some(have.as_str())
+        && remote["pending"].as_array().is_some_and(|p| p.is_empty())
+        && state.repairs().next().is_none()
+        && reader == have
+    {
+        state.remote_pending = remote["pending"].clone();
+        store.save(state)?;
+        return Ok(());
+    }
+    let compatible = |value: &Value| {
+        value["protocol"] == 1
+            && value["home"]["id"] == remote["home"]["id"]
+            && value.get("operation").is_none()
+    };
+    let retained = remote_sha
+        .filter(|incoming| compatible(&remote) && retained_conflict(store, state, incoming));
+    if let Some(incoming) = retained {
+        // Reuse scope only under this build's allowlist, not an older journal's
+        // predicate. At the boundary this reads one ref, not payload/history.
+        scoped_history(store, incoming)?;
+    }
+    // `have` is object custody, NOT accepted main. Keep the fresh response after
+    // upload: the service may now advertise another main or other pending work.
+    let have_objects = retained.unwrap_or(&have);
+    let response = exchange.request(&format!("/sync/v1/objects?have={have_objects}"), None)?;
     state.remote_pending = response["pending"].clone();
     store.save(state)?;
     if let Some(incoming) = response["accepted"].as_str() {
         oid(incoming)?;
-        import_bundle(store, &response, incoming)?;
-        scoped_history(store, incoming)?;
-        receive(store, state, policy, incoming, None)?;
+        if retained != Some(incoming)
+            || !compatible(&response)
+            || !response.get("bundle").is_some_and(Value::is_null)
+        {
+            import_bundle(store, &response, incoming)?;
+            scoped_history(store, incoming)?;
+            receive(store, state, runtime, incoming, None)?;
+        }
     }
     // Unaccepted contributions from another device are real received work too.
     // Retain distinct unresolved repairs; ancestry and exact OIDs coalesce retries.
@@ -796,17 +874,15 @@ fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
             continue;
         };
         oid(incoming)?;
-        if ancestor(&store.home, incoming, &head(&store.home)?) {
+        let accepted = head(&store.home)?;
+        if ancestor(&store.home, incoming, &accepted) {
             continue;
         }
         if state.repairs().any(|p| p.incoming == incoming) {
             continue;
         }
         let response = exchange.request(
-            &format!(
-                "/sync/v1/objects?incoming={incoming}&have={}",
-                head(&store.home)?
-            ),
+            &format!("/sync/v1/objects?incoming={incoming}&have={accepted}"),
             None,
         )?;
         if response["incoming"] != incoming {
@@ -817,12 +893,12 @@ fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
         receive(
             store,
             state,
-            policy,
+            runtime,
             incoming,
             pending["device"].as_str().map(str::to_owned),
         )?;
     }
-    Ok(status(store, state)?)
+    Ok(())
 }
 fn import_bundle(store: &Store, response: &Value, incoming: &str) -> Result<()> {
     if let Some(encoded) = response["bundle"].as_str() {
@@ -918,9 +994,11 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     );
     Ok(repairs)
 }
-pub(super) fn run(policy: &Policy, args: &[String]) -> Result<Value> {
+pub(super) fn run(runtime: &Path, args: &[String]) -> Result<Value> {
+    let quiet = matches!(args, [_, operation, _, flag] if operation == "once" && flag == "--quiet");
+    let args = if quiet { &args[..3] } else { args };
     let [_, operation, home] = args else {
-        return Err("usage: sifttext sync enable|disable|status|once|run HOME".into());
+        return Err("usage: sifttext sync enable|disable|status|once|run HOME [--quiet for once]".into());
     };
     if !["enable", "disable", "status", "once", "run"].contains(&operation.as_str()) {
         return Err("unknown sync operation".into());
@@ -946,7 +1024,7 @@ pub(super) fn run(policy: &Policy, args: &[String]) -> Result<Value> {
                 if !state.enabled {
                     return status(&store, &state);
                 }
-                if let Err(error) = cycle(&store, &mut state, policy) {
+                if let Err(error) = cycle(&store, &mut state, runtime) {
                     eprintln!("Knowledge sync paused: {error}");
                 }
             }
@@ -962,11 +1040,13 @@ pub(super) fn run(policy: &Policy, args: &[String]) -> Result<Value> {
         // Enrollment is mechanical, not submission or derived rehydration. Only
         // advance when actually behind; unchanged HEAD needs no full index pass.
         enrollment_home(&store.home)?;
-        if git(&store.home, &["rev-parse", "HEAD"])? != head(&store.home)? {
-            local::advance(policy, &store.home)?;
+        let (reader, mut accepted) = reader_tips(&store.home)?;
+        if reader != accepted {
+            local::advance(&super::checked_policy(runtime)?, &store.home)?;
             enrollment_home(&store.home)?;
+            accepted = head(&store.home)?;
         }
-        scoped_history(&store, &head(&store.home)?)?;
+        scoped_history(&store, &accepted)?;
         let mut state = if !fs::symlink_metadata(store.root.join("state.json"))
             .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
             store.load()?
@@ -1006,7 +1086,14 @@ pub(super) fn run(policy: &Policy, args: &[String]) -> Result<Value> {
             status(&store, &state)
         }
         "status" => status(&store, &state),
-        "once" => cycle(&store, &mut state, policy),
+        "once" => {
+            cycle(&store, &mut state, runtime)?;
+            if quiet {
+                Ok(Value::Null)
+            } else {
+                status(&store, &state)
+            }
+        }
         _ => unreachable!(),
     }
 }
