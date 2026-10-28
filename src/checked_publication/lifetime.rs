@@ -44,12 +44,24 @@ impl Drop for Custody {
     }
 }
 
+fn git_budget() -> Result<Duration> {
+    // Hosted supervisors may select a longer finite helper allowance. The
+    // original whole-command monotonic deadline still bounds all helpers.
+    let milliseconds = match std::env::var("SIFTTEXT_GIT_TIMEOUT_MS") {
+        Ok(value) => value.parse::<u64>().map_err(|_| "invalid Git helper timeout")?,
+        Err(std::env::VarError::NotPresent) => 30_000,
+        Err(_) => return Err("invalid Git helper timeout".into()),
+    };
+    require((100..=1_000_000).contains(&milliseconds), "invalid Git helper timeout")?;
+    Ok(Duration::from_millis(milliseconds))
+}
+
 pub(super) fn run(cmd: Command) -> Result<Output> {
-    run_bounded(cmd, Duration::from_secs(30))
+    run_bounded(cmd, git_budget()?)
 }
 
 pub(super) fn run_stdout_file(cmd: Command, file: &fs::File) -> Result<Output> {
-    run_bounded_stdout(cmd, Duration::from_secs(30), Some(file))
+    run_bounded_stdout(cmd, git_budget()?, Some(file))
 }
 
 fn run_bounded(cmd: Command, budget: Duration) -> Result<Output> {

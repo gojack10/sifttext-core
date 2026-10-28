@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub repo: PathBuf,
@@ -35,7 +35,7 @@ pub struct Request {
 }
 
 /// Test-only scheduling barrier; never an alternative validation path.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Barrier {
     pub ready: PathBuf,
@@ -436,6 +436,10 @@ fn ignored_entry(root: &Path, path: &Path, durable_home: bool) -> Result<()> {
         let known = match parts.as_slice() {
             [".sifttext"] | [".sifttext", "outlines"] | [".sifttext", "outline-stage"] => true,
             [".sifttext", "outlines", id] => crate::uuid(id),
+            // Git collapses a deleted owner's remaining ignored cache files into
+            // this directory. Check every leaf; native indexing still requires
+            // exact cached-byte ownership before retiring source-less outlines.
+            ["nodes", id] => durable_home && crate::uuid(id),
             ["nodes", id, "artifacts"] | ["nodes", id, "artifacts", "chats"] => crate::uuid(id),
             _ => false,
         };

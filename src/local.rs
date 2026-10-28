@@ -978,7 +978,7 @@ pub fn advance(policy: &Policy, home: &Path) -> Result<Value> {
 
 #[path = "local_submission.rs"]
 mod submission;
-pub use submission::submit;
+pub use submission::{submit, submit_received};
 
 fn reader_repository(home: &Path) -> Result<()> {
     use std::path::Component;

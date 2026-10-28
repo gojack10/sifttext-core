@@ -232,11 +232,30 @@ pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result
     })
 }
 
+/// Receive an authenticated writer's already-accepted contribution. Its status
+/// changes are explicit; the combined candidate still passes the ordinary gate.
+/// A retained native request always keeps its original, frozen intents.
+pub fn submit_received(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
+    submit_with_status(policy, request, true, || Ok(())).map_err(|error| {
+        format!("received submission completion unknown; retain files and original arguments for retry: {error}").into()
+    })
+}
+
 fn submit_inner(
     policy: &Policy,
     request: &checked_publication::Request,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
+    submit_with_status(policy, request, false, before_return)
+}
+
+fn submit_with_status(
+    policy: &Policy,
+    request: &checked_publication::Request,
+    received: bool,
+    before_return: impl FnOnce() -> Result<()>,
+) -> Result<Value> {
+    let mut request = request.clone();
     require(
         request.accepted_ref == "refs/heads/main",
         "unsupported home accepted ref",
@@ -264,8 +283,31 @@ fn submit_inner(
     let root = save_root(home)?;
     let key = draft_key(draft)?;
     let journal = root.join(format!("{key}.json"));
-    let mut pending: Pending = if journal.try_exists()? {
-        serde_json::from_slice(&crate::read_regular(&journal)?)?
+    let retained: Option<Pending> = if journal.try_exists()? {
+        Some(serde_json::from_slice(&crate::read_regular(&journal)?)?)
+    } else {
+        None
+    };
+    if received {
+        require(request.explicit.is_empty(), "received status selection cannot include manual intents")?;
+        request.explicit = if let Some(saved) = retained.as_ref().filter(|saved| saved.commit == *commit) {
+            saved.explicit.clone()
+        } else {
+            checked_publication::commit(home, base)?;
+            checked_publication::commit(home, commit)?;
+            // Reuse Core's immutable Git reader and parsed-object cache, not a
+            // second Markdown parser or mutable checkout scan.
+            let mut reader = crate::git_snapshot::GitReader::new(policy, home)?;
+            let before = reader.view(base)?;
+            let after = reader.view(commit)?;
+            after.nodes.iter().filter_map(|(id, node)| {
+                before.nodes.get(id).filter(|old| old.state.status != node.state.status)
+                    .map(|_| id.clone())
+            }).collect()
+        };
+    }
+    let mut pending: Pending = if let Some(saved) = retained {
+        saved
     } else {
         crate::real_dir(draft)?;
         require(
@@ -391,7 +433,7 @@ fn submit_inner(
         };
         let receipt = checked_publication::save_prepared_leased(
             policy,
-            request,
+            &request,
             &draft_lease,
             previous_heads
                 .as_ref()
