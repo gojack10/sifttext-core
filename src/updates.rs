@@ -762,6 +762,23 @@ fn finish(
         json!({"status":"updated","application":manifest.application.version,"knowledge":state.knowledge,"refresh_instruction_paths":changed}),
     )
 }
+fn adopt_committed_repair(home: &Path, pending: &mut Pending) -> Result<()> {
+    let Some(original) = &pending.commit else { return Ok(()) };
+    // Accepted requests must finish their original publication and cleanup.
+    if pending.accepted_delta.is_some()
+        || git(home, &["merge-base", "--is-ancestor", original, "refs/heads/main"]).is_ok()
+    {
+        return Ok(());
+    }
+    let head = git(&pending.draft, &["rev-parse", "HEAD"])?;
+    if head != *original {
+        git(home, &["merge-base", "--is-ancestor", original, &head])?;
+        crate::checked_publication::clean(&pending.draft, &head)?;
+        pending.commit = Some(head);
+    }
+    Ok(())
+}
+
 fn resume(
     root: &Path,
     state: &mut State,
@@ -773,6 +790,7 @@ fn resume(
     }
     let policy = checked_runtime(&root.join(&pending.application))?;
     local::configure_git_identity(&state.home)?;
+    adopt_committed_repair(&state.home, &mut pending)?;
     if pending.commit.is_none() {
         // The journal precedes the merge. Restart only the untouched draft;
         // conflicts and customer resolutions keep their existing recovery path.
@@ -796,9 +814,9 @@ fn resume(
             "commit the resolved KB merge before resuming",
         )?;
         pending.commit = Some(commit);
-        state.pending = Some(pending.clone());
-        persist(&root.join("state.json"), state)?;
     }
+    state.pending = Some(pending.clone());
+    persist(&root.join("state.json"), state)?;
     let projected_receipt = json!({
         "status":"updated",
         "application": match &pending.plan {
@@ -812,7 +830,7 @@ fn resume(
         "refresh_instruction_paths": pending.changed,
     });
     preflight(&projected_receipt)?;
-    let receipt = local::submit(
+    let receipt = local::submit_received(
         &policy,
         &crate::checked_publication::Request {
             repo: state.home.clone(),
@@ -934,8 +952,6 @@ fn apply(
     }
     // A pinned update does not prepare anything and need not select identity.
     if kb_changed && !(app_changed && config["pinned"].is_string()) {
-        require(state.baseline.is_some(),
-            "existing home has no verified upstream baseline; keep current knowledge and ask the agent to establish its source revision")?;
         local::configure_git_identity(&state.home)?;
     }
     let app = if app_changed {
@@ -1022,10 +1038,7 @@ fn merge_knowledge(
     kb: &Path,
     preflight: &mut impl FnMut(&Value) -> Result<()>,
 ) -> Result<Value> {
-    let baseline = state
-        .baseline
-        .clone()
-        .ok_or("no verified upstream baseline")?;
+    let baseline = state.baseline.clone();
     local::check(policy, kb, None, BTreeSet::new())?;
     // Form the official revision from the previous upstream in a private Git
     // index. Failed imports cannot strand a registered worktree or customer index.
@@ -1039,11 +1052,17 @@ fn merge_knowledge(
         require(output.status.success(), &String::from_utf8_lossy(&output.stderr))?;
         Ok(String::from_utf8(output.stdout)?.trim().to_owned())
     };
-    import(&["read-tree", &baseline])?;
+    match &baseline {
+        Some(base) => import(&["read-tree", base])?,
+        None => import(&["read-tree", "--empty"])?,
+    };
     import(&["add", "--all", "--", "nodes", "trees"])?;
     let tree = import(&["write-tree"])?;
-    let upstream = import(&["commit-tree", &tree, "-p", &baseline, "-m",
-        &format!("knowledge: import official {}", manifest.knowledge.revision)])?;
+    let message = format!("knowledge: import official {}", manifest.knowledge.revision);
+    let upstream = match &baseline {
+        Some(base) => import(&["commit-tree", &tree, "-p", base, "-m", &message])?,
+        None => import(&["commit-tree", &tree, "-m", &message])?,
+    };
     git(&state.home, &["update-ref", "refs/sifttext/upstream-candidate", &upstream])?;
     let allocation = local::worktree(&policy, &state.home)?;
     let draft = PathBuf::from(allocation["worktree"].as_str().ok_or("missing draft")?);
@@ -1051,18 +1070,10 @@ fn merge_knowledge(
         .as_str()
         .ok_or("missing draft base")?
         .to_owned();
-    let changed = git(
-        &state.home,
-        &[
-            "diff",
-            "--name-only",
-            &baseline,
-            &upstream,
-            "--",
-            "nodes",
-            "trees",
-        ],
-    )?
+    let changed = match &baseline {
+        Some(base) => git(&state.home, &["diff", "--name-only", base, &upstream, "--", "nodes", "trees"]),
+        None => git(&state.home, &["ls-tree", "-r", "--name-only", &upstream, "--", "nodes", "trees"]),
+    }?
     .lines()
     .map(str::to_owned)
     .collect();
@@ -1078,7 +1089,22 @@ fn merge_knowledge(
         accepted_delta: None,
     });
     persist(&root.join("state.json"), state)?;
-    if let Err(error) = git(&draft, &["merge", "--no-ff", "--no-commit", &upstream]) {
+    let merge = if baseline.is_some() {
+        git(&draft, &["merge", "--no-ff", "--no-commit", &upstream])
+    } else {
+        git(&draft, &["merge", "--allow-unrelated-histories", "--no-ff", "--no-commit", &upstream])
+    };
+    if baseline.is_none() {
+        return Ok(json!({
+            "status":"needs_agent", "reason":"instruction_history_missing",
+            "worktree":draft, "official_revision":upstream,
+            "conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,
+            "error":merge.err().map(|error| error.to_string()),
+            "resume":"sifttext update --resume", "repair":repair_paths(policy, &state.home)?,
+            "next_action":"Reconcile the official instructions with the user's retained knowledge in this worktree. Preserve their edits and commit the merge before resuming. Completion records this official revision as the starting point for future updates."
+        }));
+    }
+    if let Err(error) = merge {
         let paths = repair_paths(policy, &state.home)?;
         return Ok(
             json!({"status":"needs_agent","worktree":draft,"conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,"error":error.to_string(),"resume":"sifttext update --resume","repair":paths}),
@@ -1571,6 +1597,7 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result
     let policy = checked_runtime(&root.join(&previous.application))?;
     let mut activation = json!({"application":previous.application,"application_sha256":previous.application_sha256,"knowledge":previous.knowledge,"baseline":previous.baseline,"previous":null});
     if let Some(mut pending) = state.pending.clone() {
+        adopt_committed_repair(&state.home, &mut pending)?;
         let path = &pending.draft;
         let explicit = if path.exists() {
             status_changes(&state.home, path)?
