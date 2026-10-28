@@ -1,11 +1,14 @@
 //! Opt-in accepted-knowledge transport. Git is the queue; the journal is custody,
 //! not acceptance evidence. No server, model, session/archive or secret backup.
+mod runner;
+mod selection;
 use super::account;
-use base64::{Engine, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use sifttext_file_graph::{Policy, Result, checked_publication, local};
+use serde_json::{json, Value};
+use sifttext_file_graph::{checked_publication, local, Result};
 use std::{
+    cell::RefCell,
     collections::BTreeSet,
     fs,
     io::{Read, Write},
@@ -18,7 +21,7 @@ use std::{
 
 const ENDPOINT: &str = "https://workspace.sifttext.com";
 const RESOURCE: &str = "https://workspace.sifttext.com/mcp";
-const LIMIT: usize = 8 * 1024 * 1024;
+const LIMIT: usize = 32 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct State {
@@ -36,6 +39,8 @@ struct State {
     additional_pending: Vec<Pending>,
     #[serde(default)]
     remote_pending: Value,
+    #[serde(default)]
+    projection: Option<selection::Projection>,
 }
 // Missing ownership in an older journal is unknown, NOT fresh offline consent.
 #[derive(Default, Serialize, Deserialize)]
@@ -80,10 +85,11 @@ impl State {
 struct Store {
     home: PathBuf,
     root: PathBuf,
+    persisted: RefCell<Option<Vec<u8>>>,
     _lock: Option<fs::File>,
 }
 
-fn git(home: &Path, args: &[&str]) -> Result<String> {
+fn git_command(home: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     for (key, _) in std::env::vars_os() {
         if key.as_encoded_bytes().starts_with(b"GIT_") {
@@ -117,8 +123,12 @@ fn git(home: &Path, args: &[&str]) -> Result<String> {
             "-c",
             "maintenance.auto=false",
         ])
-        .args(args);
-    let output = bounded(command)?;
+        .args(args)
+        .stdin(Stdio::null());
+    command
+}
+fn git(home: &Path, args: &[&str]) -> Result<String> {
+    let output = bounded(git_command(home, args))?;
     if !output.status.success() {
         return Err(format!(
             "Git {} failed; accepted/draft histories retained",
@@ -128,14 +138,28 @@ fn git(home: &Path, args: &[&str]) -> Result<String> {
     }
     Ok(String::from_utf8(output.stdout)?.trim().into())
 }
-// Same 30s/16MiB boundary as publication's private native runner. Kill the
+fn command_input(mut command: Command, input: &[u8]) -> Result<Vec<u8>> {
+    let mut file = tempfile::tempfile()?;
+    file.write_all(input)?;
+    use std::io::{Seek, SeekFrom};
+    file.seek(SeekFrom::Start(0))?;
+    command.stdin(file);
+    let output = bounded(command)?;
+    if !output.status.success() {
+        return Err("native Git publication operation failed; histories retained".into());
+    }
+    Ok(output.stdout)
+}
+fn git_input(home: &Path, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
+    command_input(git_command(home, args), input)
+}
+// Bounded process output and lifetime. Kill the
 // complete helper group on overflow/timeout; never leave a pack helper running.
 fn bounded(mut command: Command) -> Result<std::process::Output> {
     use std::os::unix::process::CommandExt;
-    const CAP: usize = 16 * 1024 * 1024;
+    const CAP: usize = 64 * 1024 * 1024;
     let mut child = command
         .process_group(0)
-        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
@@ -222,8 +246,18 @@ fn oid(value: &str) -> Result<&str> {
 fn head(home: &Path) -> Result<String> {
     git(home, &["rev-parse", "refs/heads/main"])
 }
+fn reader_tips(home: &Path) -> Result<(String, String)> {
+    let tips = git(
+        home,
+        &["rev-parse", "HEAD^{commit}", "refs/heads/main^{commit}"],
+    )?;
+    let (reader, accepted) = tips
+        .split_once('\n')
+        .ok_or("missing reader/accepted tips")?;
+    Ok((oid(reader)?.into(), oid(accepted)?.into()))
+}
 fn ancestor(home: &Path, a: &str, b: &str) -> bool {
-    git(home, &["merge-base", "--is-ancestor", a, b]).is_ok()
+    a == b || git(home, &["merge-base", "--is-ancestor", a, b]).is_ok()
 }
 fn endpoint() -> Result<String> {
     let endpoint = std::env::var("SIFTTEXT_SYNC_ORIGIN").unwrap_or_else(|_| ENDPOINT.into());
@@ -288,14 +322,16 @@ impl Store {
         Ok(Self {
             home,
             root,
+            persisted: RefCell::new(None),
             _lock: locking.then_some(lock),
         })
     }
     fn load(&self) -> Result<State> {
+        *self.persisted.borrow_mut() = None;
         let mut file = fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(self.root.join("state.json"))?;
+            .open(self.root.join("selected-state.json"))?;
         let meta = file.metadata()?;
         if !meta.is_file()
             || meta.nlink() != 1
@@ -306,10 +342,22 @@ impl Store {
         }
         let mut bytes = Vec::new();
         (&mut file).take(1024 * 1024).read_to_end(&mut bytes)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        let state = serde_json::from_slice(&bytes)?;
+        // Compare logical state, not JSON whitespace or omitted legacy defaults.
+        *self.persisted.borrow_mut() = Some(serde_json::to_vec(&state)?);
+        Ok(state)
     }
     fn save(&self, state: &State) -> Result<()> {
-        atomic(&self.root.join("state.json"), &serde_json::to_vec(state)?)
+        let bytes = serde_json::to_vec(state)?;
+        if self.persisted.borrow().as_ref() == Some(&bytes) {
+            return Ok(());
+        }
+        // A failed atomic write may have renamed before directory fsync failed.
+        // Forget the old snapshot so even a reverted state must be persisted again.
+        *self.persisted.borrow_mut() = None;
+        atomic(&self.root.join("selected-state.json"), &bytes)?;
+        *self.persisted.borrow_mut() = Some(bytes);
+        Ok(())
     }
 }
 struct Exchange {
@@ -394,55 +442,73 @@ fn checked_response(response: (u16, Value)) -> Result<Value> {
         401 => Err("Workspace rejected renewed authorization; saved login retained. Check account authorization.".into()),
         403 => Err("Workspace access inactive or forbidden; check subscription/account, local knowledge remains usable".into()),
         413 => Err("selected knowledge exceeds current sync transfer limit; local knowledge retained".into()),
-        _ => Err("Workspace unavailable; accepted history remains queued in Git for retry".into()),
+        status => {
+            let reason: String = response.1["error"]
+                .as_str()
+                .unwrap_or("service unavailable")
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(1024)
+                .collect();
+            Err(format!("Sync request failed (HTTP {status}): {reason}. Accepted history remains queued in Git; inspect the cause before retrying.").into())
+        }
     }
 }
-// Verify every reachable tree, not just today's tip: a bundle must not silently
-// carry an old chat/archive/project/credential blob from a repurposed repository.
-fn scoped_history(store: &Store, revision: &str) -> Result<()> {
+enum HistoryScope<'a> {
+    Received,
+    Publication { hosted: Option<&'a str> },
+}
+// Inspect received knowledge paths separately from new publication ancestry.
+// Already-hosted history may retain provenance; new uploads may not introduce it.
+fn scoped_history(store: &Store, revision: &str, scope: HistoryScope<'_>) -> Result<()> {
     if !fs::symlink_metadata(store.home.join(".git/shallow"))
-        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
+        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
         return Err("sync requires complete reachable history, not a shallow repository".into());
     }
-    // Scope facts only: never acceptance evidence. A version change invalidates
-    // every entry. Unsafe, malformed or oversized caches fall back to real trees.
-    let cache_path = store.root.join("permitted-trees-v1.json");
-    let cached = (|| -> Result<BTreeSet<String>> {
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(&cache_path)?;
-        let meta = file.metadata()?;
-        if !meta.is_file()
-            || meta.nlink() != 1
-            || meta.uid() != unsafe { libc::geteuid() }
-            || meta.mode() & 0o777 != 0o600
-            || meta.len() > 1024 * 1024
-        {
-            return Err("unsafe scope cache".into());
-        }
-        let mut bytes = Vec::new();
-        file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
-        let trees: BTreeSet<String> = serde_json::from_slice(&bytes)?;
-        if trees.len() > 8192 || trees.iter().any(|tree| oid(tree).is_err()) {
-            return Err("malformed scope cache".into());
-        }
-        Ok(trees)
-    })()
-    .unwrap_or_default();
-    let mut permitted = cached.clone();
-    // One bounded native walk, not rev-list plus one subprocess per commit.
-    // Deduplicate identical root trees before inspecting actual paths/modes.
-    let inventory = git(
+    // This ref names a closure checked by the EXACT allowlist below, not native
+    // acceptance or an upload acknowledgement. Bump its version when that policy
+    // changes; the old installed/main v1 JSON tree sets are deliberately not reused.
+    let (scoped, received, hosted) = match scope {
+        HistoryScope::Received => (
+            "refs/sifttext-sync/scope/received-knowledge-paths-v1",
+            true,
+            None,
+        ),
+        HistoryScope::Publication { hosted } => (
+            "refs/sifttext-sync/scope/publication-paths-v3",
+            false,
+            hosted,
+        ),
+    };
+    let boundary = git(
         &store.home,
-        &["rev-list", "--format=%T", "--no-commit-header", revision],
+        &[
+            "for-each-ref",
+            "--format=%(objectname) %(objecttype) %(symref)",
+            scoped,
+        ],
     )?;
+    let boundary = boundary
+        .split_once(' ')
+        .filter(|(sha, kind)| oid(sha).is_ok() && *kind == "commit")
+        .map(|(sha, _)| sha);
+    if boundary == Some(revision) {
+        return Ok(());
+    }
+    // Git excludes only the previously inspected closure. Initial/unrelated
+    // histories still walk their unknown closure; missing objects fail normally.
+    let mut args = vec!["rev-list", "--format=%T", "--no-commit-header", revision];
+    let exclusions = boundary
+        .into_iter()
+        .chain(hosted)
+        .map(|sha| oid(sha).map(|sha| format!("^{sha}")))
+        .collect::<Result<Vec<_>>>()?;
+    args.extend(exclusions.iter().map(String::as_str));
+    let inventory = git(&store.home, &args)?;
     let trees: BTreeSet<_> = inventory.lines().collect();
     for tree in trees {
         oid(tree)?;
-        if cached.contains(tree) {
-            continue;
-        }
         for line in git(&store.home, &["ls-tree", "-r", tree])?.lines() {
             let (meta, path) = line.split_once('\t').ok_or("invalid tree inventory")?;
             let parts: Vec<_> = path.split('/').collect();
@@ -461,6 +527,7 @@ fn scoped_history(store: &Store, revision: &str) -> Result<()> {
             let allowed = match parts.as_slice() {
                 [".gitignore"] | ["nodes", ".keep"] | ["trees", ".keep"] => regular,
                 ["nodes", id, "node.md" | "children.order"] => regular && uuid(id),
+                ["nodes", id, "session-sources.json"] => received && regular && uuid(id),
                 ["nodes", id, "children", ".keep"] => regular && uuid(id),
                 ["nodes", id, "children", child] => link && uuid(id) && uuid(child),
                 ["trees", id] => link && uuid(id),
@@ -470,12 +537,10 @@ fn scoped_history(store: &Store, revision: &str) -> Result<()> {
                 return Err("sync scope excludes non-knowledge history or session attachments; use a dedicated selected knowledge home (no data removed)".into());
             }
         }
-        if permitted.len() < 8192 {
-            permitted.insert(tree.to_owned());
-        }
     }
-    if permitted != cached {
-        atomic(&cache_path, &serde_json::to_vec(&permitted)?)?;
+    if !inventory.is_empty() {
+        // Only this subsystem's single boundary moves; no pruning of other refs.
+        git(&store.home, &["update-ref", "--no-deref", scoped, revision])?;
     }
     Ok(())
 }
@@ -574,23 +639,33 @@ fn upload(
     state: &mut State,
     exchange: &mut Exchange,
     remote: Option<&str>,
+    remote_pending: &Value,
+    commit: &str,
+    consent_home: &Path,
+    policy: &selection::Settings,
 ) -> Result<()> {
-    let commit = head(&store.home)?;
-    if remote == Some(&commit) {
-        if state.uploaded.as_deref() != Some(&commit) {
-            state.uploaded = Some(commit);
+    if remote == Some(commit) {
+        if state.uploaded.as_deref() != Some(commit) {
+            state.uploaded = Some(commit.into());
             store.save(state)?;
         }
         return Ok(());
     }
-    if remote.is_some() && state.uploaded.as_deref() == Some(&commit) {
+    // A stale acknowledgement plus ANY nonempty remote main is not custody.
+    // Reuse only a freshly retained exact contribution or known accepted ancestry.
+    if state.uploaded.as_deref() == Some(commit)
+        && (remote_pending
+            .as_array()
+            .is_some_and(|records| records.iter().any(|p| p["incoming"] == commit))
+            || remote.is_some_and(|r| ancestor(&store.home, commit, r)))
+    {
         return Ok(());
     }
-    scoped_history(store, &commit)?;
+    scoped_history(store, commit, HistoryScope::Publication { hosted: remote })?;
     let bundle = tempfile::NamedTempFile::new_in(&store.root)?;
     let path = bundle.path().to_str().ok_or("non-UTF8 bundle")?;
     let exclusion = remote
-        .filter(|r| *r != commit && ancestor(&store.home, r, &commit))
+        .filter(|r| *r != commit && ancestor(&store.home, r, commit))
         .map(|r| format!("^{r}"));
     let mut args = vec!["bundle", "create", path, "refs/heads/main"];
     if let Some(exclusion) = &exclusion {
@@ -604,24 +679,28 @@ fn upload(
         return Err("accepted main changed during transfer preparation; retry".into());
     }
     if bundle.as_file().metadata()?.len() > LIMIT as u64 {
-        return Err("knowledge bundle exceeds 8MiB MVP limit; local history retained".into());
+        return Err("knowledge bundle exceeds 32MiB transfer limit; local history retained".into());
     }
-    let body =
-        json!({"commit":commit,"base":remote,"bundle":STANDARD.encode(fs::read(bundle.path())?)});
+    let body = json!({"operation":"snapshot-import-v1","publication":"selected-current-v1","commit":commit,"base":remote,"bundle":STANDARD.encode(fs::read(bundle.path())?)});
+    if serde_json::to_value(selection::settings(consent_home)?)? != serde_json::to_value(policy)?
+        || policy.mode != "enabled"
+    {
+        return Err("consent/sharing changed during bundle preparation; upload refused".into());
+    }
     let response = exchange.request(&format!("/sync/v1/devices/{}", state.device), Some(&body))?;
     if response["incoming"] != commit {
         return Err(
             "service did not acknowledge exact incoming commit; retain queued history".into(),
         );
     }
-    state.uploaded = Some(commit);
+    state.uploaded = Some(commit.into());
     state.remote_pending = response["pending"].clone();
     store.save(state)
 }
 fn receive(
     store: &Store,
     state: &mut State,
-    policy: &Policy,
+    runtime: &Path,
     incoming: &str,
     source_device: Option<String>,
 ) -> Result<()> {
@@ -711,8 +790,8 @@ fn receive(
         state.repair_mut(incoming).check = "unrelated_histories".into();
         return store.save(state);
     };
-    let receipt = local::submit(
-        policy,
+    let receipt = local::submit_received(
+        &super::checked_policy(runtime)?,
         &checked_publication::Request {
             repo: store.home.clone(),
             accepted_ref: "refs/heads/main".into(),
@@ -744,13 +823,23 @@ fn receive(
     }
     store.save(state)
 }
-fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
-    if !state.enabled {
+fn compatible(value: &Value) -> Result<()> {
+    if value["protocol"] != 1
+        || value["operation"] != "snapshot-import-v1"
+        || value["publication"] != "selected-current-v1"
+    {
+        return Err("sync service requires a compatible selected-current-v1 release; no transfer attempted, local knowledge remains usable".into());
+    }
+    Ok(())
+}
+fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
+    let policy = selection::settings(&store.home)?;
+    if policy.mode != "enabled" {
         return Err("sync disabled; local knowledge unchanged".into());
     }
-    // Authenticate ownership BEFORE local journal recovery, upload or import.
     let mut exchange = Exchange::open(state)?;
     let remote = exchange.request("/sync/v1/state", None)?;
+    compatible(&remote)?;
     if matches!(state.binding, Binding::Unbound) {
         state.binding = Binding::Bound {
             home_id: exchange
@@ -758,71 +847,128 @@ fn cycle(store: &Store, state: &mut State, policy: &Policy) -> Result<Value> {
                 .clone()
                 .ok_or("missing verified sync home")?,
         };
-        store.save(state)?; // Durable binding precedes the very first transfer.
+        store.save(state)?;
     }
-    // Complete a publication interrupted before its clean reader advance.
-    if git(&store.home, &["rev-parse", "HEAD"])? != head(&store.home)? {
-        local::advance(policy, &store.home)?;
+    let (reader, accepted) = reader_tips(&store.home)?;
+    if reader != accepted {
+        local::advance(&super::checked_policy(runtime)?, &store.home)?;
     }
-    // Recover each exact mechanical journal, never replay a known conflict.
-    let accepted = head(&store.home)?;
-    state.retain_repairs(|p| !ancestor(&store.home, &p.incoming, &accepted));
-    store.save(state)?;
-    let interrupted: Vec<_> = state
-        .repairs()
-        .filter(|p| ["received", "home_or_publication_busy"].contains(&p.check.as_str()))
-        .map(|p| (p.incoming.clone(), p.source_device.clone()))
-        .collect();
-    for (incoming, source) in interrupted {
-        receive(store, state, policy, &incoming, source)?;
-    }
+    let publication = selection::repository(store)?;
     let remote_sha = remote["accepted"].as_str().map(oid).transpose()?;
-    upload(store, state, &mut exchange, remote_sha)?;
-    let have = head(&store.home)?;
-    let response = exchange.request(&format!("/sync/v1/objects?have={have}"), None)?;
-    state.remote_pending = response["pending"].clone();
+    let have = state
+        .projection
+        .as_ref()
+        .filter(|p| oid(&p.published).is_ok())
+        .map(|p| p.published.clone());
+    state.remote_pending = remote["pending"].clone();
     store.save(state)?;
-    if let Some(incoming) = response["accepted"].as_str() {
-        oid(incoming)?;
-        import_bundle(store, &response, incoming)?;
-        scoped_history(store, incoming)?;
-        receive(store, state, policy, incoming, None)?;
+    // No objects request or projection scan for an unchanged shared identity.
+    if remote_sha != have.as_deref() {
+        if let Some(incoming) = remote_sha {
+            // Exact retained object custody is reusable even when local native
+            // acceptance is blocked. GET state still confirms today's owner,
+            // generation and pending journals; no repeat conflict download.
+            let retained = git(
+                &publication.home,
+                &[
+                    "for-each-ref",
+                    "--format=%(objectname) %(objecttype) %(symref)",
+                    &format!("refs/sifttext-sync/objects/{incoming}"),
+                ],
+            )?
+            .trim()
+                == format!("{incoming} commit");
+            if !retained {
+                let path = have
+                    .as_ref()
+                    .map(|h| format!("/sync/v1/objects?have={h}"))
+                    .unwrap_or_else(|| "/sync/v1/objects".into());
+                let response = exchange.request(&path, None)?;
+                compatible(&response)?;
+                if response["home"]["id"] != remote["home"]["id"] {
+                    return Err("sync object ownership mismatch".into());
+                }
+                if response["accepted"].as_str() != remote_sha {
+                    return Err("hosted accepted state changed; retry without uploading".into());
+                }
+                import_bundle(&publication, &response, incoming)?;
+            }
+            scoped_history(&publication, incoming, HistoryScope::Received)?;
+            if let Err(error) = selection::import(store, &publication, state, runtime, incoming) {
+                retain_selected_error(store, state, incoming, &error.to_string())?;
+                return Err(error);
+            }
+        }
     }
-    // Unaccepted contributions from another device are real received work too.
-    // Retain distinct unresolved repairs; ancestry and exact OIDs coalesce retries.
-    let pending_records = state.remote_pending.as_array().cloned().unwrap_or_default();
-    for pending in pending_records {
-        let Some(incoming) = pending["incoming"].as_str() else {
-            continue;
-        };
-        oid(incoming)?;
-        if ancestor(&store.home, incoming, &head(&store.home)?) {
-            continue;
-        }
-        if state.repairs().any(|p| p.incoming == incoming) {
-            continue;
-        }
-        let response = exchange.request(
-            &format!(
-                "/sync/v1/objects?incoming={incoming}&have={}",
-                head(&store.home)?
-            ),
-            None,
-        )?;
-        if response["incoming"] != incoming {
-            return Err("service did not identify requested pending history".into());
-        }
-        import_bundle(store, &response, incoming)?;
-        scoped_history(store, incoming)?;
-        receive(
-            store,
-            state,
-            policy,
-            incoming,
-            pending["device"].as_str().map(str::to_owned),
-        )?;
+    // Pending hosted contributions remain visible and in server custody; they
+    // cannot be silently overwritten by a current-state snapshot.
+    if state
+        .remote_pending
+        .as_array()
+        .is_none_or(|p| !p.is_empty())
+    {
+        return Err("hosted pending contributions require reconciliation; retained remote_pending is available in sync status".into());
     }
-    Ok(status(store, state)?)
+    // An unacknowledged local projection may contain newly excluded content.
+    // Never parent it merely because a previous failed cycle built it.
+    let parent = remote_sha;
+    let published = selection::project(store, &publication, state, &policy, parent)?;
+    if serde_json::to_value(selection::settings(&store.home)?)? != serde_json::to_value(&policy)? {
+        return Err("sharing policy changed before upload; retry".into());
+    }
+    // Only the independent publication main and its already-hosted ancestry can
+    // reach this bundle. Full local commit IDs never become upload prerequisites.
+    upload(
+        &publication,
+        state,
+        &mut exchange,
+        remote_sha,
+        &remote["pending"],
+        &published,
+        &store.home,
+        &policy,
+    )?;
+    store.save(state)
+}
+fn retain_selected_error(
+    store: &Store,
+    state: &mut State,
+    incoming: &str,
+    error: &str,
+) -> Result<()> {
+    let local_tip = head(&store.home)?;
+    let policy_id =
+        sifttext_file_graph::sha256(&serde_json::to_vec(&selection::settings(&store.home)?)?);
+    let previous = state.projection.as_ref().and_then(|p| p.blocked.as_ref());
+    if previous.is_some_and(|p| {
+        p["incoming"] == incoming && p["local_tip"] == local_tip && p["policy_id"] == policy_id
+    }) {
+        return Ok(());
+    }
+    let mut blocked = previous
+        .filter(|p| p["incoming"] == incoming)
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    if blocked["repair_worktree"].is_null() {
+        let guide = store
+            .root
+            .join(format!("selected-incoming-{}.md", &incoming[..16]));
+        atomic(&guide, format!("# Hosted edit retained for local reconciliation\n\nIncoming `{incoming}` remains in the private publication Git store under `{}`. No local knowledge was discarded. Reason: {error}\n\nInspect `sifttext sync status '{}'` and any translated repair guide. Reconcile only under the user's knowledge-write authority. Never treat an omitted local-only node as a deletion or reset either history.\n", store.root.join("publication").display(), store.home.display()).as_bytes())?;
+        blocked["repair_guide"] = json!(guide);
+    }
+    blocked["incoming"] = json!(incoming);
+    blocked["local_tip"] = json!(local_tip);
+    blocked["policy_id"] = json!(policy_id);
+    blocked["check"] = json!(error);
+    if let Some(projection) = &mut state.projection {
+        projection.blocked = Some(blocked);
+    } else {
+        state.projection = Some(selection::Projection {
+            blocked: Some(blocked),
+            ..Default::default()
+        });
+    }
+    store.save(state)
 }
 fn import_bundle(store: &Store, response: &Value, incoming: &str) -> Result<()> {
     if let Some(encoded) = response["bundle"].as_str() {
@@ -891,21 +1037,36 @@ fn status(store: &Store, state: &State) -> Result<Value> {
         reconciliations.remove(0)
     };
     Ok(
-        json!({"enabled":state.enabled,"device":state.device,"binding":state.binding,"accepted":accepted,"uploaded":state.uploaded,"reconciliation":pending,"additional_reconciliations":reconciliations,"remote_pending":state.remote_pending}),
+        json!({"enabled":selection::settings(&store.home)?.mode == "enabled","consent":selection::settings(&store.home)?,"device":state.device,"binding":state.binding,"accepted":accepted,"uploaded_publication":state.uploaded,"publication":state.projection,"reconciliation":pending,"additional_reconciliations":reconciliations,"remote_pending":state.remote_pending,"runner":runner::status(&store.home),"runner_error":runner::error(store)?}),
     )
 }
 /// No network or credentials on ordinary instructions. Only retained received work.
 pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
-    if !home.join(".git/sifttext-sync/state.json").try_exists()? {
+    if !home
+        .join(".git/sifttext-sync/selected-state.json")
+        .try_exists()?
+    {
         return Ok(Vec::new());
     }
     let store = Store::open(home, false, false)?;
     let state = store.load()?;
-    if state.repairs().next().is_none() {
-        return Ok(Vec::new());
+    let mut repairs = Vec::new();
+    let error = runner::error(&store)?;
+    if !error.is_null() {
+        repairs.push(json!({"status":"sync_failed","runner_error":error["error"],"retry":error["retry"]}));
+    }
+    if state.repairs().next().is_none()
+        && state
+            .projection
+            .as_ref()
+            .is_none_or(|p| p.blocked.is_none())
+    {
+        return Ok(repairs);
     }
     let result = status(&store, &state)?;
-    let mut repairs = Vec::new();
+    if let Some(blocked) = state.projection.as_ref().and_then(|p| p.blocked.as_ref()) {
+        repairs.push(blocked.clone());
+    }
     if !result["reconciliation"].is_null() {
         repairs.push(result["reconciliation"].clone());
     }
@@ -918,15 +1079,90 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     );
     Ok(repairs)
 }
-pub(super) fn run(policy: &Policy, args: &[String]) -> Result<Value> {
-    let [_, operation, home] = args else {
-        return Err("usage: sifttext sync enable|disable|status|once|run HOME".into());
-    };
-    if !["enable", "disable", "status", "once", "run"].contains(&operation.as_str()) {
-        return Err("unknown sync operation".into());
+fn migrate(store: &Store) -> Result<()> {
+    let legacy = store.root.join("state.json");
+    if !legacy.try_exists()? {
+        return Ok(());
     }
-    if operation == "status" && fs::symlink_metadata(Path::new(home).join(".git/sifttext-sync"))
-        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
+    let meta = fs::symlink_metadata(&legacy)?;
+    if !meta.is_file()
+        || meta.nlink() != 1
+        || meta.uid() != unsafe { libc::geteuid() }
+        || meta.mode() & 0o777 != 0o600
+        || meta.len() > 1024 * 1024
+    {
+        return Err("unsafe legacy sync journal; no transfer permitted".into());
+    }
+    let mut value: Value = serde_json::from_slice(&fs::read(&legacy)?)?;
+    let prior = store.root.join("legacy-enrollment.json");
+    if !prior.try_exists()? {
+        atomic(&prior, &serde_json::to_vec(&value)?)?;
+    }
+    // Fence older clients FIRST. Keep every legacy repair/binding/receipt intact.
+    if value["enabled"] != false {
+        value["enabled"] = json!(false);
+        atomic(&legacy, &serde_json::to_vec(&value)?)?;
+    }
+    if !store.root.join("selected-state.json").try_exists()? {
+        let original: Value = serde_json::from_slice(&fs::read(&prior)?)?;
+        let was_enabled = original["enabled"]
+            .as_bool()
+            .ok_or("invalid legacy enrollment")?;
+        let mut state: State = serde_json::from_value(value)?;
+        state.enabled = false;
+        state.uploaded = None;
+        state.projection = None;
+        let mut settings = selection::settings(&store.home)?;
+        if settings.mode == "unanswered" {
+            settings.mode = if was_enabled { "enabled" } else { "disabled" }.into();
+            selection::save_settings(&store.home, &settings)?;
+        }
+        store.save(&state)?;
+    }
+    Ok(())
+}
+fn initialize(store: &Store) -> Result<State> {
+    migrate(store)?;
+    if store.root.join("selected-state.json").try_exists()? {
+        return store.load();
+    }
+    let mut random = [0u8; 16];
+    fs::File::open("/dev/urandom")?.read_exact(&mut random)?;
+    let state = State {
+        enabled: false,
+        endpoint: endpoint()?,
+        device: random.iter().map(|b| format!("{b:02x}")).collect(),
+        binding: Binding::Unbound,
+        uploaded: None,
+        pending: None,
+        additional_pending: Vec::new(),
+        remote_pending: json!([]),
+        projection: None,
+    };
+    store.save(&state)?;
+    Ok(state)
+}
+pub(super) fn run(runtime: &Path, args: &[String]) -> Result<Value> {
+    let quiet = matches!(args, [_, operation, _, flag] if operation == "once" && flag == "--quiet");
+    let args = if quiet { &args[..3] } else { args };
+    if args.len() < 3 || args.len() > 4 {
+        return Err("usage: sifttext sync enable|disable|decline|status|once|run HOME; sync policy HOME FILE.json".into());
+    }
+    let operation = args[1].as_str();
+    let home = Path::new(&args[2]);
+    if ![
+        "enable", "disable", "decline", "status", "once", "run", "tick", "policy",
+    ]
+    .contains(&operation)
+        || (args.len() == 4) != (operation == "policy")
+    {
+        return Err("unknown sync operation/arguments".into());
+    }
+    if operation == "status"
+        && !home
+            .join(".git/sifttext-sync/selected-state.json")
+            .try_exists()?
+    {
         let home = fs::canonicalize(home)?;
         if !home.join(".git").symlink_metadata()?.is_dir()
             || git(&home, &["rev-parse", "--show-toplevel"])?
@@ -934,79 +1170,95 @@ pub(super) fn run(policy: &Policy, args: &[String]) -> Result<Value> {
         {
             return Err("sync requires an independent initialized knowledge home".into());
         }
-        return Ok(json!({"enabled":false,"status":"unconfigured"}));
+        return Ok(
+            json!({"enabled":false,"status":if home.join(".git/sifttext-sync/state.json").try_exists()? {"legacy_enrollment_requires_migration"} else {"unconfigured"},"consent":selection::settings(&home)?,"runner":runner::status(&home)}),
+        );
     }
     if operation == "run" {
-        // One cycle lock only: instructions/status stay local and atomic snapshots;
-        // enable/disable and explicit once can run between bounded transfer cycles.
         loop {
             {
-                let store = Store::open(Path::new(home), false, true)?;
+                let store = Store::open(home, false, true)?;
+                migrate(&store)?;
                 let mut state = store.load()?;
-                if !state.enabled {
+                if selection::settings(&store.home)?.mode != "enabled" {
                     return status(&store, &state);
                 }
-                if let Err(error) = cycle(&store, &mut state, policy) {
-                    eprintln!("Knowledge sync paused: {error}");
+                match cycle(&store, &mut state, runtime) {
+                    Ok(()) => runner::record(&store, None)?,
+                    Err(error) => {
+                        runner::record(&store, Some(&error.to_string()))?;
+                        eprintln!("Knowledge sync failed; retrying in 15 seconds: {error}");
+                    }
                 }
             }
             thread::sleep(Duration::from_secs(15));
         }
     }
     let store = Store::open(
-        Path::new(home),
-        operation == "enable",
+        home,
+        ["enable", "disable", "decline", "policy"].contains(&operation),
         operation != "status",
     )?;
-    if operation == "enable" {
-        // Enrollment is mechanical, not submission or derived rehydration. Only
-        // advance when actually behind; unchanged HEAD needs no full index pass.
-        enrollment_home(&store.home)?;
-        if git(&store.home, &["rev-parse", "HEAD"])? != head(&store.home)? {
-            local::advance(policy, &store.home)?;
+    if operation == "status" {
+        return status(&store, &store.load()?);
+    }
+    let mut state = initialize(&store)?;
+    match operation {
+        "enable" => {
             enrollment_home(&store.home)?;
-        }
-        scoped_history(&store, &head(&store.home)?)?;
-        let mut state = if !fs::symlink_metadata(store.root.join("state.json"))
-            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
-            store.load()?
-        } else {
-            let mut random = [0u8; 16];
-            fs::File::open("/dev/urandom")?.read_exact(&mut random)?;
-            State {
-                enabled: true,
-                endpoint: endpoint()?,
-                device: random.iter().map(|b| format!("{b:02x}")).collect(),
-                binding: Binding::Unbound,
-                uploaded: None,
-                pending: None,
-                additional_pending: Vec::new(),
-                remote_pending: Value::Null,
+            if state.endpoint != endpoint()? {
+                return Err(
+                    "cannot change an existing sync service; preserve enrollment and binding"
+                        .into(),
+                );
             }
-        };
-        if state.endpoint != endpoint()? {
-            return Err("cannot change an existing sync service; preserve this home and explicitly enroll a new clone".into());
-        }
-        state.enabled = true;
-        store.save(&state)?;
-        let mut output = status(&store, &state)?;
-        output["runner_installation"] = json!("not_performed");
-        output["runner_arguments"] = json!(["sync", "run", store.home]);
-        return Ok(output);
-    }
-    if operation == "status" && fs::symlink_metadata(store.root.join("state.json"))
-        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
-        return Ok(json!({"enabled":false,"status":"unconfigured"}));
-    }
-    let mut state = store.load()?;
-    match operation.as_str() {
-        "disable" => {
+            let mut settings = selection::settings(&store.home)?;
+            settings.mode = "enabled".into();
+            selection::save_settings(&store.home, &settings)?;
+            // Legacy enabled is permanently false: old clients cannot ignore policy.
             state.enabled = false;
             store.save(&state)?;
+            match runner::install(&store.home) {
+                Ok(()) => (),
+                Err(error) => {
+                    runner::record(&store, Some(&error.to_string()))?;
+                    return Err(error);
+                }
+            }
             status(&store, &state)
         }
-        "status" => status(&store, &state),
-        "once" => cycle(&store, &mut state, policy),
+        "disable" | "decline" => {
+            let mut settings = selection::settings(&store.home)?;
+            settings.mode = if operation == "decline" {
+                "declined"
+            } else {
+                "disabled"
+            }
+            .into();
+            selection::save_settings(&store.home, &settings)?;
+            state.enabled = false;
+            store.save(&state)?; // Consent blocks transfers even if OS teardown fails.
+            runner::disable(&store.home)?;
+            status(&store, &state)
+        }
+        "policy" => {
+            selection::set_policy(&store.home, Path::new(&args[3]))?;
+            status(&store, &state)
+        }
+        "once" | "tick" => {
+            match cycle(&store, &mut state, runtime) {
+                Ok(()) => runner::record(&store, None)?,
+                Err(error) => {
+                    runner::record(&store, Some(&error.to_string()))?;
+                    return Err(error);
+                }
+            }
+            if quiet || operation == "tick" {
+                Ok(Value::Null)
+            } else {
+                status(&store, &state)
+            }
+        }
         _ => unreachable!(),
     }
 }

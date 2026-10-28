@@ -232,7 +232,7 @@ pub(super) fn http(
             "--max-time",
             "20",
             "--max-filesize",
-            if path.starts_with("/sync/v1/") { "12582912" } else { "1048576" },
+            if path.starts_with("/sync/v1/") { "46137344" } else { "1048576" },
             "--proto",
             "=http,https",
             "--write-out",
@@ -627,7 +627,8 @@ fn login(store: &Store) -> Result<()> {
 fn show_account(account: &Value) -> Result<()> {
     // Serialize only known account fields; never dump a token-bearing response.
     let output = json!({"id":account["id"], "email":account["email"],
-        "subscription_status":account["subscription_status"], "paid":account["paid"]});
+        "subscription_status":account["subscription_status"], "paid":account["paid"],
+        "subscription_plan":account["subscription_plan"]});
     writeln!(
         std::io::stdout(),
         "{}",

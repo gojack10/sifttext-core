@@ -58,16 +58,21 @@ sifttext init HOME --empty                 Explicitly initialize an empty knowle
                                           Existing recognized home/edits always unchanged
 sifttext instructions [STORE]              Print onboarding entry/order version and entry path
 sifttext read STORE UUID [-y]              Read node.md; -y prints exact bytes above 15000 tokens
-sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ...]
+sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses]
                                           Check/save in draft, refresh HOME, remove completed draft
 sifttext accepted REPO [-y]                Checked separate view; does not advance normal home
 sifttext advance HOME                      Explicit ff-only clean home reader + derived refresh
 sifttext worktree HOME                     Allocate a sparse private draft; prints worktree and artifact_home
 sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
                                           Create a tree root or child; never commits
-sifttext sync enable|disable|status|once|run HOME
-                                          Opt-in accepted knowledge transport; no runner installed
+sifttext sync enable|disable|decline|status|once|run HOME
+                                          enable records consent and installs native user-session scheduling
+                                          disable pauses transfers; decline remembers no without re-prompting
+sifttext sync policy HOME FILE.json        Set default include|exclude and node rules; preserves consent
+                                          Example: {\"default\":\"include\",\"rules\":[{\"node\":\"UUID\",\"action\":\"exclude\",\"recurse\":true}]}
                                           Status/instructions stay local; login required only for transfer
+                                          once HOME --quiet skips status JSON; errors remain visible
+                                          Exclusions remove current hosted content, not uploaded Git history
 sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
                                           Copy and Git-checkpoint a validated Pi session
 sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
@@ -205,15 +210,14 @@ fn run() -> Result<()> {
         return Ok(());
     }
     let runtime = local::runtime()?;
-    let policy = Policy::checked(&runtime)?;
-    // Bundle/bootstrap assets belong to this packaged onramp, not the generic
-    // native Policy contract (which also supports minimal policy-only fixtures).
-    sifttext_file_graph::native_kb::verify_assets(&runtime)?;
     if args.first().is_some_and(|arg| arg == "sync") {
-        let output = sync::run(&policy, &args)?;
-        println!("{}", serde_json::to_string_pretty(&output)?);
+        let output = sync::run(&runtime, &args)?;
+        if !output.is_null() {
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
         return Ok(());
     }
+    let policy = checked_policy(&runtime)?;
     if args.first().is_some_and(|arg| arg == "instructions") {
         let path = match args.as_slice() {
             [_, path] => PathBuf::from(path),
@@ -265,7 +269,13 @@ fn run() -> Result<()> {
             if force {
                 explicit.pop();
             }
-            let receipt = local::submit(
+            let submit = if explicit == ["--received-statuses"] {
+                explicit.clear();
+                local::submit_received
+            } else {
+                local::submit
+            };
+            let receipt = submit(
                 &policy,
                 &sifttext_file_graph::checked_publication::Request {
                     repo: repo.into(),
@@ -475,6 +485,12 @@ fn run() -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn checked_policy(runtime: &Path) -> Result<Policy> {
+    let policy = Policy::checked(runtime)?;
+    sifttext_file_graph::native_kb::verify_assets(runtime)?;
+    Ok(policy)
 }
 
 fn print_read(output: &str, force: bool) -> Result<()> {
