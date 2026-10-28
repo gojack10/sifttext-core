@@ -1,10 +1,10 @@
 ---
 id: "a0805f9a-dc3f-417e-81f9-1521c90e1e71"
 name: "Common Questions"
-micro_summary: "FAQ catch-all for confusions that don't map to a single concept node: deleting vs discarding, privacy, export, plus how SiftText differs from auto-memory and from Obsidian. Open when a question doesn't fit a concept node cleanly."
+micro_summary: "Answers common questions about using SiftText."
 status: "resolved"
-see_also: [{"target":"fbaa3012-2235-49cb-88c0-67fdbc366c36","reason":"Explains the human's control over reading and saving memory."},{"target":"5f146883-03c8-416c-be6b-c52cbcb055f2","reason":"Offers the binder metaphor for explicit, inspectable knowledge."}]
-scope: "FAQ-shaped content for questions that do not map to a single concept node elsewhere. Receives links from other nodes. Catch-all for edge cases and common confusions."
+see_also: [{"target":"fbaa3012-2235-49cb-88c0-67fdbc366c36","reason":"Explains the human's control over reading and saving memory."},{"target":"5f146883-03c8-416c-be6b-c52cbcb055f2","reason":"Introduces SiftText using the binder metaphor."}]
+scope: "Answer a user's question and direct them to further guidance when needed."
 warnings: ""
 ---
 ## Can I delete a node?
@@ -13,11 +13,19 @@ Use a discarded node when you want to keep the reason an approach was rejected.
 
 Committed Git history keeps earlier versions recoverable.
 
-## Can other people see my trees?
+## Where is my knowledge stored?
 
-Knowledge stays in your independent Git repository.
+Your knowledge lives in your local Git repository.
 
-Core does not upload it automatically.
+Enabling cloud sync creates a server copy of the selected knowledge that SiftText then keeps updated through scheduled transfers.
+
+SiftText's cloud MCP tools access the server copy, so sync the knowledge you want them to use.
+
+By default, sync includes every node in that knowledge home.
+
+Set exclusions before enabling sync for anything you want to keep local.
+
+Later exclusions take effect in the current server copy, while earlier uploaded versions remain in its Git history.
 
 ## Can I export my trees?
 

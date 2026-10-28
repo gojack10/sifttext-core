@@ -1,10 +1,10 @@
 ---
 id: "d0549d1b-e8b2-4160-81ed-62115597464a"
 name: "Write Grounded Stable Nodes"
-micro_summary: "Connects evidence to attributed interpretation, action and lifecycle status."
+micro_summary: "Connects a conclusion to its source evidence."
 status: "resolved"
 see_also: []
-scope: "Connects evidence to attributed interpretation, action and lifecycle status."
+scope: "Write knowledge a new reader can understand and evaluate."
 ---
 ## Represent knowledge
 
@@ -15,7 +15,7 @@ scope: "Connects evidence to attributed interpretation, action and lifecycle sta
 
 Reusable instructions state their purpose and procedure directly, while their development records belong outside the user-instruction tree.
 
-Read Grounded Node Examples when authoring or reviewing knowledge records.
+Read [[Grounded Node Examples|7a5ea88c-daf8-4bab-ab9e-f1a1a789a17a]] when authoring or reviewing knowledge records.
 
 ## Observed conditions
 Identify what was supplied or examined with enough context for a first-time reader.
@@ -31,7 +31,7 @@ Keep quotations exact within marked excerpt boundaries and retain a recoverable 
 Attribute recollections to their speaker and leave missing sources explicit.
 
 ## Inference and response
-Explain how the identified actor understood the observations and why they supported the response.
+Identify the person or agent who made the judgment, and explain what evidence supports it.
 
 State whether the response was proposed, selected, attempted or observed complete.
 

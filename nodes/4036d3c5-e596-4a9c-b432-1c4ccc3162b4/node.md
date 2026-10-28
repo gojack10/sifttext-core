@@ -1,10 +1,10 @@
 ---
 id: "4036d3c5-e596-4a9c-b432-1c4ccc3162b4"
 name: "Present the Reviewable Delta"
-micro_summary: "Presents brief explanations beside exact changes and structural context before approval."
+micro_summary: "Shows the user exactly what would change before asking for approval."
 status: "resolved"
 see_also: []
-scope: "Presents brief explanations beside exact changes and structural context before approval."
+scope: "Present the complete proposed knowledge change for review."
 ---
 Receive the complete reviewed candidate from [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]].
 
@@ -20,7 +20,9 @@ Show changed parentage and exact reference targets without implying that a link 
 
 Mark omitted ancestry explicitly.
 
-Read Unix Delta Examples for operation notation and Tree Development Examples for structural proposals.
+Read [[Unix Delta Examples|198d04b9-1289-4fd1-9050-4d4bf94bfd43]] for operation notation.
+
+Read [[Tree Development Examples|f3f63837-0754-4589-9d6b-58a2dd813741]] for structural proposals.
 
 Group large changes into coherent reviewable parts in chat unless the user selects another review surface.
 

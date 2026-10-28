@@ -1,10 +1,10 @@
 ---
 id: "c72d552d-3499-445b-a8d5-05d0ff7824f2"
 name: "SiftText Commit"
-micro_summary: "Carries source-grounded knowledge changes through approval, checked saving and usable continuation."
+micro_summary: "Saves reviewed knowledge changes within the user's permission."
 status: "resolved"
 see_also: []
-scope: "Carries source-grounded knowledge changes through approval, checked saving and usable continuation."
+scope: "Carry an approved knowledge change through publication."
 ---
 ## Permission and timing
 
@@ -33,8 +33,6 @@ Use [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]] t
 Use [[Review Origin and Response Coverage|ab82fdf1-6a71-4e09-bffe-ed6446eadc9a]] to check its meaning against the sources.
 
 For instruction changes, apply [[Canopy (Prompt Authoring Framework)|957aa569-75be-4871-b376-6b1943cc4db4]].
-
-Use [[Deslopifier|1e1b2959-562b-48a8-8094-8f099c8e3cc4]] to remove wording that does not serve the reader.
 
 Use [[Associate External Artifact Directories|de7cea55-c93d-48db-a4f6-58368bf6c36f]] when a node materially uses an external directory.
 

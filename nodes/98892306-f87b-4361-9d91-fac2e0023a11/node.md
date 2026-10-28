@@ -1,10 +1,10 @@
 ---
 id: "98892306-f87b-4361-9d91-fac2e0023a11"
 name: "Harness Bootstrap and Migration"
-micro_summary: "Installs the current harness entrance and safely migrates selected memory."
+micro_summary: "Sets up SiftText for the user's agent."
 status: "resolved"
 see_also: []
-scope: "Installs the current harness entrance and safely migrates selected memory."
+scope: "Set up the agent's persistent instructions and preserve imported memory."
 ---
 ## Authority
 
@@ -38,7 +38,7 @@ Report the installed location and the checks actually performed.
 
 ## Bootstrap
 
-```markdown
+````markdown
 ## SiftText
 
 SiftText stores evolving memory so you and your agents can save and recover understanding across chats.
@@ -56,7 +56,7 @@ At the start of every chat, read and follow the onboarding node below unless you
 ```text
 <verified absolute entrypoint path>
 ```
-```
+````
 
 ## Migrate selected memory
 

@@ -1,10 +1,10 @@
 ---
 id: "5f146883-03c8-416c-be6b-c52cbcb055f2"
 name: "The Binder"
-micro_summary: "The plain-language answer to \"what is SiftText, and why not just use auto-memory?\" Paper is the context window, post-its are the memory the labs pick for you, the binder is the one you control. The full metaphor and the on-stage framing live inside; open this before explaining SiftText to a newcomer."
+micro_summary: "Introduces SiftText as a binder of understanding that remains available across conversations."
 status: "resolved"
-see_also: [{"target":"f2d4825e-7e98-4775-b363-c50de7ee62ed","reason":"Same core idea told through mesh and beam; the binder is the plainer-language lens."}]
-scope: "A plain-language metaphor for what SiftText is and how it differs from automatic memory. The consumer-facing companion to Brain, Tree, Beam: the chat is a piece of paper, auto-memory is post-it notes chosen for you, SiftText is a binder you control."
+see_also: [{"target":"f2d4825e-7e98-4775-b363-c50de7ee62ed","reason":"Describes how people and agents use a knowledge tree together."}]
+scope: "Introduce SiftText using a binder as the example."
 warnings: ""
 ---
 Think of SiftText as a binder whose sections hold the understanding you want to keep.

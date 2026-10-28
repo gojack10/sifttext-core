@@ -1,42 +1,77 @@
 ---
 id: "6da0b35a-955a-4ad2-bdce-2994ba26119c"
 name: "Core Maintenance"
-micro_summary: "Guides agents from a diagnosed SiftText problem into matching source and authorized local repair."
+micro_summary: "Guides agents through recoverable SiftText problems while continuing the user's task."
 status: "resolved"
-see_also: [{"target":"a472e05c-9bbf-48f2-89d7-6c6092c339ed","reason":"Use the supported CLI, source-build and checked-worktree operations."},{"target":"8b5361e1-20d7-42a9-9dca-26ba3bac9f25","reason":"Read the supported configuration guide before relying on persisted permissions."}]
-scope: "Guide local diagnosis, adaptation, repair and contribution from the installed Core source-code entrance."
-warnings: "Matching source does not grant permission to publish code, project data or credentials."
+see_also: []
+scope: "Investigate and repair SiftText within the user's existing permission."
 ---
-## Observed conditions
+## Continue the task
 
-Use this guidance when investigating a SiftText problem or adapting it to the user's needs.
+Handle recoverable problems within the user's existing permission. Explain the repair briefly when it affects progress, so the user knows what is happening while you continue the task.
 
-`sifttext source-code` returns a Git checkout matching the installed source revision.
+Before raising a conflict, investigate whether the available sources already settle it. When a serious consequence still requires the user's judgment, explain the affected work and what each choice would do. Ground your recommendation in those consequences before asking one concrete question.
 
-Its origin points to the upstream repository.
+Preserve the user's knowledge and recovery files throughout repair.
 
-The current assignment and user configuration determine repair and contribution authority.
+## Find the source
 
-## Inference and response
+`sifttext source-code` returns a checkout matching the installed source revision.
 
-Read the checkout's agent and build instructions.
+Read its agent and build instructions before changing code.
 
-Investigate the observed behavior and make local changes within the assignment.
+Use [[Managed Releases and Updates|8b5361e1-20d7-42a9-9dca-26ba3bac9f25]] for supported update recovery.
 
-Follow the project’s build and verification permissions before using a changed build.
+The current assignment determines whether code changes and upstream contributions are authorized.
 
-Keep the working installation and user knowledge intact.
+Keep private knowledge and credentials out of contributions.
 
-Read the actual supported configuration and current assignment before relying on repair or upstream issue/PR permissions.
+## Example 1 — routine recovery
 
-The update guide describes only settings the installed command supports.
+The following A/B examples are synthetic.
 
-do not treat update consent as repair or publication consent.
+### Input
 
-Act within standing permissions and the current assignment.
+> Update my Mac to the official build.
 
-ask only for missing authority.
+### Situation
 
-Do not include private knowledge or transcripts in a contribution without permission.
+The updater needs a missing history record that the agent has found in a retained copy.
 
-Return the result to the original task, stating what changed, what was checked and what remains unresolved.
+### A — bad response
+
+> The update needs a missing history record. How should I repair it?
+
+### B — good response
+
+> I'm restoring the missing installation record from your saved history so the update can continue with your knowledge unchanged.
+
+The agent completes the repair and continues updating.
+
+## Example 2 — client permission required
+
+### Input
+
+> Set up the cloud assistant for my client work.
+
+### Situation
+
+The task includes client interviews whose agreement requires written approval for external storage.
+
+The user also has an offline assistant that processes files entirely on the company's Mac.
+
+### A — bad response
+
+> I recommend keeping the client notes on this Mac. Should I do that?
+
+### B — good response
+
+To make these interviews available in ChatGPT, I would upload their files to your SiftText account. They contain medical histories linked to named participants, so this would move identifiable health information onto a service your company does not control.
+
+The consent form requires written client approval for that transfer, which I haven't found.
+
+I'm keeping them with your offline assistant while finishing the rest of setup. Do you have that approval?
+
+## Return
+
+Continue the original task after recovery and report the actual result.

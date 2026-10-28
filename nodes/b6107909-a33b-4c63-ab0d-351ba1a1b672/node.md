@@ -1,10 +1,10 @@
 ---
 id: "b6107909-a33b-4c63-ab0d-351ba1a1b672"
 name: "Knowledge Layout"
-micro_summary: "Explains how repository locations, UUID folders, authored fields and ordered child relationships fit together for local knowledge navigation."
+micro_summary: "Locates knowledge files and identifies the local files that can be rebuilt."
 status: "resolved"
 see_also: []
-scope: "Locate the local knowledge home and understand its native identity, content and hierarchy before using retrieval or editing tools."
+scope: "Find knowledge files and identify rebuildable local views."
 warnings: ""
 ---
 ## Locate the home
@@ -24,6 +24,7 @@ nodes/UUID/children/UUID
 nodes/UUID/artifacts/NAME
 trees/ROOT_UUID
 .sifttext/index.sqlite
+.sifttext/config.json
 ```
 
 The UUID identifies a node.
@@ -52,19 +53,21 @@ Keep a separate authorized backup when one is needed.
 
 Optional scope and warnings are strings.
 
-see_also holds target/reason pairs whose targets exist in the same knowledge forest.
+Each `see_also` entry names another node in this knowledge home and explains its relevance.
 
-The status values and their required fields are defined in [[Status|17c42051-88c0-4e41-a151-5d1bab4be83b]].
+Use [[Status|17c42051-88c0-4e41-a151-5d1bab4be83b]] to choose a status and supply its required fields.
 
-## Derived state
+## Local state
 
-.sifttext and outline files are derived views, not authored knowledge.
+Use the installed commands to rebuild `.sifttext/index.sqlite` and generated outline files from the knowledge files.
 
-Refresh them with the installed commands rather than editing them.
+Preserve `.sifttext/config.json` during cache repairs because it stores the user's update permissions and sharing choices.
+
+## Knowledge size limits
 
 Authored files are bounded at 1 MiB.
 
-Submission enforces a 5000 o200k_base token ceiling on the content body.
+The content body must fit within 5000 tokens measured with `o200k_base`.
 
 Keep the native guards intact and decompose evidence rather than truncating it.
 

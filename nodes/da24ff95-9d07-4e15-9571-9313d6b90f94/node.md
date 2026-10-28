@@ -1,12 +1,12 @@
 ---
 id: "da24ff95-9d07-4e15-9571-9313d6b90f94"
 name: "Forcing Pass"
-micro_summary: "Reviews source fidelity, meaning, structure and instructions before approved saving."
+micro_summary: "Reviews a proposed knowledge change against its sources."
 status: "resolved"
 see_also: []
-scope: "Reviews source fidelity, meaning, structure and instructions before approved saving."
+scope: "Review the complete knowledge change before saving it."
 ---
-Read Tree Development Examples when reviewing structural changes.
+Read [[Tree Development Examples|f3f63837-0754-4589-9d6b-58a2dd813741]] when reviewing structural changes.
 
 Use [[Canopy (Prompt Authoring Framework)|957aa569-75be-4871-b376-6b1943cc4db4]] when reviewing executable instructions.
 

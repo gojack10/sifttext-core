@@ -31,16 +31,17 @@ Local knowledge work and official release updates need no payment or cloud login
 
 ## Release notices
 
-Ordinary managed commands check official releases four hours after the last successful check, with a five-minute retry cooldown after failure.
+Release checks run in the background every four hours.
 
-Release checks run in a detached CLI process so ordinary commands do not wait for the network. Later commands display the cached result.
+A failed check waits at least five minutes before retrying.
 
 A newer compatible release produces an `update_available` notice without activating it automatically.
 
 Act on the update notice at the earliest convenient pause in your work. Do not interrupt important work to update.
 
-- With the user's recorded standing permission, run `"$BIN" update`.
-- Otherwise, ask whether the user authorizes this update or routine updates.
+Run `"$BIN" update` under the user's recorded standing permission.
+
+When the update needs permission, ask whether the user authorizes it.
 
 Record routine permission only after the user's approval:
 
@@ -49,11 +50,11 @@ Record routine permission only after the user's approval:
 "$BIN" update --config
 ```
 
-The grant command changes only the `updates` object in the knowledge home's `.sifttext/config.json`, preserving other settings. Settings receipts show permission, file path and the pin only when set; an omitted pin means none.
+The grant command updates the `updates` object in `.sifttext/config.json` while preserving the user's other settings.
 
 Revoke a grant with `"$BIN" update --grant ask`. Never grant permission for yourself or copy it from another machine.
 
-These settings exist in managed v0.2.0 and v0.3.0. Older v0.1.0 accepts only `update`, `--status`, `--resume` and `--rollback`, so ask before each update there.
+On releases that lack saved update permissions, obtain permission for the current update.
 
 ## Inspect and apply
 
@@ -61,7 +62,7 @@ These settings exist in managed v0.2.0 and v0.3.0. Older v0.1.0 accepts only `up
 "$BIN" update --status
 ```
 
-Preserve the journal and use checked recovery when activation is pending.
+If activation was interrupted, retain its state files and run `"$BIN" update --resume`.
 
 A coupled application/knowledge release stays pending until the candidate application can accept the knowledge update.
 
@@ -71,25 +72,37 @@ Continue local reads during a blocked merge.
 
 A conflict returns a retained worktree and the affected paths.
 
-Continue in an attached repair undertaking when one exists.
+Use [[Core Maintenance|6da0b35a-955a-4ad2-bdce-2994ba26119c]] to investigate and complete the repair within the user's permission.
 
-Otherwise use [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] to create a suitable undertaking, publish it, then run:
+Read the accepted knowledge and retained candidate before editing the updater's worktree.
 
-```sh
-"$BIN" update --attach-node=UUID
-```
+Commit the correction there. Resume uses that saved correction as a new checked attempt while preserving earlier committed work.
 
-Read the accepted source and retained candidate before resolving the conflict.
+Status changes in the committed update are submitted through the existing publication checks.
 
-Ask about unresolved semantic choices while preserving the draft.
-
-Commit only the intended resolution in the updater's worktree.
+An existing project node can be associated with the repair using `"$BIN" update --attach-node=UUID` when useful.
 
 ```sh
 "$BIN" update --resume
 ```
 
-After activation, reread the returned refresh_instruction_paths and continue the original task.
+Read the updated files listed in `refresh_instruction_paths` before continuing the original task.
+
+## Recover missing instruction history
+
+An existing knowledge home may lack a record of its last merged official instructions.
+
+Recover that record from retained releases and Git when the evidence establishes it.
+
+The updater prepares a private draft for reconciling unavailable history.
+
+Combine the official instructions with the user's edited copies in that draft, retaining the user's changes.
+
+Commit the reconciled merge and resume.
+
+Successful publication records the official revision as the starting point for later updates.
+
+For an older updater that refuses before allocating a worktree, use a verified current release executable to perform this recovery while retaining the installed application.
 
 ## Pin a build
 
@@ -116,7 +129,7 @@ The updater reverses the exact accepted update delta while preserving later unre
 
 For interrupted activation, inspect "$BIN" update --status and the refusal diagnostic before resuming.
 
-Preserve a persistent refusal and its journal for maintainer-assisted repair.
+Investigate persistent refusals through [[Core Maintenance|6da0b35a-955a-4ad2-bdce-2994ba26119c]] while preserving the journal.
 
 Never reset accepted history or delete caches to bypass checks.
 

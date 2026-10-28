@@ -1,10 +1,10 @@
 ---
 id: "4cc0b396-4b55-415e-bb26-b51c97e6ca78"
 name: "SQLite Queries"
-micro_summary: "Explains read-only discovery and filtering of the local derived index, including freshness checks and its distinction from hosted PostgreSQL."
+micro_summary: "Uses read-only SQL to find knowledge in the local index."
 status: "resolved"
 see_also: []
-scope: "Use the actual local SQLite schema safely, including parent/root filtering, and return verifiable source identities."
+scope: "Query the local knowledge index and identify the matching nodes."
 warnings: ""
 ---
 ## Use
@@ -38,7 +38,7 @@ The knowledge-base root UUID is 38a9fc79-8a84-494d-a962-2ec5134bc856.
 ```sh
 sifttext sql "$store" 'SELECT id,name,status FROM nodes ORDER BY name LIMIT 20'
 sifttext sql "$store" 'SELECT p.id AS parent_id,c.value AS child_id FROM nodes p,json_each(p.children) c LIMIT 20'
-sifttext sql "$store" "SELECT n.id,n.name FROM nodes p,json_each(p.children) c JOIN nodes n ON n.id=c.value WHERE p.id='5e565245-14fe-406c-977c-cf94c9be246b' ORDER BY CAST(c.key AS INTEGER)"
+sifttext sql "$store" "SELECT n.id,n.name FROM nodes p,json_each(p.children) c JOIN nodes n ON n.id=c.value WHERE p.id='5e565245-14fe-406c-977c-cf94a9be246b' ORDER BY CAST(c.key AS INTEGER)"
 ```
 
 Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] for subtree navigation.
