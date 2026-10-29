@@ -1107,7 +1107,7 @@ fn advance_inner(
 }
 
 fn advance_checked(
-    policy: &Policy,
+    _policy: &Policy,
     home: &Path,
     before: &str,
     target: &str,
@@ -1142,8 +1142,8 @@ fn advance_checked(
         "reader changed; preserve files and retry",
     )?;
     verify_ref()?;
-    crate::checked_publication::protect_artifact_owners(home, target)?;
     if before != target {
+        crate::checked_publication::protect_artifact_owners(home, target)?;
         reader_git(home, &["merge", "--ff-only", "--no-edit", "--no-overwrite-ignore", target])?;
     }
     // Never roll back caller files on a post-ff failure. HEAD and accepted refs
@@ -1153,7 +1153,8 @@ fn advance_checked(
             reader_git(home, &["rev-parse", "HEAD"])? == target,
             "reader changed during advance",
         )?;
-        let refreshed = index::with_current_from(policy, home, prepared, |_, _| Ok(()))?.0;
+        let tree = reader_git(home, &["rev-parse", "--verify", &format!("{target}^{{tree}}")])?;
+        let refreshed = index::refresh_current(home, prepared, version.map(|version| (tree.as_str(), version)))?;
         require(version.is_none_or(|expected| refreshed == expected), "reader source changed during refresh; retry")?;
         require(
             reader_git(home, &["rev-parse", "HEAD"])? == target,

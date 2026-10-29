@@ -903,7 +903,7 @@ fn authored_tree_refuses_force_tracked_artifacts_including_chat_links() {
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None)
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None)
 }
 
 /// Check and accept the combination in the submitted worktree. The caller owns
@@ -920,18 +920,19 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record, None)
+    submit_inner(policy, request, true, previous_heads, &mut record, None, None)
 }
 
 pub(crate) fn save_prepared_leased(
     policy: &Policy,
     request: &Request,
     lease: &crate::local::DraftLease,
+    reader: Option<&mut crate::git_snapshot::GitReader>,
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
     submit_inner(
-        policy, request, true, previous_heads, &mut record, Some(lease),
+        policy, request, true, previous_heads, &mut record, Some(lease), reader,
     )
 }
 
@@ -942,6 +943,7 @@ fn submit_inner(
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
     lease: Option<&crate::local::DraftLease>,
+    reader: Option<&mut crate::git_snapshot::GitReader>,
 ) -> Receipt {
     let start = Instant::now();
     let mut receipt = Receipt {
@@ -991,6 +993,7 @@ fn submit_inner(
             previous_heads,
             record,
             &notes,
+            reader,
         )
     })();
     receipt.lifecycle = notes.take();
@@ -1060,6 +1063,7 @@ fn execute(
     previous_heads: Option<(&str, &str)>,
     record: &mut dyn FnMut(&str, &str) -> Result<()>,
     notes: &owned::Notes,
+    reader: Option<&mut crate::git_snapshot::GitReader>,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
     crate::real_dir(&q.repo)?;
@@ -1159,7 +1163,12 @@ fn execute(
         owned::recover(&repo, &root, notes)?;
     }
     r.check = "owned_view_setup";
-    let mut reader = crate::git_snapshot::GitReader::new(policy, &repo)?;
+    let mut owned_reader = if reader.is_none() {
+        Some(crate::git_snapshot::GitReader::new(policy, &repo)?)
+    } else { None };
+    let mut reader = reader.or(owned_reader.as_mut()).ok_or("missing Git reader")?;
+    require(reader.repo == repo && reader.policy_identity == policy.validation_identity()?,
+        "prepared Git reader does not match publication")?;
     let before = reader.view(&main)?;
     // The lifecycle refreshes the real home's existing derived state after
     // acceptance. Do not hydrate donors or build a second full temporary index.
@@ -1389,7 +1398,9 @@ fn execute(
     require(r.version.as_deref() == Some(final_view.version.as_str()), "validated candidate version mismatch")?;
     drop(final_view);
     drop(before);
-    drop(reader);
+    reader.release_views();
+    reader.suspend_objects();
+    drop(owned_reader);
     crate::token_count::release();
     crate::release_unused_memory();
     r.check = "derived_view_unavailable";

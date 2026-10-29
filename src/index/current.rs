@@ -109,6 +109,7 @@ fn version(
     connection: &mut Connection,
     snapshot: &Snapshot,
     reuse: bool,
+    accepted_version: Option<&str>,
     work: &mut Work,
 ) -> Result<String> {
     use crate::source_version::{self, Part};
@@ -117,7 +118,14 @@ fn version(
     let mut objects = Objects::new(&snapshot.repo);
     let tx = connection.transaction()?;
     let mut known = tx.prepare("SELECT signature,content_hash FROM sources WHERE path=?1")?;
-    let mut entries = tx.prepare("SELECT path,signature,content_hash FROM expected_sources ORDER BY ordering")?;
+    // Acceptance already hashed this exact immutable tree. Staging still
+    // discovers the Git delta, but only missing file hashes need native work;
+    // do not fold every unchanged source into the same content identity again.
+    let mut entries = tx.prepare(if accepted_version.is_some() {
+        "SELECT path,signature,content_hash FROM expected_sources WHERE content_hash IS NULL AND substr(signature,1,2)=x'0101' ORDER BY ordering"
+    } else {
+        "SELECT path,signature,content_hash FROM expected_sources ORDER BY ordering"
+    })?;
     let mut rows = entries.query([])?;
     let mut update = tx.prepare("UPDATE expected_sources SET content_hash=?2 WHERE path=?1")?;
     while let Some(row) = rows.next()? {
@@ -154,7 +162,7 @@ fn version(
             }
             _ => return Err("invalid source kind".into()),
         };
-        if crate::coherent_capture::authored_path(p) {
+        if accepted_version.is_none() && crate::coherent_capture::authored_path(p) {
             let part = match source.kind {
                 0 => Part::Directory,
                 1 => Part::File { len: source.size, hash: hash.as_ref().ok_or("missing file hash")? },
@@ -180,7 +188,8 @@ fn version(
     drop(known);
     drop(update);
     tx.commit()?;
-    Ok(format!("{:x}", version.finalize()))
+    Ok(accepted_version.map(str::to_owned)
+        .unwrap_or_else(|| format!("{:x}", version.finalize())))
 }
 
 fn safe_regular(path: &Path) -> Result<()> {
@@ -477,6 +486,7 @@ fn refresh(
     root: &Path,
     snapshot: &Snapshot,
     donor: Option<(&Connection, &Path)>,
+    accepted: Option<(&str, &str)>,
     work: &mut Work,
 ) -> Result<bool> {
     work.refreshed = true;
@@ -488,7 +498,7 @@ fn refresh(
         || meta(connection, "artifacts_ready")?.as_deref() != Some("1")
         || !crate::outlines::indexed_current(connection)?;
     setup(connection)?;
-    let version = version(connection, snapshot, !force, work)?;
+    let version = version(connection, snapshot, !force, snapshot.accepted_version(accepted), work)?;
     let mut objects = Objects::new(&snapshot.repo);
     let present = ids(connection)?;
     // Compute the actual path diff once. Only affected owners are projected;
@@ -619,6 +629,24 @@ pub(crate) fn with_current_from<T>(
     _policy: &Policy,
     path: &Path,
     prepared: Option<&Path>,
+    query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
+) -> Result<(String, T)> {
+    with_source(path, prepared, None, true, query)
+}
+
+/// Reader advance needs completed derived state, not a query over mutable rows.
+/// Reuse the final refresh barrier instead of opening a query and rediscovering
+/// the same inputs twice afterward. A warm completion still captures Git once.
+/// The accepted version is reusable only for an exact, clean Git tree.
+pub(crate) fn refresh_current(
+    path: &Path, prepared: Option<&Path>, accepted: Option<(&str, &str)>,
+) -> Result<String> {
+    Ok(with_source(path, prepared, accepted, false, |_, _| Ok(()))?.0)
+}
+
+fn with_source<T>(
+    path: &Path, prepared: Option<&Path>,
+    accepted: Option<(&str, &str)>, verify_query: bool,
     mut query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
     let mut work = Work::default();
@@ -631,33 +659,44 @@ pub(crate) fn with_current_from<T>(
     let capture = || Snapshot::read(&root);
     for _ in 0..4 {
         let snapshot = capture()?;
+        let mut refresh_lock = None;
         let tx = connection.transaction()?;
-        if let Some((version, generation)) = current(&tx, &snapshot)? {
-            let result = query(&tx, &version)?;
-            tx.commit()?;
-            let (observer, _) = cache(&root)?;
-            // Fresh connection: a read transaction's own snapshot cannot observe
-            // a competing publisher's separately committed dirty generation.
-            let after = capture()?;
-            if current(&observer, &after)? != Some((version.clone(), generation)) {
-                // Read-only projections can be retried against the newly current
-                // generation; ordinary refresh contention need not stop the agent.
+        let tx = if current(&tx, &snapshot)?.is_none() {
+            drop(tx);
+            let waiting = Instant::now();
+            refresh_lock = Some(lock(&directory)?);
+            work.refresh_lock_wait_us += waiting.elapsed().as_micros();
+            // Another refresher may have published while this caller waited.
+            // Reuse our inputs: mutable bytes validate their native identities
+            // when read, and the final barrier catches any intervening changes.
+            if current(&connection, &snapshot)?.is_none() {
+                if !refresh(&mut connection, &root, &snapshot,
+                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, &mut work)? {
+                    continue;
+                }
+            } else if !snapshot.unchanged()? {
                 continue;
             }
-            for (p, expected) in [(&directory, directory_id), (&database, database_id)] {
-                let actual = identity(p)?;
-                require((actual.0, actual.1) == (expected.0, expected.1), "replaced cache identity")?;
-            }
-            return Ok((version, result));
+            connection.transaction()?
+        } else { tx };
+        let Some((version, generation)) = current(&tx, &snapshot)? else { continue };
+        let result = query(&tx, &version)?;
+        tx.commit()?;
+        // Real queries retain their post-query source barrier. Ensure-only
+        // callers have no intervening query work; refresh already checked it.
+        if verify_query && !snapshot.unchanged()? { continue }
+        let (observer, _) = cache(&root)?;
+        // A fresh connection observes another publisher's dirty generation;
+        // the original read transaction cannot. No additional source scan.
+        if current(&observer, &snapshot)? != Some((version.clone(), generation)) {
+            continue;
         }
-        drop(tx);
-        let waiting = Instant::now();
-        let _lock = lock(&directory)?;
-        work.refresh_lock_wait_us += waiting.elapsed().as_micros();
-        // Recheck after queuing: another refresher may already have published.
-        let snapshot = capture()?;
-        if current(&connection, &snapshot)?.is_some() { continue }
-        refresh(&mut connection, &root, &snapshot, donor.as_ref().map(|(c,p)| (c,p.as_path())), &mut work)?;
+        for (p, expected) in [(&directory, directory_id), (&database, database_id)] {
+            let actual = identity(p)?;
+            require((actual.0, actual.1) == (expected.0, expected.1), "replaced cache identity")?;
+        }
+        drop(refresh_lock);
+        return Ok((version, result));
     }
     Err("changed source identity; authored input is continually changing".into())
 }

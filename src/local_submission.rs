@@ -288,6 +288,7 @@ fn submit_with_status(
     } else {
         None
     };
+    let mut received_reader = None;
     if received {
         require(request.explicit.is_empty(), "received status selection cannot include manual intents")?;
         request.explicit = if let Some(saved) = retained.as_ref().filter(|saved| saved.commit == *commit) {
@@ -297,7 +298,7 @@ fn submit_with_status(
             checked_publication::commit(home, commit)?;
             // Reuse Core's immutable Git reader and parsed-object cache, not a
             // second Markdown parser or mutable checkout scan.
-            let mut reader = crate::git_snapshot::GitReader::new(policy, home)?;
+            let reader = received_reader.insert(crate::git_snapshot::GitReader::new(policy, home)?);
             let before = reader.view(base)?;
             let after = reader.view(commit)?;
             after.nodes.iter().filter_map(|(id, node)| {
@@ -435,6 +436,7 @@ fn submit_with_status(
             policy,
             &request,
             &draft_lease,
+            received_reader.as_mut(),
             previous_heads
                 .as_ref()
                 .map(|(from, to)| (from.as_str(), to.as_str())),
@@ -496,6 +498,7 @@ fn submit_with_status(
         }
         receipt
     };
+    drop(received_reader);
     require(
         receipt.status == "current",
         "checked save recovery unavailable; retain journal",

@@ -2,7 +2,7 @@
 mod current;
 mod git;
 pub(crate) mod residue;
-pub(crate) use current::{cached, with_current, with_current_from};
+pub(crate) use current::{cached, refresh_current, with_current};
 use crate::{Policy, Result, require, sha256};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

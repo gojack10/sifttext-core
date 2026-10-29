@@ -380,6 +380,7 @@ pub(crate) struct GitReader {
     empty_blob: Option<String>,
     cache: Option<FactCache>,
     nodes: HashMap<String, Weak<NodeFacts>>,
+    views: HashMap<String, Arc<GitView>>,
     tokens: BTreeMap<[u8; 32], usize>,
 }
 impl GitReader {
@@ -394,8 +395,13 @@ impl GitReader {
             repo,
             policy_identity: identity,
             nodes: HashMap::new(),
+            views: HashMap::new(),
             tokens: BTreeMap::new(),
         })
+    }
+
+    pub(crate) fn release_views(&mut self) {
+        self.views.clear();
     }
 
     pub(crate) fn suspend_objects(&mut self) {
@@ -502,7 +508,7 @@ impl GitReader {
         result
     }
 
-    pub(crate) fn view(&mut self, revision: &str) -> Result<GitView> {
+    pub(crate) fn view(&mut self, revision: &str) -> Result<Arc<GitView>> {
         require(
             !revision.is_empty()
                 && !revision.starts_with('-')
@@ -514,6 +520,11 @@ impl GitReader {
             &["rev-parse", "--verify", &format!("{revision}^{{tree}}")],
         )?;
         require(valid_oid(&tree), "invalid Git tree identity")?;
+        // One operation can inspect a received contribution, combine it and
+        // validate it. Identical immutable trees share the prepared view.
+        if let Some(view) = self.views.get(&tree) {
+            return Ok(Arc::clone(view));
+        }
         let started = std::time::Instant::now();
         let ledger = Self::inventory(&self.repo, &tree)?;
         // Git cannot represent an empty directory. Only an empty initialized
@@ -751,13 +762,15 @@ impl GitReader {
             eprintln!("git-view-work entries={entry_count} nodes={} memory_hits={memory_hits} fact_hits={fact_hits} misses={misses} staged_facts={staged_facts} elapsed_ms={}",
                 nodes.len(), started.elapsed().as_millis());
         }
-        Ok(GitView {
+        let view = Arc::new(GitView {
             version: format!("{:x}", version.finalize()),
-            tree,
+            tree: tree.clone(),
             nodes,
             children,
             roots,
-        })
+        });
+        self.views.insert(tree, Arc::clone(&view));
+        Ok(view)
     }
 
     fn node(&mut self, entry: &TreeEntry, id: &str,

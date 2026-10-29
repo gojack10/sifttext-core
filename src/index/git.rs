@@ -147,6 +147,10 @@ impl Snapshot {
             "changed source identity")?;
         Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), tree, changes })
     }
+    pub fn accepted_version<'a>(&self, accepted: Option<(&str, &'a str)>) -> Option<&'a str> {
+        accepted.filter(|(tree, _)| *tree == self.tree && self.changes.is_empty())
+            .map(|(_, version)| version)
+    }
     pub fn unchanged(&self) -> Result<bool> {
         let after = Self::read(&self.repo)?;
         Ok(after.identity == self.identity)
