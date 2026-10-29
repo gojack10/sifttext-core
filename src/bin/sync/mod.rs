@@ -1,5 +1,6 @@
 //! Opt-in accepted-knowledge transport. Git is the queue; the journal is custody,
 //! not acceptance evidence. No server, model, session/archive or secret backup.
+mod delivery;
 mod runner;
 mod selection;
 use super::account;
@@ -688,11 +689,7 @@ fn upload(
         return Err("consent/sharing changed during bundle preparation; upload refused".into());
     }
     let response = exchange.request(&format!("/sync/v1/devices/{}", state.device), Some(&body))?;
-    if response["incoming"] != commit {
-        return Err(
-            "service did not acknowledge exact incoming commit; retain queued history".into(),
-        );
-    }
+    delivery::acknowledge(&response, commit)?;
     state.uploaded = Some(commit.into());
     state.remote_pending = response["pending"].clone();
     store.save(state)
@@ -824,11 +821,10 @@ fn receive(
     store.save(state)
 }
 fn compatible(value: &Value) -> Result<()> {
-    if value["protocol"] != 1
-        || value["operation"] != "snapshot-import-v1"
-        || value["publication"] != "selected-current-v1"
+    delivery::compatible(value)?;
+    if value["publication"] != "selected-current-v1"
     {
-        return Err("sync service requires a compatible selected-current-v1 release; no transfer attempted, local knowledge remains usable".into());
+        return Err("sync service requires compatible selected-current-v1 and durable-receipt-v1 support; no transfer attempted, local knowledge remains usable".into());
     }
     Ok(())
 }
@@ -849,6 +845,14 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
         };
         store.save(state)?;
     }
+    state.remote_pending = remote["pending"].clone();
+    store.save(state)?;
+    if delivery::processing(&state.remote_pending)? {
+        // Server-owned completion is not a client repair or a reason to resend.
+        // In particular, don't fetch a just-accepted main while its worker owns
+        // the mutation lane, or build another publication on the older baseline.
+        return Ok(());
+    }
     let (reader, accepted) = reader_tips(&store.home)?;
     if reader != accepted {
         local::advance(&super::checked_policy(runtime)?, &store.home)?;
@@ -860,8 +864,6 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
         .as_ref()
         .filter(|p| oid(&p.published).is_ok())
         .map(|p| p.published.clone());
-    state.remote_pending = remote["pending"].clone();
-    store.save(state)?;
     // No objects request or projection scan for an unchanged shared identity.
     if remote_sha != have.as_deref() {
         if let Some(incoming) = remote_sha {
@@ -907,7 +909,7 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
         .as_array()
         .is_none_or(|p| !p.is_empty())
     {
-        return Err("hosted pending contributions require reconciliation; retained remote_pending is available in sync status".into());
+        return Err("hosted completion is blocked or needs reconciliation; retained remote_pending is available in sync status".into());
     }
     // An unacknowledged local projection may contain newly excluded content.
     // Never parent it merely because a previous failed cycle built it.
@@ -1079,6 +1081,14 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     );
     Ok(repairs)
 }
+pub(super) fn guide_path() -> Result<PathBuf> {
+    let path = local::runtime()?.join("docs/account-sync.md");
+    if !path.is_file() {
+        return Err("installed account/sync guide missing; preserve local knowledge and repair the package".into());
+    }
+    Ok(path)
+}
+
 fn migrate(store: &Store) -> Result<()> {
     let legacy = store.root.join("state.json");
     if !legacy.try_exists()? {

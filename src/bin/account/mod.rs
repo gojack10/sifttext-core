@@ -628,7 +628,9 @@ fn show_account(account: &Value) -> Result<()> {
     // Serialize only known account fields; never dump a token-bearing response.
     let output = json!({"id":account["id"], "email":account["email"],
         "subscription_status":account["subscription_status"], "paid":account["paid"],
-        "subscription_plan":account["subscription_plan"]});
+        "subscription_plan":account["subscription_plan"],
+        "guide":super::sync::guide_path()?,
+        "next":"Read the installed account/sync guide and inspect local consent before setup. Login and payment do not authorize upload."});
     writeln!(
         std::io::stdout(),
         "{}",

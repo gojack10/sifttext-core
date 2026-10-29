@@ -575,6 +575,11 @@ fn inverse(
         if let Some(after) = after {
             let mut text = std::str::from_utf8(&after.bytes)?.to_owned();
             let mut refs = parse_markdown(&text)?.see_also;
+            // Validate received targets before restoring omitted local references.
+            // A sender cannot introduce a reference to a local-only identity.
+            if refs.iter().any(|r| !incoming.contains(&r.target)) {
+                return Err("hosted reference targets knowledge outside its publication".into());
+            }
             if let Some(local) = full.files.get(&path) {
                 let omitted = parse_markdown(std::str::from_utf8(&local.bytes)?)?
                     .see_also
@@ -585,13 +590,6 @@ fn inverse(
                         refs.push(r);
                     }
                 }
-            }
-            // A remote UUID cannot address private nodes via references either.
-            if refs
-                .iter()
-                .any(|r| !incoming.contains(&r.target) && !original.contains(&r.target))
-            {
-                return Err("unknown hosted reference".into());
             }
             text = references(&text, &refs)?;
             result.put(path, "100644", text.into_bytes());
