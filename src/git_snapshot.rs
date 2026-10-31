@@ -691,13 +691,26 @@ impl GitReader {
         }
         drop(rows);
         drop(entries);
+        let mut missing = Vec::new();
+        for id in nodes.keys() {
+            for (tail, kind) in [("", 0), ("/children", 0), ("/children.order", 1)] {
+                let path = format!("nodes/{id}{tail}");
+                if !ledger.has(&path, kind)? {
+                    missing.push(path);
+                }
+            }
+        }
+        if !missing.is_empty() {
+            return Err(source_error::PublicationProblem {
+                kind: "missing_scaffolding",
+                paths: missing,
+                reason: "Git node containers or children.order files are missing",
+                next_action: "Keep the draft. Each new leaf needs an empty children.order and an empty children/.keep so Git retains its child directory. For a node with children, restore its intended links and full order instead of inventing an order. Commit the repair after the candidate and resubmit with the same home, draft and base. Use sifttext create when creating future nodes.",
+            }.into());
+        }
         let mut members = ledger.connection.prepare(
             "SELECT name FROM entries WHERE parent=?1 AND kind=2 ORDER BY name")?;
         for id in nodes.keys() {
-            for (tail, kind) in [("", 0), ("/children", 0), ("/children.order", 1)] {
-                require(ledger.has(&format!("nodes/{id}{tail}"), kind)?,
-                    "missing Git node container or order")?;
-            }
             let order = children.get(id).ok_or("missing Git children.order")?;
             // Only one owner's borrowed names are collected, never all links.
             let ordered: BTreeSet<&str> = order.iter().map(String::as_str).collect();

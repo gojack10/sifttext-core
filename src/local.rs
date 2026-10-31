@@ -251,7 +251,9 @@ pub(crate) fn reader_command(path: &Path, args: &[&str]) -> Command {
 }
 
 pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
-    git_output(crate::checked_publication::run_command(reader_command(path, args))?)
+    let output = crate::checked_publication::run_command(reader_command(path, args))?;
+    crate::checked_publication::require_git_success(args.first().copied().unwrap_or(""), output.status)?;
+    git_output(output)
 }
 
 fn git_output(out: std::process::Output) -> Result<String> {
@@ -1067,19 +1069,28 @@ fn reader_state(home: &Path) -> Result<String> {
     reader_repository(home)?;
     crate::checked_publication::native_index_guard(home)?;
     let head = reader_git(home, &["rev-parse", "--verify", "HEAD^{commit}"])?;
-    require(
-        reader_git(
-            home,
-            &[
-                "status",
-                "--porcelain=v1",
-                "--untracked-files=all",
-                "--ignore-submodules=none",
-            ],
-        )?
-        .is_empty(),
-        "reader is dirty; preserve authored and untracked work before advancing",
+    let status = reader_git(
+        home,
+        &[
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ],
     )?;
+    if !status.is_empty() {
+        let database = status.lines().any(|line| line == "?? sifttext.db");
+        return Err(crate::source_error::PublicationProblem {
+            kind: "reader_dirty",
+            paths: if database { vec!["sifttext.db".into()] } else { vec![] },
+            reason: if database {
+                "reader contains an untracked sifttext.db with unknown ownership. Core's generated retrieval index is .sifttext/index.sqlite"
+            } else {
+                "reader has authored or untracked changes"
+            },
+            next_action: "Keep all files. Do not delete, move or ignore an unknown database to clear publication. Use sifttext accepted HOME to read saved knowledge while the owner decides what to do with the blocking work. Once the normal home is clean, retry the original submit arguments to finish advancement and draft cleanup.",
+        }.into());
+    }
     crate::checked_publication::ignored_files(home, true)?;
     Ok(head)
 }
@@ -1104,6 +1115,22 @@ fn advance_inner(
         "status":if before == target {"current"} else {"advanced"},
         "accepted":target, "version":result["version"], "home":home,
     }))
+}
+
+#[derive(Debug)]
+struct ReaderAdvanceError {
+    target: String,
+    cause: Box<dyn std::error::Error>,
+}
+impl std::fmt::Display for ReaderAdvanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "reader advance incomplete for checked accepted {}. HEAD may already be advanced. Keep files and retry the original request. Cause: {}", self.target, self.cause)
+    }
+}
+impl std::error::Error for ReaderAdvanceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.cause.as_ref())
+    }
 }
 
 fn advance_checked(
@@ -1142,10 +1169,16 @@ fn advance_checked(
         "reader changed; preserve files and retry",
     )?;
     verify_ref()?;
+    let checkout_started = std::time::Instant::now();
     if before != target {
         crate::checked_publication::protect_artifact_owners(home, target)?;
         reader_git(home, &["merge", "--ff-only", "--no-edit", "--no-overwrite-ignore", target])?;
     }
+    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+        eprintln!("publication-phase phase=reader_checkout elapsed_ms={} outcome=complete",
+            checkout_started.elapsed().as_millis());
+    }
+    let refresh_started = std::time::Instant::now();
     // Never roll back caller files on a post-ff failure. HEAD and accepted refs
     // remain recoverable; a retry repairs only derived state after clean checks.
     let finish = || -> Result<Value> {
@@ -1166,7 +1199,12 @@ fn advance_checked(
             "reader":target, "accepted":target, "version":refreshed, "advanced":before != target}),
         )
     };
-    finish().map_err(|error| format!("reader advance incomplete (checked accepted {target}); HEAD may already be advanced; retain files and retry: {error}").into())
+    let result = finish();
+    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+        eprintln!("publication-phase phase=reader_refresh elapsed_ms={} outcome={}",
+            refresh_started.elapsed().as_millis(), if result.is_ok() { "complete" } else { "incomplete" });
+    }
+    result.map_err(|cause| Box::new(ReaderAdvanceError { target: target.into(), cause }) as Box<dyn std::error::Error>)
 }
 
 #[cfg(test)]

@@ -511,11 +511,13 @@ fn submit_with_status(
         .version
         .as_deref()
         .ok_or("missing checked version")?;
+    let mut finishing_stage = "reader_state";
     let finish = || -> Result<Value> {
         let advanced = {
             let home_lock = home_lock(home, true)?;
             let _home_custody = checked_publication::Custody::new(&[&home_lock])?;
             let before = reader_state(home)?;
+            finishing_stage = "reader_advance";
             let advanced = advance_checked(policy, home, &before, target, Some(version), Some(draft), || Ok(()))?;
             // advance_checked already verifies HEAD, accepted ref and the
             // refreshed source version while this home custody is held.
@@ -524,6 +526,7 @@ fn submit_with_status(
         // Home custody has already popped. Release publication custody then its
         // file before recursive cleanup; the draft lease still protects removal.
         drop(publication.take());
+        finishing_stage = "draft_cleanup";
         if !recovering_cleanup {
             pending.completed_head = Some(target.to_owned());
             // Persist acceptance custody before deleting anything. A retry
@@ -587,6 +590,7 @@ fn submit_with_status(
         output["home"] = json!(home);
         output["home_advance"] = advanced;
         output["worktree_removed"] = json!(true);
+        finishing_stage = "receipt_return";
         before_return()?;
         Ok(output)
     };
@@ -597,13 +601,21 @@ fn submit_with_status(
             let mut output = serde_json::to_value(&receipt)?;
             output["status"] = json!("unavailable");
             output["check"] = json!("accepted_finish_incomplete");
+            output["failure_kind"] = json!(checked_publication::failure_kind(&error));
+            if let Some(operation) = checked_publication::failure_operation(error.as_ref()) {
+                output["failure_operation"] = json!(operation);
+            }
             output["publication"] = json!("accepted_incomplete");
             output["accepted"] = json!(target);
             output["home"] = json!(home);
             output["draft"] = json!(draft);
             output["view"] = Value::Null;
+            let problem = crate::source_error::PublicationProblem::from_error(error.as_ref(), checked_publication::failure_kind(&error));
+            output["failure_kind"] = json!(problem.kind);
+            output["failure_stage"] = json!(finishing_stage);
+            output["problem"] = serde_json::to_value(problem)?;
             output["next_action"] = json!(format!(
-                "accepted {target}, version {version}; home or cleanup may already have changed; preserve new work and retry the original submit arguments: {error}"
+                "Accepted {target}, version {version}. Reader advancement or draft cleanup is incomplete. Keep all files and the original submit arguments. Use sifttext accepted HOME for a checked reading view while finishing is blocked. This leaves HOME and draft cleanup unchanged. Once the blocking work is preserved with its owner's permission, retry the original submit arguments."
             ));
             Ok(output)
         }

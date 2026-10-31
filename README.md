@@ -76,6 +76,25 @@ qualified only on local internal macOS APFS. Initialization does not enable it;
 setup and re-prime deliberately allow an index write without staging user files.
 It does not repair or accelerate Core's isolated checked-publication helpers.
 
+## Recover an incomplete save
+
+An `accepted_incomplete` receipt means accepted main contains the save. Reader
+advancement or completed-draft cleanup remains unfinished, so keep the original
+submit arguments, draft and journals for recovery. Do not recreate the saved
+knowledge in another draft or reset accepted history.
+
+While finishing is blocked, use `sifttext accepted HOME` for a separate checked
+reading view. Its receipt says `status: ready` and `home_advanced: false`. Reading
+there does not finish the pending save. Once the blocking work is preserved with
+its owner's permission and the normal home is clean, retry the original
+`submit HOME DRAFT COMMIT BASE` arguments to complete that request. `advance HOME`
+changes the reader only, leaving pending draft cleanup for the original submit.
+
+A root-level `sifttext.db` has unknown ownership. Core stores its generated retrieval
+index at `.sifttext/index.sqlite` and leaves the root-level database in place.
+Continue reading through the checked view while the file's owner decides what to
+do with it. Do not delete, move or ignore the database merely to clear publication.
+
 ## Inspect a release
 
 Each [official release](https://github.com/gojack10/sifttext-core/releases/latest) publishes SHA256SUMS with its source revision. Follow [INSTALL.md](INSTALL.md) to compare the downloaded installer with that source and verify its published checksum before execution. A matching checksum establishes byte agreement with the release record. Build provenance requires separate evidence.

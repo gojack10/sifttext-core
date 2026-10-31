@@ -91,6 +91,10 @@ pub struct Receipt {
     pub lifecycle: Vec<owned::Note>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_operation: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<crate::source_error::PublicationProblem>,
     pub elapsed_ms: u128,
 }
 impl Receipt {
@@ -100,7 +104,8 @@ impl Receipt {
             "accepted_before":self.accepted_before,"candidate":self.candidate,
             "tree":self.tree,"draft_commit":self.draft_commit,"draft_base":self.draft_base,
             "draft_branch":self.draft_branch,"version":self.version,
-            "failure_kind":self.failure_kind,
+            "failure_kind":self.failure_kind,"failure_operation":self.failure_operation,
+            "problem":self.problem,
             "rule":gate::CANDIDATE_RULE,"rows":self.lifecycle,
         }))
         .map_err(|e| std::io::Error::other(e).into())
@@ -156,7 +161,7 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
             gate::customer_report(&mut validation);
             failure["validation"] = validation;
         }
-        for key in ["failure_kind", "lifecycle", "next_action"] {
+        for key in ["failure_kind", "failure_operation", "failure_stage", "problem", "lifecycle", "next_action"] {
             if !value[key].is_null() {
                 failure[key] = value[key].clone();
             }
@@ -219,6 +224,8 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
         semantic_check: "deferred",
         lifecycle: vec![],
         failure_kind: None,
+        failure_operation: None,
+        problem: None,
         elapsed_ms: 0,
     };
     let output: serde_json::Value = serde_json::from_str(&cli_json(&receipt).unwrap()).unwrap();
@@ -329,9 +336,19 @@ fn run(repo: &Path, args: &[&str]) -> Result<Output> {
 pub(crate) fn run_command(cmd: Command) -> Result<Output> {
     lifetime::run(cmd)
 }
+pub(crate) fn failure_operation(error: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
+    lifetime::failure_operation(error)
+        .or_else(|| error.source().and_then(failure_operation))
+}
+pub(crate) fn failure_kind(error: &dyn std::fmt::Display) -> &'static str {
+    owned::error_kind(error)
+}
+pub(crate) fn require_git_success(operation: &str, status: std::process::ExitStatus) -> Result<()> {
+    if status.success() { Ok(()) } else { Err(lifetime::nonzero(operation, status)) }
+}
 fn git(repo: &Path, args: &[&str]) -> Result<String> {
     let out = run(repo, args)?;
-    require(out.status.success(), "Git operation rejected")?;
+    require_git_success(args.first().copied().unwrap_or(""), out.status)?;
     Ok(std::str::from_utf8(&out.stdout)?
         .trim_end_matches('\n')
         .to_owned())
@@ -966,6 +983,8 @@ fn submit_inner(
         semantic_check: "deferred",
         lifecycle: vec![],
         failure_kind: None,
+        failure_operation: None,
+        problem: None,
         elapsed_ms: 0,
     };
     let notes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -997,7 +1016,11 @@ fn submit_inner(
         )
     })();
     receipt.lifecycle = notes.take();
-    receipt.failure_kind = result.as_ref().err().map(|e| owned::error_kind(e));
+    receipt.problem = result.as_ref().err().map(|e|
+        crate::source_error::PublicationProblem::from_error(e.as_ref(), owned::error_kind(e)));
+    receipt.failure_kind = receipt.problem.as_ref().map(|p| p.kind);
+    receipt.failure_operation = result.as_ref().err()
+        .and_then(|error| failure_operation(error.as_ref()));
     if let Err(error) = &result {
         eprintln!("submission {}: {}", receipt.check,
             error.to_string().chars().take(4096).collect::<String>());
@@ -1008,6 +1031,10 @@ fn submit_inner(
         receipt.view = None;
     }
     receipt.elapsed_ms = start.elapsed().as_millis();
+    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+        eprintln!("publication-phase phase=candidate_acceptance elapsed_ms={} outcome={}",
+            receipt.elapsed_ms, if result.is_ok() { "complete" } else { "incomplete" });
+    }
     receipt
 }
 fn apply_git_normalization(

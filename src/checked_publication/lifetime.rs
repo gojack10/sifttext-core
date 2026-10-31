@@ -56,12 +56,67 @@ fn git_budget() -> Result<Duration> {
     Ok(Duration::from_millis(milliseconds))
 }
 
+// Keep only a fixed operation label, never argv, paths or helper output.
+#[derive(Debug)]
+struct HelperError {
+    operation: &'static str,
+    source: Box<dyn std::error::Error>,
+}
+impl std::fmt::Display for HelperError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Git helper {}: {}", self.operation, self.source)
+    }
+}
+impl std::error::Error for HelperError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+pub(super) fn failure_operation(error: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
+    error.downcast_ref::<HelperError>().map(|error| error.operation)
+}
+fn operation_label(operation: &str) -> &'static str {
+    match operation {
+        "cat-file" => "cat-file", "checkout" => "checkout", "commit-tree" => "commit-tree",
+        "diff" => "diff", "diff-files" => "diff-files", "diff-index" => "diff-index",
+        "for-each-ref" => "for-each-ref", "hash-object" => "hash-object", "log" => "log",
+        "ls-files" => "ls-files", "ls-tree" => "ls-tree", "merge" => "merge",
+        "merge-base" => "merge-base", "read-tree" => "read-tree", "reset" => "reset",
+        "rev-parse" => "rev-parse", "show" => "show", "status" => "status",
+        "symbolic-ref" => "symbolic-ref", "update-index" => "update-index",
+        "update-ref" => "update-ref", "worktree" => "worktree", "write-tree" => "write-tree",
+        _ => "other",
+    }
+}
+fn command_operation(cmd: &Command) -> &'static str {
+    let mut args = cmd.get_args();
+    while let Some(arg) = args.next() {
+        if arg == "-C" || arg == "-c" || arg == "--git-dir" || arg == "--work-tree" {
+            args.next();
+        } else if !arg.as_encoded_bytes().starts_with(b"-") {
+            return operation_label(arg.to_str().unwrap_or(""));
+        }
+    }
+    "other"
+}
+pub(super) fn nonzero(operation: &str, status: std::process::ExitStatus) -> Box<dyn std::error::Error> {
+    Box::new(HelperError {
+        operation: operation_label(operation),
+        source: format!("Git operation rejected ({status})").into(),
+    })
+}
 pub(super) fn run(cmd: Command) -> Result<Output> {
-    run_bounded(cmd, git_budget()?)
+    let operation = command_operation(&cmd);
+    run_bounded(cmd, git_budget()?).map_err(|source| {
+        Box::new(HelperError { operation, source }) as Box<dyn std::error::Error>
+    })
 }
 
 pub(super) fn run_stdout_file(cmd: Command, file: &fs::File) -> Result<Output> {
-    run_bounded_stdout(cmd, git_budget()?, Some(file))
+    let operation = command_operation(&cmd);
+    run_bounded_stdout(cmd, git_budget()?, Some(file)).map_err(|source| {
+        Box::new(HelperError { operation, source }) as Box<dyn std::error::Error>
+    })
 }
 
 fn run_bounded(cmd: Command, budget: Duration) -> Result<Output> {
