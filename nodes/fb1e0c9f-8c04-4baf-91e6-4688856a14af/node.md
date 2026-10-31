@@ -148,6 +148,16 @@ continue independent permitted work.
 
 Read that view when the normal home cannot move.
 
+A submit receipt with `status:accepted_incomplete` and `check:accepted_finish_incomplete` confirms acceptance. Inspect the reader and draft before treating the save as complete, because finishing failed after acceptance.
+
+To continue reading, run `sifttext accepted HOME`. Check the returned accepted identity and version before reading its `view`. The normal home may remain behind, and draft cleanup still needs the original submit request.
+
+For a dirty reader, inspect `git -C HOME status --short` without changing its files. Core generates its retrieval database at `.sifttext/index.sqlite`. An untracked root `sifttext.db` has unknown ownership. Do not delete, relocate or ignore it merely to advance the reader.
+
+While ownership or preservation authority is unknown, leave the blocking file and normal home unchanged. Continue reading the accepted view and hand off reader recovery to the owner.
+
+Keep the draft and pending journals with the exact original submit arguments. After an authorized recovery resolves the blocker, retry those arguments to finish the pending save. `advance HOME` alone does not finish pending draft cleanup.
+
 `advance HOME` directly advances an eligible clean detached reader to already-accepted main and refreshes retrieval.
 
 it does not resubmit knowledge.

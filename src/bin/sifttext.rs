@@ -32,6 +32,17 @@ impl std::fmt::Display for LargeReturnSuppressed {
 
 impl std::error::Error for LargeReturnSuppressed {}
 
+#[derive(Debug)]
+struct AcceptedSubmissionIncomplete;
+
+impl std::fmt::Display for AcceptedSubmissionIncomplete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("knowledge accepted, but the save could not finish. Keep the draft and original submit arguments for recovery. See the receipt for the cause.")
+    }
+}
+
+impl std::error::Error for AcceptedSubmissionIncomplete {}
+
 const HELP: &str = include_str!("../../docs/cli-help.txt");
 
 fn run() -> Result<()> {
@@ -227,6 +238,9 @@ fn run() -> Result<()> {
                 force || receipt["status"] == "current",
             )?;
             if receipt["status"] != "current" {
+                if receipt["published"] == true || receipt["publication"] == "accepted_incomplete" {
+                    return Err(AcceptedSubmissionIncomplete.into());
+                }
                 return Err("submission unavailable; retain draft and inspect receipt".into());
             }
             return Ok(());
@@ -878,7 +892,9 @@ fn main() {
         if let Some(suppressed) = error.downcast_ref::<LargeReturnSuppressed>() {
             let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
         } else {
-            let rendered = if updating {
+            let rendered = if error.is::<AcceptedSubmissionIncomplete>() {
+                format!("{error}\n")
+            } else if updating {
                 render_update_error(error.as_ref()).unwrap_or_else(|_| format!("rejected: {error}\n"))
             } else {
                 format!("rejected: {error}\n")

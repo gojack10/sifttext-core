@@ -161,6 +161,57 @@ fn classify(error: &(dyn Error + 'static)) -> (&'static str, &'static str, &'sta
     )
 }
 
+/// Publication failures expose fixed causes and validated native paths, never
+/// node contents, relationship targets or arbitrary helper output.
+#[derive(Clone, Debug, Serialize)]
+pub struct PublicationProblem {
+    pub kind: &'static str,
+    pub paths: Vec<String>,
+    pub reason: &'static str,
+    pub next_action: &'static str,
+}
+impl fmt::Display for PublicationProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}; {}", self.reason, self.paths.join(", "), self.next_action)
+    }
+}
+impl Error for PublicationProblem {}
+impl PublicationProblem {
+    pub(crate) fn from_error(error: &(dyn Error + 'static), fallback: &'static str) -> Self {
+        if let Some(problem) = error.downcast_ref::<Self>() {
+            return problem.clone();
+        }
+        if let Some(problem) = error.downcast_ref::<SourceError>() {
+            return Self { kind: problem.kind, paths: vec![problem.path.clone()],
+                reason: problem.reason, next_action: problem.next_action };
+        }
+        let native = crate::index::Refusal::from_error("publication", error).kind;
+        if native == "unknown" && let Some(cause) = error.source() {
+            return Self::from_error(cause, fallback);
+        }
+        let kind = if native == "unknown" { fallback } else { native };
+        let (reason, next_action) = match kind {
+            "timeout" | "timeout_termination_unconfirmed" => (
+                "a bounded native helper timed out",
+                "Keep the draft and original arguments. Check filesystem access and helper availability before retrying. Do not bypass validation or delete recovery records."),
+            "busy" => ("another native operation holds custody or the derived index",
+                "Keep all files and retry after the other operation finishes. Do not delete locks."),
+            "permission_denied" => ("native filesystem access was denied",
+                "Keep existing files. Check access permissions, then retry the original arguments."),
+            "not_found" => ("a required native path is missing",
+                "Restore the missing files at the supplied paths before retrying. Do not reinitialize existing knowledge."),
+            "resource_exhausted" | "output_limit" | "output_limit_termination_unconfirmed" => (
+                "a native resource or output limit was reached",
+                "Keep existing files while freeing resources for a retry. Do not weaken validation limits."),
+            "git_nonzero" => ("a protected Git operation refused the request",
+                "Keep the draft and inspect repository state before retrying. Do not reset accepted history."),
+            _ => ("native publication could not complete this phase",
+                "Keep all files and the original submit arguments for recovery. Inspect the repository and filesystem before retrying."),
+        };
+        Self { kind, paths: vec![], reason, next_action }
+    }
+}
+
 // Native workers cannot send Box<dyn Error>; preserve safe context and IO identity.
 pub(crate) enum WorkerError {
     Io(std::io::Error),
