@@ -152,7 +152,9 @@ Before an authorized save, read [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff
 | Submitted-knowledge checks | Core binary |
 | Human approval of each conversational proposal | Agent, with no per-proposal approval gate in hosted Bash |
 
-The agent must show the proposed change and obtain the required approval before writing. Then save through Core's private worktree and checked submit procedure.
+Because hosted Bash has no per-proposal approval gate, the agent is responsible for following [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]]'s approval rules. Show the proposed change and obtain the required approval before writing.
+
+After approval, save through Core's private worktree and checked submit procedure so Core can validate the candidate before accepting it.
 
 ## Confirm which copy was read
 
