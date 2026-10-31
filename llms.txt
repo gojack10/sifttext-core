@@ -15,6 +15,12 @@ The tree lives in Markdown files with Git history, allowing agents to use it acr
   - Writing checks for AI-sounding prose.
   - Automatic tree organization checks.
 
+## Read-only product explanations
+
+Follow the [public bundled knowledge entry](https://github.com/gojack10/sifttext-core/blob/main/nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md)'s read-only explanation route to adapt one illustrative tree to the user's project without installation or private memory.
+
+Before rendering any tree delta, follow [SiftText Commit](https://github.com/gojack10/sifttext-core/blob/main/nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and [Dialogue](https://github.com/gojack10/sifttext-core/blob/main/nodes/d00ab6fd-b475-49ef-b37a-812807879308/node.md)'s required reads and selected procedures, even for a fictional, read-only example.
+
 ## Product links
 
 - [Website](https://sifttext.com/) for examples and current plans.

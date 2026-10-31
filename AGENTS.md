@@ -10,7 +10,11 @@ We believe agents will do far more of our work, so people need a way to question
 
 When the user requests installation, follow [INSTALL.md](INSTALL.md) to inspect the release and handle setup within their permission.
 
-For information requests, you can use `curl -fsSL https://sifttext.com/llms.txt` to read product context and follow its release links to the source revision and checksum evidence. Inspect relevant code in the [source repository](https://github.com/gojack10/sifttext-core) when the question needs it.
+For a product question, follow [the public bundled knowledge entry](nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md)'s read-only explanation route to adapt one illustrative tree to the user's project without installation or private memory.
+
+Before showing a tree delta, read SiftText Commit and Dialogue. Follow their required reads and selected procedures for fictional, read-only examples too.
+
+Inspect relevant code in the [source repository](https://github.com/gojack10/sifttext-core) when the question needs it.
 
 The public installation command is `curl -fsSL https://sifttext.com/install | sh`. For inspect-before-run setup, follow [INSTALL.md](INSTALL.md) to compare the installer with the source revision recorded by the selected release before verifying its checksum. A matching checksum confirms agreement with published bytes, while identifying the build requires separate provenance evidence.
 
