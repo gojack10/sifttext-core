@@ -117,9 +117,14 @@ fn completed(value: &Value) -> bool {
 
 fn input(path: &Path) -> Result<String> {
     let mut data = String::new();
-    fs::File::open(path)?
-        .take(MAX_INPUT + 1)
-        .read_to_string(&mut data)?;
+    if path == Path::new("-") {
+        std::io::stdin().lock().take(MAX_INPUT + 1).read_to_string(&mut data)?;
+    } else {
+        fs::File::open(path)
+            .map_err(|error| format!("Cannot read {}: {error}. This argument is a file path. Pipe text to sifttext slop-check - or sifttext epistemic-check -.", path.display()))?
+            .take(MAX_INPUT + 1)
+            .read_to_string(&mut data)?;
+    }
     require(
         data.len() as u64 <= MAX_INPUT,
         "Check input exceeds 128 KiB. Select a smaller input to leave room for JSON fields and escaping.",
@@ -280,11 +285,18 @@ pub fn run(args: &[String]) -> Result<()> {
         [cmd] if cmd == "credits" => {
             let value = response(&mut access, "GET", &format!("{ROOT}/balance"), None, false)?;
             // The balance route returns a bare balance object.
-            require(value["total"].is_number(), "credit balance unavailable")?;
+            if !value["total"].is_number() {
+                return Err(format!("Credit balance unavailable: {} ({}).",
+                    value["detail"].as_str().unwrap_or("The service did not return a balance"),
+                    value["error"].as_str().unwrap_or("invalid_response")).into());
+            }
+            if let Some(end) = value["period_end"].as_str() {
+                writeln!(std::io::stdout().lock(), "Monthly credits renew: {end}")?;
+            }
             writeln!(std::io::stdout().lock(), "{}", credit(&json!({"balance":value,"credits_used":0})))?;
             return Ok(());
         }
-        _ => return Err("usage:\n  sifttext slop-check FILE\n  sifttext epistemic-check FILE | --packet FILE\n  sifttext check-result ID [--delete]\n  sifttext credits [--buy-10 [REQUEST_KEY]]".into()),
+        _ => return Err("usage:\n  sifttext slop-check FILE|-\n  sifttext epistemic-check FILE|- | --packet FILE\n  sifttext check-result ID [--delete]\n  sifttext credits [--buy-10 [REQUEST_KEY]]".into()),
     };
     let mut out = std::io::stdout().lock();
     if !completed(&value) {

@@ -40,8 +40,8 @@ Account and sync (optional)
   Credentials: ~/.config/sifttext/account (outside knowledge).
 
 Hosted checks (saved login, supplied text/packet only)
-  sifttext slop-check FILE                       Review writing without rewriting
-  sifttext epistemic-check FILE                  Review node grounding
+  sifttext slop-check FILE|-                     Review a file, or piped text with -
+  sifttext epistemic-check FILE|-                Review node grounding from a file or stdin
   sifttext epistemic-check --packet FILE         Review a staged JSON packet
   sifttext check-result ID [--delete]            Retrieve without charge, or delete saved text
   sifttext credits                              Show current checker credits
