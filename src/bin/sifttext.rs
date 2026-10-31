@@ -146,11 +146,23 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         };
         let root = std::env::var_os("SIFTTEXT_INSTALL_ROOT")
             .ok_or("use the managed installation launcher for updates")?;
-        let output = sifttext_file_graph::updates::update_with_receipt_preflight(
+        let mut submission = None;
+        let result = sifttext_file_graph::updates::update_with_submission_receipt(
             Path::new(&root),
             &mode,
             |receipt| preflight_update_receipt(&mode, receipt, force),
-        )?;
+            &mut submission,
+        );
+        if std::env::var_os("SIFTTEXT_HOSTED_GATE_FD").is_none()
+            && let Some(receipt) = submission
+        {
+            if let Some(check) = receipt.get("hosted_check") {
+                // Main emits errors/notices before this summary and its final credits.
+                *hosted_summary = Some(sifttext_file_graph::hosted_checks::render_publication(check));
+            }
+            print_large_return(&format!("{}\n", render_publication_receipt(&receipt)?), force)?;
+        }
+        let output = result?;
         let rendered = render_update_output(&mode, &output)?;
         print_large_return(&format!("{rendered}\n"), force)?;
         return Ok(());
@@ -622,7 +634,7 @@ fn render_update_error(error: &dyn std::fmt::Display) -> Result<String> {
         "status":"error",
         "message":error.to_string(),
     }))
-    .map_err(std::io::Error::other)?)
+    .map_err(std::io::Error::other)? + "\n")
 }
 
 fn preflight_update_receipt(mode: &str, receipt: &serde_json::Value, force: bool) -> Result<()> {

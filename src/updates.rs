@@ -693,7 +693,7 @@ fn accepted_submission(receipt: &Value, home: &Path) -> Result<String> {
         matches!(receipt["status"].as_str(), Some("current" | "saved" | "recovered"))
             && receipt["publication"] != "accepted_incomplete"
             && receipt["home"].as_str() == home.to_str(),
-        &format!("knowledge publication remains pending; retain the original draft/base and retry: {receipt}"),
+        "knowledge publication remains pending. Retain the original draft/base and retry",
     )?;
     receipt["candidate"]
         .as_str()
@@ -840,10 +840,11 @@ fn resume(
     root: &Path,
     state: &mut State,
     preflight: &mut impl FnMut(&Value) -> Result<()>,
+    submission: &mut Option<Value>,
 ) -> Result<Value> {
     let mut pending = state.pending.clone().ok_or("no update is pending")?;
     if let UpdatePlan::Rollback(previous) = &pending.plan {
-        return resume_rollback(root, state, previous.clone());
+        return resume_rollback(root, state, previous.clone(), submission);
     }
     let policy = checked_runtime(&root.join(&pending.application))?;
     local::configure_git_identity(&state.home)?;
@@ -915,6 +916,7 @@ fn resume(
             },
         )?
     };
+    *submission = Some(receipt.clone());
     if receipt["published"] == true {
         let before = receipt["accepted_before"].as_str().ok_or("missing publication base; retain update")?;
         let accepted = receipt["candidate"].as_str().ok_or("missing publication candidate; retain update")?;
@@ -1001,6 +1003,7 @@ fn apply(
     state: &mut State,
     manifest: &Manifest,
     preflight: &mut impl FnMut(&Value) -> Result<()>,
+    submission: &mut Option<Value>,
 ) -> Result<Value> {
     validate_manifest(manifest)?;
     let current = package(&root.join(&state.application))?;
@@ -1099,7 +1102,7 @@ fn apply(
     let stage = tempfile::tempdir_in(root)?;
     let kb = stage.path().join("knowledge");
     unpack(&manifest.knowledge.asset, &kb)?;
-    merge_knowledge(root, state, manifest, app, &policy, &kb, preflight)
+    merge_knowledge(root, state, manifest, app, &policy, &kb, preflight, submission)
 }
 fn merge_knowledge(
     root: &Path,
@@ -1109,6 +1112,7 @@ fn merge_knowledge(
     policy: &Policy,
     kb: &Path,
     preflight: &mut impl FnMut(&Value) -> Result<()>,
+    submission: &mut Option<Value>,
 ) -> Result<Value> {
     let baseline = state.baseline.clone();
     local::check(policy, kb, None, BTreeSet::new())?;
@@ -1192,7 +1196,7 @@ fn merge_knowledge(
             &format!("knowledge: merge official {}", manifest.knowledge.revision),
         ],
     )?;
-    resume(root, state, preflight)
+    resume(root, state, preflight, submission)
 }
 fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(source)?;
@@ -1378,8 +1382,21 @@ pub fn update(root: &Path, mode: &str) -> Result<Value> {
 pub fn update_with_receipt_preflight(
     root: &Path,
     mode: &str,
-    mut preflight: impl FnMut(&Value) -> Result<()>,
+    preflight: impl FnMut(&Value) -> Result<()>,
 ) -> Result<Value> {
+    update_with_submission_receipt(root, mode, preflight, &mut None)
+}
+
+/// The transient submission receipt is separate from updater status and errors.
+/// Capture it before finishing so post-publication failures retain checker custody.
+/// Existing machine receipts and persisted update journals remain unchanged.
+pub fn update_with_submission_receipt(
+    root: &Path,
+    mode: &str,
+    mut preflight: impl FnMut(&Value) -> Result<()>,
+    submission: &mut Option<Value>,
+) -> Result<Value> {
+    *submission = None;
     if mode == "--local-status" {
         return local_status(root);
     }
@@ -1460,6 +1477,7 @@ pub fn update_with_receipt_preflight(
             // Retry the original request: submit's journal retains normalized HEAD
             // and cleanup custody even after main has accepted the candidate.
             let receipt = local::submit(&policy, &request)?;
+            *submission = Some(receipt.clone());
             let accepted = accepted_submission(&receipt, &state.home)?;
             ready_home(&policy, &state.home, Some(&accepted))?;
         } else {
@@ -1500,7 +1518,7 @@ pub fn update_with_receipt_preflight(
                 .is_ok()
             })
         {
-            return resume(root, &mut state, &mut preflight);
+            return resume(root, &mut state, &mut preflight, submission);
         }
         return Ok(json!({"status":"recovered"}));
     }
@@ -1513,10 +1531,10 @@ pub fn update_with_receipt_preflight(
                 json!({"status":"recovered","application":state.application,"knowledge":state.knowledge}),
             );
         }
-        return resume(root, &mut state, &mut preflight);
+        return resume(root, &mut state, &mut preflight, submission);
     }
     if mode == "--rollback" {
-        return rollback(root, &mut state);
+        return rollback(root, &mut state, submission);
     }
     if let Some(pending) = &state.pending {
         let mut result = json!({
@@ -1536,7 +1554,7 @@ pub fn update_with_receipt_preflight(
     state.attempt = Some(now());
     persist(&root.join("state.json"), &state)?;
     let manifest = fetch_manifest(root)?;
-    let result = apply(root, &mut state, &manifest, &mut preflight)?;
+    let result = apply(root, &mut state, &manifest, &mut preflight, submission)?;
     state.success = now();
     persist(&root.join("state.json"), &state)?;
     Ok(result)
@@ -1601,7 +1619,7 @@ fn status_changes(before: &Path, after: &Path) -> Result<BTreeSet<String>> {
     }
     Ok(explicit)
 }
-fn rollback(root: &Path, state: &mut State) -> Result<Value> {
+fn rollback(root: &Path, state: &mut State, submission: &mut Option<Value>) -> Result<Value> {
     require(
         state.pending.is_none(),
         "finish or inspect the retained update before rollback",
@@ -1663,9 +1681,9 @@ fn rollback(root: &Path, state: &mut State) -> Result<Value> {
             );
         }
     }
-    resume_rollback(root, state, previous)
+    resume_rollback(root, state, previous, submission)
 }
-fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result<Value> {
+fn resume_rollback(root: &Path, state: &mut State, previous: Recovery, submission: &mut Option<Value>) -> Result<Value> {
     let policy = checked_runtime(&root.join(&previous.application))?;
     let mut activation = json!({"application":previous.application,"application_sha256":previous.application_sha256,"knowledge":previous.knowledge,"baseline":previous.baseline,"previous":null});
     if let Some(mut pending) = state.pending.clone() {
@@ -1708,6 +1726,7 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery) -> Result
         persist(&root.join("activation.json"), &activation)?;
         let request = serde_json::from_value(activation["publication"].clone())?;
         let receipt = local::submit(&policy, &request)?;
+        *submission = Some(receipt.clone());
         let accepted = accepted_submission(&receipt, &state.home)?;
         ready_home(&policy, &state.home, Some(&accepted))?;
     } else {
@@ -2139,7 +2158,7 @@ mod tests {
         let mut newer = manifest.clone();
         newer.application.version = "v2".into();
         newer.knowledge.requires_application = "v2".into();
-        let pinned = apply(&root, &mut state, &newer, &mut |_| Ok(())).unwrap();
+        let pinned = apply(&root, &mut state, &newer, &mut |_| Ok(()), &mut None).unwrap();
         assert_eq!(pinned["status"], "update_pinned", "{pinned}");
         assert_eq!(pinned["pinned"], "v1");
         assert_eq!(pinned["application"], "v2");
@@ -2555,6 +2574,7 @@ mod tests {
             &policy,
             &kb,
             &mut |_| Ok(()),
+            &mut None,
         )
         .unwrap();
         assert_eq!(result["status"], "updated", "{result}");
@@ -2576,7 +2596,7 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let restored = rollback(&root, &mut state).unwrap();
+        let restored = rollback(&root, &mut state, &mut None).unwrap();
         assert_eq!(restored["status"], "rolled_back");
         assert!(
             fs::read_to_string(&a)
@@ -2704,6 +2724,7 @@ mod tests {
                 preview = Some(receipt.clone());
                 Err("receipt suppressed".into())
             },
+            &mut None,
         )
         .unwrap_err();
         assert!(error.to_string().contains("receipt suppressed"));
@@ -2713,7 +2734,7 @@ mod tests {
         );
         assert!(state.pending.as_ref().unwrap().commit.is_some());
 
-        let result = resume(&root, &mut state, &mut |_| Ok(())).unwrap();
+        let result = resume(&root, &mut state, &mut |_| Ok(()), &mut None).unwrap();
         assert_eq!(result, preview.unwrap());
         assert_ne!(
             git(&state.home, &["rev-parse", "HEAD"]).unwrap(),
@@ -2745,6 +2766,7 @@ mod tests {
             &policy,
             &kb,
             &mut |_| Ok(()),
+            &mut None,
         )
         .unwrap();
         assert_eq!(result["status"], "needs_agent", "{result}");
@@ -2879,7 +2901,7 @@ mod tests {
             &["commit", "-qm", "knowledge: reconcile official update"],
         )
         .unwrap();
-        let result = resume(&root, &mut state, &mut |_| Ok(())).unwrap();
+        let result = resume(&root, &mut state, &mut |_| Ok(()), &mut None).unwrap();
         assert_eq!(result["status"], "updated", "{result}");
         assert!(
             fs::read_to_string(&a)
