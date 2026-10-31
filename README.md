@@ -1,5 +1,11 @@
 # SiftText
 
+## Understand SiftText without installing it
+
+For a product question, follow the [public bundled knowledge entry](nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md)'s read-only explanation route for an adaptable example without an account or private knowledge.
+
+Before rendering any tree delta, follow SiftText Commit and Dialogue's required reads and selected procedures, even for a fictional, read-only example.
+
 ## Get started
 
 Install from your terminal:
