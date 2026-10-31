@@ -221,8 +221,15 @@ pub fn operation_lock() -> Result<Option<fs::File>> {
     let mut file = lock(&root, true)?;
     if recovery_needed(&root)? {
         drop(file);
-        update(&root, "--recover")?;
+        let recovery = update(&root, "--recover");
         file = lock(&root, true)?;
+        if let Err(error) = recovery {
+            // Pending knowledge recovery must not intercept the very submit
+            // retry that can finish it. An activation marker still requires
+            // recovery before any operation can use the installation.
+            require(!root.join("activation.json").exists(), &error.to_string())?;
+            eprintln!("update recovery pending. Preserve its journal and run update --resume: {error}");
+        }
     }
     require(
         fs::canonicalize(root.join("current"))? == local::runtime()?,
@@ -779,6 +786,56 @@ fn adopt_committed_repair(home: &Path, pending: &mut Pending) -> Result<()> {
     Ok(())
 }
 
+/// Recover a same-draft manual save without resubmitting the updater's obsolete
+/// commit or status intents. Journal custody is never acceptance evidence.
+fn accepted_update_save(
+    home: &Path,
+    pending: &Pending,
+) -> Result<Option<(crate::checked_publication::Request, (String, String))>> {
+    let Some(original) = &pending.commit else { return Ok(None) };
+    let Some(saved) = local::retained_submission(home, &pending.draft)? else { return Ok(None) };
+    let commit = saved.request.commit.as_deref().ok_or("missing retained update commit")?;
+    require(saved.request.base.as_deref() == Some(pending.base.as_str()),
+        "saved submission starts from a different base commit than the pending update. Preserve both journals")?;
+    if git(home, &["merge-base", "--is-ancestor", commit, "refs/heads/main"]).is_err() {
+        return Ok(None);
+    }
+    git(home, &["merge-base", "--is-ancestor", original, commit])?;
+    git(home, &["merge-base", "--is-ancestor", &pending.upstream, commit])?;
+    let delta = if let Some(delta) = saved.prepared_delta.filter(|(before, after)| before != after) {
+        delta
+    } else {
+        // Older completed journals lack the exact publication delta. Recover
+        // only the original official merge followed by linear repair/normalizing
+        // commits. A concurrent combination or any other merge is ambiguous.
+        let head = saved.completed_head.ok_or(
+            "preserve both journals for repair because this older save lacks the publication history needed to finish the accepted update")?;
+        let chain = git(home, &["rev-list", "--first-parent", "--parents", &format!("{}..{head}", pending.base)])?;
+        let mut expected = head.clone();
+        let mut official = false;
+        for line in chain.lines() {
+            let parts: Vec<_> = line.split_whitespace().collect();
+            require(parts.first().copied() == Some(expected.as_str()), "cannot follow the older update's first-parent commit history")?;
+            match parts.as_slice() {
+                [_, parent] => expected = (*parent).to_owned(),
+                [_, base, upstream] if *base == pending.base && *upstream == pending.upstream && !official => {
+                    official = true;
+                    expected = (*base).to_owned();
+                }
+                _ => return Err("cannot establish which accepted commit preceded this older update. Preserve both journals".into()),
+            }
+        }
+        require(official && expected == pending.base, "older update history does not contain the expected merge of its base and official revision")?;
+        (pending.base.clone(), head)
+    };
+    crate::checked_publication::commit(home, &delta.0)?;
+    crate::checked_publication::commit(home, &delta.1)?;
+    git(home, &["merge-base", "--is-ancestor", &delta.0, &delta.1])?;
+    git(home, &["merge-base", "--is-ancestor", commit, &delta.1])?;
+    git(home, &["merge-base", "--is-ancestor", &delta.1, "refs/heads/main"])?;
+    Ok(Some((saved.request, delta)))
+}
+
 fn resume(
     root: &Path,
     state: &mut State,
@@ -790,7 +847,16 @@ fn resume(
     }
     let policy = checked_runtime(&root.join(&pending.application))?;
     local::configure_git_identity(&state.home)?;
-    adopt_committed_repair(&state.home, &mut pending)?;
+    let completed = accepted_update_save(&state.home, &pending)?;
+    if let Some((request, delta)) = &completed {
+        pending.commit = request.commit.clone();
+        if let Some(recorded) = &pending.accepted_delta {
+            require(recorded == delta, "cannot finish the update because its journal disagrees with the save journal about the published change. Retain both journals")?;
+        }
+        pending.accepted_delta = Some(delta.clone());
+    } else {
+        adopt_committed_repair(&state.home, &mut pending)?;
+    }
     if pending.commit.is_none() {
         // The journal precedes the merge. Restart only the untouched draft;
         // conflicts and customer resolutions keep their existing recovery path.
@@ -830,19 +896,25 @@ fn resume(
         "refresh_instruction_paths": pending.changed,
     });
     preflight(&projected_receipt)?;
-    let receipt = local::submit_received(
-        &policy,
-        &crate::checked_publication::Request {
-            repo: state.home.clone(),
-            accepted_ref: "refs/heads/main".into(),
-            draft: Some(pending.draft.clone()),
-            commit: pending.commit.clone(),
-            base: Some(pending.base.clone()),
-            explicit: BTreeSet::new(),
-            pause_before_publish: None,
-            pause_after_publish: None,
-        },
-    )?;
+    let receipt = if let Some((request, _)) = completed {
+        // Preserve the completed save's exact explicit set, including a manual
+        // repair, instead of replacing it with newly inferred status intents.
+        local::submit(&policy, &request)?
+    } else {
+        local::submit_received(
+            &policy,
+            &crate::checked_publication::Request {
+                repo: state.home.clone(),
+                accepted_ref: "refs/heads/main".into(),
+                draft: Some(pending.draft.clone()),
+                commit: pending.commit.clone(),
+                base: Some(pending.base.clone()),
+                explicit: BTreeSet::new(),
+                pause_before_publish: None,
+                pause_after_publish: None,
+            },
+        )?
+    };
     if receipt["published"] == true {
         let before = receipt["accepted_before"].as_str().ok_or("missing publication base; retain update")?;
         let accepted = receipt["candidate"].as_str().ok_or("missing publication candidate; retain update")?;

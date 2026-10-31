@@ -246,9 +246,22 @@ Follow the installed Managed Releases and Updates guide:
 | Step | Action |
 | --- | --- |
 | Inspect | Read local update state using the operation supported by that version. |
-| Reconcile | Repair the conflicting knowledge draft within the user's permission. |
-| Commit | Inspect and commit the intended repair. |
+| Reconcile | Investigate the refusal and repair the retained knowledge draft within the user's permission. |
+| Commit | Inspect and commit the intended repair in that draft. |
 | Resume | Run `sifttext update --resume` for checked submission and activation. |
+
+A repairable refusal is not automatically a blocker. When a knowledge change needs additional permission, show its exact delta and ask for approval. Preserve the draft while waiting and continue independent work. Stop the affected operation when its prerequisite cannot be repaired within permission, such as a checksum mismatch or unavailable filesystem.
+
+Resume submits the retained draft's committed update and any committed descendant repair through publication checks, carrying its status transitions as explicit requests.
+
+After a manual submission from the same draft, resume retrieves the saved request and checks its accepted Git history before completing activation. Preserve the recovery files until this finishes. Do not edit `pending` or remove a save journal to force a new update.
+
+If recovery cannot establish the original publication delta needed for rollback, preserve the journals for repair.
+
+| Recovery state | Available operations |
+| --- | --- |
+| Knowledge repair pending | Ordinary commands and the original submit retry remain available. |
+| Application activation interrupted | Complete activation recovery before other operations. |
 
 The updater retains exclusive access throughout installation and recovery.
 
