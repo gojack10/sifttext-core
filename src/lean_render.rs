@@ -9,6 +9,12 @@
 // Not yet registered in src/lib.rs: `src/bin/lean-render-observe.rs` includes this module by
 // path so the pure contribution stays inside its own files until library registration lands.
 
+#[path = "lean_render/receipt.rs"]
+mod receipt;
+
+/// Render nested CLI receipts without changing generated-outline canonical bytes.
+pub use receipt::render as render_receipt;
+
 use serde_json::{Map, Value};
 use std::fmt::Write;
 

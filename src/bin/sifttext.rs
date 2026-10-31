@@ -32,75 +32,7 @@ impl std::fmt::Display for LargeReturnSuppressed {
 
 impl std::error::Error for LargeReturnSuppressed {}
 
-const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived retrieval
-
-sifttext login                            Open browser sign-in and verify paid Platform activation
-sifttext account                          Show server-confirmed account/subscription (refreshes login)
-sifttext logout                           Revoke remote login; always remove local credentials offline
-                                          Credentials: ~/.config/sifttext/account (outside knowledge)
-sifttext source-code                      Check out matching Core source and maintenance guidance
-sifttext runtime-check                     Verify executable assets without reading a knowledge store
-sifttext update [-y]                       Check/apply official updates; -y allows >15000 tokens
-sifttext update --status                    Check releases (network/writes; needs exclusive update lock)
-sifttext update --local-status              Read recorded update state only; no lock/network/writes
-                                          Not an atomic snapshot or knowledge-publication clearance
-sifttext update --resume                    Submit an agent-resolved KB merge and activate its release
-sifttext update --rollback                  Restore the previous release through checked KB reversal
-sifttext update --rebuild                   Rebuild the selected local source and retain its pin
-sifttext update --config                    Read the user's standing grant and application pin
-sifttext update --grant standing|ask        Record or revoke the user's routine-update grant
-sifttext update --attach-node=UUID          Register the repair undertaking for a pending update
-sifttext update --pin IDENTITY              Keep a chosen build through later official updates
-sifttext update --unpin                     Let official updates activate again
-sifttext init HOME                         Copy the embedded first-party KB (from native files) to a NEW Git home
-sifttext init HOME --bundle BUNDLE         Copy a supplied native KB to a NEW independent Git home
-sifttext init HOME --empty                 Explicitly initialize an empty knowledge home
-                                          Existing recognized home/edits always unchanged
-sifttext instructions [STORE]              Print onboarding entry/order version and entry path
-sifttext read STORE UUID [-y]              Read node.md; -y prints exact bytes above 15000 tokens
-sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses]
-                                          Check/save in draft, refresh HOME, remove completed draft
-sifttext accepted REPO [-y]                Checked separate view; does not advance normal home
-sifttext advance HOME                      Explicit ff-only clean home reader + derived refresh
-sifttext worktree HOME                     Allocate a sparse private draft; prints worktree and artifact_home
-sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
-                                          Create a tree root or child; never commits
-sifttext sync enable|disable|decline|status|once|run HOME
-                                          enable records consent and installs native user-session scheduling
-                                          disable pauses transfers; decline remembers no without re-prompting
-sifttext sync policy HOME FILE.json        Set default include|exclude and node rules; preserves consent
-                                          Example: {\"default\":\"include\",\"rules\":[{\"node\":\"UUID\",\"action\":\"exclude\",\"recurse\":true}]}
-                                          Status/instructions stay local; login required only for transfer
-                                          once HOME --quiet skips status JSON; errors remain visible
-                                          Exclusions remove current hosted content, not uploaded Git history
-sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
-                                          Copy and Git-checkpoint a validated Pi session
-sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
-                                          Attach a retained session; -y allows >15000 receipt tokens
-sifttext session-backup HOME                 Push the opted-in archive to its configured Git remote
-sifttext session-restore HOME ARCHIVE_ROOT Rebuild links; clone configured backup if archive is absent
-sifttext session-retention-config HOME  Read local session-retention/backup settings (default off)
-sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]
-                                          Apply native status activation/reopening; -y allows >15000 receipt tokens
-sifttext index STORE [--repair]            Refresh SQLite/outlines; --repair verifies/rebuilds outputs
-sifttext outline STORE UUID [full] [-y]  Refresh, verify, then print shallow/full LEAN
-sifttext search STORE QUERY [UNDER_UUID] [-y]
-                                          Ranked hits + ancestors in LEAN; -y allows >15000 tokens
-sifttext sql STORE 'SELECT ...' [-y]       Read-only same-version LEAN; -y allows >15000 tokens
-sifttext -h                               This reference
-
-Read node.md with ordinary file tools. Edit authored knowledge only in your private worktree.
-Expand draft paths at the same revision with: git -C WORKTREE sparse-checkout add nodes/UUID
-Use `sifttext read WORKTREE UUID` for omitted nodes without expanding them.
-New files use ordinary Git staging; `create` selects their paths automatically.
-Full draft fallback: git -C WORKTREE sparse-checkout disable. Keep the normal home complete.
-Task files belong in the durable artifact_home; follow Knowledge Layout's Node artifacts section.
-Git publication is explicit: inspect, validate the exact candidate, commit,
-then submit to combine accepted main, refresh the home and remove the saved draft.
-After interruption, preserve the original submit arguments and retry that request.
-No fixed node-count ceiling; checked resource bounds, 1 MiB authored files,
-5000-token content ceiling. Default KB is separate from editable homes.
-No hosted account, MCP, model provider, or Dark Factory required.";
+const HELP: &str = include_str!("../../docs/cli-help.txt");
 
 fn run() -> Result<()> {
     macro_rules! println {
@@ -135,7 +67,7 @@ fn run() -> Result<()> {
         };
         println!(
             "{}",
-            serde_json::to_string(&local::session_retention_config(Path::new(home))?)?
+            render_cli_receipt(&local::session_retention_config(Path::new(home))?)?
         );
         return Ok(());
     }
@@ -146,7 +78,7 @@ fn run() -> Result<()> {
         let receipt = local::backup_session_archive(Path::new(home))?;
         println!(
             "{}",
-            serde_json::to_string(&json!({"status":receipt["status"], "commit":receipt["commit"]}))?
+            render_cli_receipt(&json!({"status":receipt["status"], "commit":receipt["commit"]}))?
         );
         return Ok(());
     }
@@ -213,7 +145,7 @@ fn run() -> Result<()> {
     if args.first().is_some_and(|arg| arg == "sync") {
         let output = sync::run(&runtime, &args)?;
         if !output.is_null() {
-            println!("{}", serde_json::to_string_pretty(&output)?);
+            println!("{}", render_cli_receipt(&output)?);
         }
         return Ok(());
     }
@@ -234,8 +166,7 @@ fn run() -> Result<()> {
         );
         match sync::instructions(&path) {
             Ok(repairs) => for repair in repairs {
-                println!("{}", sifttext_file_graph::lean_render::render(&repair)
-                    .map_err(std::io::Error::other)?);
+                println!("{}", render_cli_receipt(&repair)?);
             },
             Err(error) => eprintln!("Sync continuation unavailable: {error}. Local accepted instructions above remain usable; preserve sync state and inspect sifttext sync status HOME."),
         }
@@ -291,7 +222,7 @@ fn run() -> Result<()> {
             print_large_return(
                 &format!(
                     "{}\n",
-                    sifttext_file_graph::checked_publication::cli_json(&receipt)?
+                    render_publication_receipt(&receipt)?
                 ),
                 force || receipt["status"] == "current",
             )?;
@@ -318,7 +249,7 @@ fn run() -> Result<()> {
             print_large_return(
                 &format!(
                     "{}\n",
-                    sifttext_file_graph::checked_publication::cli_json(&receipt)?
+                    render_publication_receipt(&receipt)?
                 ),
                 force || receipt.status == "current",
             )?;
@@ -356,7 +287,7 @@ fn run() -> Result<()> {
                 Path::new(archive),
                 |receipt| {
                     check_large_return(
-                        &format!("{}\n", serde_json::to_string_pretty(receipt)?),
+                        &format!("{}\n", render_cli_receipt(receipt)?),
                         force,
                     )
                 },
@@ -386,7 +317,7 @@ fn run() -> Result<()> {
                 None,
                 |receipt| {
                     check_large_return(
-                        &format!("{}\n", serde_json::to_string_pretty(&receipt.cli_json())?),
+                        &format!("{}\n", render_cli_receipt(&receipt.cli_json())?),
                         force,
                     )
                 },
@@ -466,25 +397,19 @@ fn run() -> Result<()> {
         }
         _ => return Err("unknown command or arguments; run sifttext -h".into()),
     };
-    if args.first().is_some_and(|cmd| {
-        matches!(
-            cmd.as_str(),
-            "normalize"
-                | "session-capture"
-                | "session-attach"
-                | "session-backup"
-                | "session-restore"
-        )
-    }) {
-        // These receipts have nested schemas beyond LEAN's scalar-row dialect.
-        println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
-        println!(
-            "{}",
-            sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
-        );
-    }
+    println!("{}", render_cli_receipt(&output)?);
     Ok(())
+}
+
+fn render_cli_receipt(output: &serde_json::Value) -> Result<String> {
+    sifttext_file_graph::lean_render::render_receipt(output)
+        .map_err(|error| std::io::Error::other(error).into())
+}
+
+fn render_publication_receipt(receipt: &impl serde::Serialize) -> Result<String> {
+    // Retain the existing customer projection and the internal JSON API.
+    let json = sifttext_file_graph::checked_publication::cli_json(receipt)?;
+    render_cli_receipt(&serde_json::from_str(&json)?)
 }
 
 fn checked_policy(runtime: &Path) -> Result<Policy> {
@@ -655,22 +580,7 @@ fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String
     if output["refresh_instruction_paths"] == json!([]) {
         output.as_object_mut().unwrap().remove("refresh_instruction_paths");
     }
-    let object = output
-        .as_object()
-        .ok_or("update output must be an object")?;
-    let mut lean = serde_json::Map::new();
-    for (key, value) in object {
-        let value = if value.is_array() || value.is_object() {
-            serde_json::Value::String(serde_json::to_string(value)?)
-        } else {
-            value.clone()
-        };
-        lean.insert(key.clone(), value);
-    }
-    Ok(
-        sifttext_file_graph::lean_render::render(&serde_json::Value::Object(lean))
-            .map_err(std::io::Error::other)?,
-    )
+    render_cli_receipt(&output)
 }
 
 fn render_update_error(error: &dyn std::fmt::Display) -> Result<String> {

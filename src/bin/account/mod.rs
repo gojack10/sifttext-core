@@ -634,7 +634,8 @@ fn show_account(account: &Value) -> Result<()> {
     writeln!(
         std::io::stdout(),
         "{}",
-        serde_json::to_string(&output)?
+        sifttext_file_graph::lean_render::render_receipt(&output)
+            .map_err(std::io::Error::other)?
     )?;
     Ok(())
 }

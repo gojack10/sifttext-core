@@ -1,0 +1,65 @@
+SiftText — local Markdown knowledge with Git history
+
+Setup and reading
+  sifttext init HOME [--empty | --bundle BUNDLE]  Create a new knowledge home
+  sifttext instructions [STORE]                 Print the entry path and version
+  sifttext read STORE UUID [-y]                  Read node.md, preserving its bytes
+  sifttext index STORE [--repair]                Refresh derived retrieval files
+  sifttext outline STORE UUID [full] [-y]        Read a shallow or full outline
+  sifttext search STORE QUERY [UNDER_UUID] [-y]  Search with ancestor context
+  sifttext sql STORE 'SELECT ...' [-y]           Query the same-version read-only index
+
+Editing and publication
+  sifttext worktree HOME                         Allocate a sparse private draft
+  sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
+                                                Create a root or child without committing
+  sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]
+                                                Apply status changes in the draft
+  sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses] [-y]
+                                                Save, refresh HOME, remove saved draft
+  sifttext accepted REPO [-y]                    Open a checked view without advancing HOME
+  sifttext advance HOME                         Advance a clean HOME, fast-forward only
+
+Account and sync (optional)
+  sifttext login | account | logout              Sign in, inspect access, or revoke login
+  sifttext sync enable|disable|decline|status|once|run HOME
+                                                Consent, pause, decline, inspect, or transfer
+  sifttext sync policy HOME FILE.json            Set include/exclude rules
+  Upload requires explicit sync consent. Exclusions remove current hosted content.
+  Uploaded Git history remains. Use sync once HOME --quiet to hide the receipt.
+  Errors remain visible.
+  Credentials: ~/.config/sifttext/account (outside knowledge).
+
+Session retention (optional; default off)
+  sifttext session-retention-config HOME          Read retention and backup settings
+  sifttext session-capture SOURCE DESCRIPTOR.json ARCHIVE_ROOT
+                                                Copy and Git-checkpoint a Pi session
+  sifttext session-attach HOME NODE DESCRIPTOR.json TOPIC ARCHIVE_ROOT [-y]
+                                                Attach a retained session
+  sifttext session-backup HOME                    Push the opted-in archive backup
+  sifttext session-restore HOME ARCHIVE_ROOT       Restore links from the archive or backup
+
+Application maintenance
+  sifttext update [-y]                           Check and apply official updates
+  sifttext update --status                       Check releases (network, writes, lock)
+  sifttext update --local-status                 Read recorded state only; not atomic
+  sifttext update --resume | --rollback           Resume a KB repair or restore a release
+  sifttext update --rebuild                       Rebuild local source and retain its pin
+  sifttext update --config                        Read update settings
+  sifttext update --grant standing|ask            Set routine-update permission
+  sifttext update --attach-node UUID              Attach a repair undertaking
+  sifttext update --pin IDENTITY | --unpin        Keep a build or follow official updates
+  sifttext source-code                           Check out matching source and guidance
+  sifttext runtime-check                         Verify executable assets
+  sifttext -h | --help                            Show this reference
+
+Structured receipts use LEAN. Files keep their native format.
+-y allows returns above 15000 tokens where listed.
+Settings and transaction files remain JSON.
+Use ordinary file tools for node.md. Edit only in your private worktree.
+Expand draft paths with: git -C WORKTREE sparse-checkout add nodes/UUID
+Use sifttext read for omitted nodes.
+Keep task artifacts in the durable artifact_home.
+After an interrupted submit, retain its arguments and retry the same request.
+Read sifttext instructions for setup, privacy, publication and recovery procedures.
+Local knowledge needs no hosted account, MCP or model provider.
