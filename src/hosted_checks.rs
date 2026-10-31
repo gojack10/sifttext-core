@@ -45,6 +45,14 @@ fn response(
     };
     let (mut status, mut value) = access.request_idempotent(method, path, body,
         receipt.as_ref().map(|(id, _)| id.as_str())).map_err(&recover)?;
+    // A transient response can fail after dispatch while the saved job is running.
+    // Resolve its pre-dispatch identity with GET, never another execution.
+    if status == 503 && value["error"] == "service_unavailable"
+        && value["request_id"].as_str().is_none()
+        && let Some((id, _)) = &receipt
+    {
+        (status, value) = access.request("GET", &format!("{ROOT}/{id}"), None).map_err(&recover)?;
+    }
     let start = Instant::now();
     while status == 202 {
         let id = request_id(&value)?.to_owned();
