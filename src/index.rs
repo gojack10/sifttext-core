@@ -21,6 +21,13 @@ pub struct Refusal {
     pub problem: Option<crate::source_error::SourceError>,
 }
 impl Refusal {
+    pub(crate) fn changed_source() -> Self {
+        Self { stage: "source_freshness", kind: "source_changed", problem: None }
+    }
+    pub(crate) fn is_changed_source(error: &(dyn std::error::Error + 'static)) -> bool {
+        error.downcast_ref::<Self>().is_some_and(|e|
+            e.stage == "source_freshness" && e.kind == "source_changed")
+    }
     pub fn from_error(stage: &'static str, error: &(dyn std::error::Error + 'static)) -> Self {
         let kind = error_kind(error);
         Self {
@@ -37,6 +44,9 @@ impl std::fmt::Display for Refusal {
         write!(f, "retrieval refused ({}: {})", self.stage, self.kind)?;
         if let Some(problem) = &self.problem {
             write!(f, ": {problem}")?;
+        }
+        if self.kind == "source_changed" {
+            write!(f, ". Retry after concurrent publication or editing finishes.")?;
         }
         Ok(())
     }

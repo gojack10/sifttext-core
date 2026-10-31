@@ -100,11 +100,11 @@ fn fingerprint(root: &Path, relative: &Path) -> Result<Option<Source>> {
     Err("empty authored path".into())
 }
 fn output(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    // Discovery owns an ordinary Git index refresh. Permit its native stat and
-    // untracked-cache updates; immutable object readers need no optional writes.
-    let mut command = crate::local::reader_command(root, args);
-    command.env_remove("GIT_OPTIONAL_LOCKS");
-    let output = crate::checked_publication::run_command(command)?;
+    // Retrieval must not hold Git's optional index-write lock while a publisher
+    // advances the reader. Keep reader_command's GIT_OPTIONAL_LOCKS=0: status
+    // still discovers working changes without opportunistically rewriting index.
+    let output = crate::checked_publication::run_command(
+        crate::local::reader_command(root, args))?;
     require(output.status.success(), &format!("Git change discovery failed: {}", String::from_utf8_lossy(&output.stderr)))?;
     Ok(output.stdout)
 }
@@ -143,8 +143,9 @@ impl Snapshot {
             changes.insert(path, source);
         }
         // A concurrent checkout is a retry, not a different baseline for this capture.
-        require(crate::local::reader_git(root, &["rev-parse", "--verify", "HEAD^{tree}"])? == tree,
-            "changed source identity")?;
+        if crate::local::reader_git(root, &["rev-parse", "--verify", "HEAD^{tree}"])? != tree {
+            return Err(super::Refusal::changed_source().into());
+        }
         Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), tree, changes })
     }
     pub fn accepted_version<'a>(&self, accepted: Option<(&str, &'a str)>) -> Option<&'a str> {
@@ -152,13 +153,19 @@ impl Snapshot {
             .map(|(_, version)| version)
     }
     pub fn unchanged(&self) -> Result<bool> {
-        let after = Self::read(&self.repo)?;
-        Ok(after.identity == self.identity)
+        match Self::read(&self.repo) {
+            Ok(after) => Ok(after.identity == self.identity),
+            Err(error) if super::Refusal::is_changed_source(error.as_ref()) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
     pub fn stage(&self, connection: &mut Connection, root: &Path) -> Result<()> {
         connection.execute_batch("CREATE TABLE IF NOT EXISTS git_sources (
             path TEXT PRIMARY KEY, signature BLOB NOT NULL, content_hash TEXT, oid TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS git_sources_oid ON git_sources(oid);")?;
+            CREATE INDEX IF NOT EXISTS git_sources_known_hash ON git_sources(oid,content_hash) WHERE content_hash IS NOT NULL;")?;
+        // Cold staging can contain many identical blobs whose hashes are all
+        // still unknown. Index only known hashes so each miss does not rescan
+        // those rows; the covering key also avoids fetching their source data.
         let previous: Option<String> = connection.query_row("SELECT value FROM metadata WHERE key='git_tree'", [], |r| r.get(0)).optional()?;
         if previous.as_deref() != Some(&self.tree) {
             let tx = connection.transaction()?;
