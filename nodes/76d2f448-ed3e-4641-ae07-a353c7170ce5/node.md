@@ -9,4 +9,6 @@ warnings: ""
 ---
 Follow [[Using an External Agent|e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6]] to establish the current agent's access and setup.
 
+For a remote client that needs synced knowledge, follow [[Connect Hosted MCP|c5dd1192-f75f-4369-bd9e-852f86b55121]].
+
 Use the client-specific children as examples when they match the selected harness.

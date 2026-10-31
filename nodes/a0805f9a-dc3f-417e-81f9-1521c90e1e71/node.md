@@ -19,11 +19,11 @@ Your knowledge lives in your local Git repository.
 
 Enabling cloud sync creates a server copy of the selected knowledge that SiftText then keeps updated through scheduled transfers.
 
-SiftText's cloud MCP tools access the server copy, so sync the knowledge you want them to use.
+SiftText's cloud MCP tools access the server copy. Follow [[Connect Hosted MCP|c5dd1192-f75f-4369-bd9e-852f86b55121]] to connect a remote client.
 
-By default, sync includes every node in that knowledge home.
+By default, sync includes every node in that knowledge home once you approve uploading it. You do not need to select trees individually to share the whole home.
 
-Set exclusions before enabling sync for anything you want to keep local.
+If you choose to keep anything local, set those exclusions before enabling sync.
 
 Later exclusions take effect in the current server copy, while earlier uploaded versions remain in its Git history.
 

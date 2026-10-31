@@ -10,6 +10,8 @@ Give the current agent access to the selected knowledge home within the user's p
 
 Establish command-execution access before asking it to run Core operations.
 
+For a remote client without local file access, follow [[Connect Hosted MCP|c5dd1192-f75f-4369-bd9e-852f86b55121]].
+
 Have it read [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] and follow the applicable methods.
 
 During authorized setup, use [[Maintain Memory Continuity|221ca2fc-1caf-4c40-92e5-d9f55501ba1e]] with the harness's own persistent-instruction guidance.
