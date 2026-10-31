@@ -191,6 +191,9 @@ fn render_result(value: &Value, disclose_retention: bool) -> String {
             "Check: unavailable ({})",
             value["error"].as_str().unwrap_or("incomplete response")
         ));
+        if let Some(detail) = value["detail"].as_str().filter(|text| !text.trim().is_empty()) {
+            lines.push(detail.trim().to_owned());
+        }
     }
     if disclose_retention {
         lines.push(RETENTION.into());
