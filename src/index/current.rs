@@ -658,7 +658,11 @@ fn with_source<T>(
     let donor = prepared.and_then(|p| donor(p).ok());
     let capture = || Snapshot::read(&root);
     for _ in 0..4 {
-        let snapshot = capture()?;
+        let snapshot = match capture() {
+            Ok(snapshot) => snapshot,
+            Err(error) if super::Refusal::is_changed_source(error.as_ref()) => continue,
+            Err(error) => return Err(error),
+        };
         let mut refresh_lock = None;
         let tx = connection.transaction()?;
         let tx = if current(&tx, &snapshot)?.is_none() {
@@ -698,5 +702,5 @@ fn with_source<T>(
         drop(refresh_lock);
         return Ok((version, result));
     }
-    Err("changed source identity; authored input is continually changing".into())
+    Err(super::Refusal::changed_source().into())
 }
