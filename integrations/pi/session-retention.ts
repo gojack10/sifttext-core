@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { retainAndAttachPiSession, retainCurrentPiSession } from "../session-retention.ts";
+import { parseScalarReceipt } from "../cli-receipt.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
@@ -17,7 +18,7 @@ export default function (pi: ExtensionAPI) {
       const home = process.env.SIFTTEXT_HOME;
       if (!home) return { content: [{ type: "text", text: "SIFTTEXT_HOME is not set" }], details: undefined, isError: true };
       try {
-        const config = JSON.parse(execFileSync(process.env.SIFTTEXT_BIN || "sifttext", ["session-retention-config", home], { encoding: "utf8", timeout: 5_000, maxBuffer: 4_096 })) as { enabled?: boolean; archive_root?: string | null };
+        const config = parseScalarReceipt(execFileSync(process.env.SIFTTEXT_BIN || "sifttext", ["session-retention-config", home], { encoding: "utf8", timeout: 5_000, maxBuffer: 4_096 })) as { enabled?: boolean; archive_root?: string | null };
         if (config.enabled !== true || typeof config.archive_root !== "string") {
           return { content: [{ type: "text", text: "Session retention is not enabled; no session was attached" }], details: undefined, isError: true };
         }
@@ -45,7 +46,7 @@ export default function (pi: ExtensionAPI) {
     if (!home) return;
 
     try {
-      const config = JSON.parse(
+      const config = parseScalarReceipt(
         execFileSync(process.env.SIFTTEXT_BIN || "sifttext", ["session-retention-config", home], {
           encoding: "utf8",
           timeout: 5_000,

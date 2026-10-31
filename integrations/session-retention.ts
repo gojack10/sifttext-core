@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureCurrentPiSession } from "./session-capture.ts";
+import { parseScalarReceipt } from "./cli-receipt.ts";
 import { checkpointPiSession } from "./session-checkpoint.ts";
 import type { PiSessionDescriptor, PiSessionManager } from "./session-descriptor.ts";
 
@@ -31,7 +32,7 @@ export async function retainAndAttachPiSession(
     const descriptorFile = join(temp, "descriptor.json");
     writeFileSync(descriptorFile, JSON.stringify(retained.descriptor), { mode: 0o600 });
     const output = execFileSync(sifttext, ["session-attach", home, nodeId, descriptorFile, topic, archiveRoot], { encoding: "utf8" });
-    return { ...retained, attachment: JSON.parse(output) };
+    return { ...retained, attachment: parseScalarReceipt(output) };
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
