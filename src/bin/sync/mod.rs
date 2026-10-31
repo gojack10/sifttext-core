@@ -32,6 +32,9 @@ struct State {
     #[serde(default)]
     binding: Binding,
     uploaded: Option<String>,
+    /// Non-content local diagnostics, never an authorization credential.
+    #[serde(default)]
+    hosted_check: Option<Value>,
     #[serde(default)]
     pending: Option<Pending>,
     // Independent continuations, not a queue: each received history gets the
@@ -644,6 +647,7 @@ fn upload(
     commit: &str,
     consent_home: &Path,
     policy: &selection::Settings,
+    runtime: &Path,
 ) -> Result<()> {
     if remote == Some(commit) {
         if state.uploaded.as_deref() != Some(commit) {
@@ -663,6 +667,28 @@ fn upload(
         return Ok(());
     }
     scoped_history(store, commit, HistoryScope::Publication { hosted: remote })?;
+    // Only the sharing projection reaches the checker. Never inspect the full
+    // private home here, and never trust a caller-authored pass marker.
+    let check = sifttext_file_graph::hosted_checks::sync_publication(
+        &super::checked_policy(runtime)?, &store.home, remote, commit, &mut exchange.auth,
+    );
+    let mut metadata = sifttext_file_graph::hosted_checks::publication_record(&check);
+    metadata["publication"] = json!(commit);
+    state.hosted_check = Some(metadata);
+    store.save(state)?;
+    // Checker calls use the ordinary Platform MCP audience. Restore the sync
+    // audience under the same rotation lease, then prove the same remote owner
+    // and baseline before any upload. Failed restoration cannot authorize transfer.
+    exchange.auth.renew(RESOURCE)?;
+    let verified = checked_response(exchange.send("/sync/v1/state", None)?)?;
+    exchange.verify_home(&verified)?;
+    compatible(&verified)?;
+    if verified["accepted"].as_str() != remote || verified["pending"] != *remote_pending {
+        return Err("hosted state changed during checking; local knowledge retained, retry sync".into());
+    }
+    if check["status"] == "findings" {
+        return Err(sifttext_file_graph::hosted_checks::render_publication(&check).into());
+    }
     let bundle = tempfile::NamedTempFile::new_in(&store.root)?;
     let path = bundle.path().to_str().ok_or("non-UTF8 bundle")?;
     let exclusion = remote
@@ -929,6 +955,7 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
         &published,
         &store.home,
         &policy,
+        runtime,
     )?;
     store.save(state)
 }
@@ -1039,7 +1066,7 @@ fn status(store: &Store, state: &State) -> Result<Value> {
         reconciliations.remove(0)
     };
     Ok(
-        json!({"enabled":selection::settings(&store.home)?.mode == "enabled","consent":selection::settings(&store.home)?,"device":state.device,"binding":state.binding,"accepted":accepted,"uploaded_publication":state.uploaded,"publication":state.projection,"reconciliation":pending,"additional_reconciliations":reconciliations,"remote_pending":state.remote_pending,"runner":runner::status(&store.home),"runner_error":runner::error(store)?}),
+        json!({"enabled":selection::settings(&store.home)?.mode == "enabled","consent":selection::settings(&store.home)?,"device":state.device,"binding":state.binding,"accepted":accepted,"uploaded_publication":state.uploaded,"hosted_check":state.hosted_check,"publication":state.projection,"reconciliation":pending,"additional_reconciliations":reconciliations,"remote_pending":state.remote_pending,"runner":runner::status(&store.home),"runner_error":runner::error(store)?}),
     )
 }
 /// No network or credentials on ordinary instructions. Only retained received work.
@@ -1082,11 +1109,7 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     Ok(repairs)
 }
 pub(super) fn guide_path() -> Result<PathBuf> {
-    let path = local::runtime()?.join("docs/account-sync.md");
-    if !path.is_file() {
-        return Err("installed account/sync guide missing; preserve local knowledge and repair the package".into());
-    }
-    Ok(path)
+    account::guide_path()
 }
 
 fn migrate(store: &Store) -> Result<()> {
@@ -1144,6 +1167,7 @@ fn initialize(store: &Store) -> Result<State> {
         device: random.iter().map(|b| format!("{b:02x}")).collect(),
         binding: Binding::Unbound,
         uploaded: None,
+        hosted_check: None,
         pending: None,
         additional_pending: Vec::new(),
         remote_pending: json!([]),

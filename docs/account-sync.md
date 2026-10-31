@@ -18,7 +18,27 @@ Use the current receipt to establish access. Retain local work if account confir
 
 Follow the installation guide for account setup. Browser authorization and payment are completed by the human.
 
-Confirm availability before offering additional Pro services or official harness integrations.
+Plus and Pro accounts can use both checkers.
+
+Hosted MCP and knowledge sync are also included.
+
+Confirm browser availability from the connected client's tools.
+
+Claim official integration support only with maintainer confirmation.
+
+For remote-client OAuth setup and the hosted instruction bootstrap, follow [Connect Hosted MCP](../nodes/c5dd1192-f75f-4369-bd9e-852f86b55121/node.md).
+
+## Checker credits
+
+Use `sifttext credits` to read the current checker balance.
+
+With permission for one $10 purchase, run `sifttext credits --buy-10` for a Stripe checkout URL. Credits are granted after the human completes payment in Stripe.
+
+Automatic top-ups are disabled.
+
+If the response is lost, retry with the printed request key to recover the same checkout.
+
+Before explaining checker billing, read [Epistemic Check](../nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md). Its credit and recovery sections also explain how to retrieve or delete saved results.
 
 ## Establish upload permission
 

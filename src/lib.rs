@@ -75,6 +75,7 @@ pub(crate) mod patch_build;
 #[cfg(test)]
 #[path = "../tests/successor/candidate_refusals.rs"]
 mod candidate_refusals_tests;
+pub mod account;
 pub mod candidate_validation;
 #[cfg(test)]
 #[path = "../tests/successor/candidate_validation.rs"]
@@ -91,6 +92,8 @@ mod checked_publication_attribution;
 mod checked_publication_tests;
 mod coherent_capture;
 pub(crate) mod git_snapshot;
+pub mod hosted_checks;
+mod hosted_gate;
 pub(crate) mod source_version;
 #[cfg(test)]
 #[path = "../tests/successor/coherent_capture.rs"]

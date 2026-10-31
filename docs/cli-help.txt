@@ -1,4 +1,4 @@
-SiftText — local Markdown knowledge with Git history
+SiftText: local Markdown knowledge with Git history
 
 Setup and reading
   sifttext init HOME [--empty | --bundle BUNDLE]  Create a new knowledge home
@@ -17,18 +17,44 @@ Editing and publication
                                                 Apply status changes in the draft
   sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses] [-y]
                                                 Save, refresh HOME, remove saved draft
+
+  With a paid login, submit sends changed nodes for epistemic review.
+  Findings block acceptance and preserve the draft.
+  If credits or the service are unavailable, the save is marked unchecked.
+
   sifttext accepted REPO [-y]                    Open a checked view without advancing HOME
   sifttext advance HOME                         Advance a clean HOME, fast-forward only
 
 Account and sync (optional)
   sifttext login | account | logout              Sign in, inspect access, or revoke login
   sifttext sync enable|disable|decline|status|once|run HOME
-                                                Consent, pause, decline, inspect, or transfer
+                                                Manage consent and transfers
   sifttext sync policy HOME FILE.json            Set include/exclude rules
-  Upload requires explicit sync consent. Exclusions remove current hosted content.
-  Uploaded Git history remains. Use sync once HOME --quiet to hide the receipt.
-  Errors remain visible.
+
+  Upload requires explicit sync consent.
+
+  Exclusions remove current hosted content but leave uploaded Git history.
+
+  sifttext sync once HOME --quiet prints errors only.
+
   Credentials: ~/.config/sifttext/account (outside knowledge).
+
+Hosted checks (saved login, supplied text/packet only)
+  sifttext slop-check FILE                       Review writing without rewriting
+  sifttext epistemic-check FILE                  Review node grounding
+  sifttext epistemic-check --packet FILE         Review a staged JSON packet
+  sifttext check-result ID [--delete]            Retrieve without charge, or delete saved text
+  sifttext credits                              Show current checker credits
+  sifttext credits --buy-10 [REQUEST_KEY]         Request a $10 checkout for the human to pay
+
+  Recover a lost checkout response with its printed request key.
+
+  Automatic top-ups are disabled.
+
+  Your submitted text stays with the saved result until you delete it.
+  Delete: sifttext check-result ID --delete
+
+  Encoded requests have a 128 KiB limit, including JSON fields and escaping.
 
 Session retention (optional; default off)
   sifttext session-retention-config HOME          Read retention and backup settings
@@ -41,25 +67,38 @@ Session retention (optional; default off)
 
 Application maintenance
   sifttext update [-y]                           Check and apply official updates
-  sifttext update --status                       Check releases (network, writes, lock)
-  sifttext update --local-status                 Read recorded state only; not atomic
+  sifttext update --status                       Check releases with network access under a write lock
+  sifttext update --local-status                 Read recorded state (non-atomic, no network)
   sifttext update --resume | --rollback           Resume a KB repair or restore a release
   sifttext update --rebuild                       Rebuild local source and retain its pin
+
+Update settings
   sifttext update --config                        Read update settings
   sifttext update --grant standing|ask            Set routine-update permission
   sifttext update --attach-node UUID              Attach a repair undertaking
   sifttext update --pin IDENTITY | --unpin        Keep a build or follow official updates
+
+Source and runtime
   sifttext source-code                           Check out matching source and guidance
   sifttext runtime-check                         Verify executable assets
   sifttext -h | --help                            Show this reference
 
-Structured receipts use LEAN. Files keep their native format.
--y allows returns above 15000 tokens where listed.
-Settings and transaction files remain JSON.
-Use ordinary file tools for node.md. Edit only in your private worktree.
-Expand draft paths with: git -C WORKTREE sparse-checkout add nodes/UUID
-Use sifttext read for omitted nodes.
-Keep task artifacts in the durable artifact_home.
-After an interrupted submit, retain its arguments and retry the same request.
-Read sifttext instructions for setup, privacy, publication and recovery procedures.
-Local knowledge needs no hosted account, MCP or model provider.
+Output
+  Structured receipts: LEAN
+  Settings and transaction files: JSON
+  -y: allow returns above 15000 tokens where listed
+
+Private drafts
+  Edit node.md with ordinary file tools in your private worktree.
+
+  sifttext read reads omitted nodes without expanding the draft.
+  To edit one, select its path: git -C WORKTREE sparse-checkout add nodes/UUID
+
+  Keep task artifacts in the durable artifact_home.
+
+Recovery
+  After an interrupted submit, keep its arguments and retry the same request.
+
+Follow sifttext instructions for the installed procedures.
+
+Offline use: local knowledge is free and needs no account or model provider.

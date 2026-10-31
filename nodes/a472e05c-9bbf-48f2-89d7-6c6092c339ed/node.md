@@ -67,6 +67,14 @@ Preserve the original file as an exact suffix and verify that the path resolves.
 
 Use [[Session Evidence|3651b9b0-fc21-4c67-9d79-84ef3af963ce]] during Commit when a session materially supports the knowledge.
 
+## Hosted checks
+
+Use [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] before submit or for `sifttext epistemic-check FILE` and staged packet review.
+
+For on-demand writing review with `sifttext slop-check FILE`, follow [[AI Slop Writing Check|869c330b-ec65-4ecd-9d03-9a09dab87010]].
+
+Use `sifttext check-result REQUEST_ID` to retrieve a saved check without rerunning or charging again. Read the checker guidance before explaining credits, retention or unchecked saves.
+
 ## Configuration
 
 Read the existing settings and the installed CLI's supported options before changing configuration.

@@ -44,6 +44,8 @@ A proposal-only assignment ends at review.
 
 ## Save and finish
 
+Before submit, read [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] to handle the result of Core's binary-enforced paid submission check.
+
 Use [[Commit Usable Understanding|edaefe20-50b7-4859-8645-e4c23f4e07ac]] to establish what a later reader can conclude or do.
 
 Report the accepted change and any unfinished work.
