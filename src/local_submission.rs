@@ -25,6 +25,10 @@ struct Pending {
     // Exact Core-created transition; never permission for arbitrary draft edits.
     #[serde(default)]
     prepared_heads: Option<(String, String)>,
+    // Exact checked attempt, recorded before the conditional ref update. This
+    // is custody, not acceptance: consumers must establish Git ancestry anew.
+    #[serde(default)]
+    prepared_delta: Option<(String, String)>,
     // Persist before removal so an interrupted branch deletion is recoverable.
     completed_head: Option<String>,
 }
@@ -70,6 +74,41 @@ fn save_root(repo: &Path) -> Result<PathBuf> {
     }
     crate::real_dir(&root)?;
     Ok(root)
+}
+
+pub(crate) struct RetainedSubmission {
+    pub request: checked_publication::Request,
+    pub prepared_delta: Option<(String, String)>,
+    pub completed_head: Option<String>,
+}
+
+/// Read exact retry arguments under the same custody as submit. The updater
+/// independently checks their relationship to its retained official merge.
+pub(crate) fn retained_submission(home: &Path, draft: &Path) -> Result<Option<RetainedSubmission>> {
+    let lease = DraftLease::acquire(home, draft)?;
+    let _custody = lease.custody()?;
+    let _publication = publication_lock(home)?;
+    let path = save_root(home)?.join(format!("{}.json", draft_key(draft)?));
+    if !path.try_exists()? {
+        return Ok(None);
+    }
+    let saved: Pending = serde_json::from_slice(&crate::read_regular(&path)?)?;
+    require(saved.home == home && saved.draft == draft
+        && saved.branch.starts_with("refs/heads/sifttext/"), "retain the save journal because it does not belong to this update draft")?;
+    Ok(Some(RetainedSubmission {
+        request: checked_publication::Request {
+            repo: saved.home,
+            accepted_ref: "refs/heads/main".into(),
+            draft: Some(saved.draft),
+            commit: Some(saved.commit),
+            base: Some(saved.base),
+            explicit: saved.explicit,
+            pause_before_publish: None,
+            pause_after_publish: None,
+        },
+        prepared_delta: saved.prepared_delta,
+        completed_head: saved.completed_head,
+    }))
 }
 
 fn draft_key(draft: &Path) -> Result<String> {
@@ -340,6 +379,7 @@ fn submit_with_status(
             branch,
             explicit: request.explicit.clone(),
             prepared_heads: None,
+            prepared_delta: None,
             completed_head: None,
         };
         persist(&journal, &record)?;
@@ -399,6 +439,7 @@ fn submit_with_status(
         pending.commit = commit.clone();
         pending.explicit = request.explicit.clone();
         pending.prepared_heads = None;
+        pending.prepared_delta = None;
         persist(&journal, &pending)?;
     }
     require(pending.explicit == request.explicit,
@@ -429,6 +470,15 @@ fn submit_with_status(
     } else {
         let previous_heads = pending.prepared_heads.clone();
         let record = |from: &str, to: &str| {
+            let main = reader_git(home, &["rev-parse", "refs/heads/main"])?;
+            // A retry can see the earlier candidate already accepted. Preserve
+            // its original before/after, never substitute today's main as base.
+            let accepted = pending.prepared_delta.as_ref().is_some_and(|(_, candidate)| {
+                reader_git(home, &["merge-base", "--is-ancestor", candidate, &main]).is_ok()
+            });
+            if !accepted {
+                pending.prepared_delta = Some((main, to.to_owned()));
+            }
             pending.prepared_heads = Some((from.to_owned(), to.to_owned()));
             persist(&journal, &pending)
         };
