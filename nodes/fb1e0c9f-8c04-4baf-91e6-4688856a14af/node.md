@@ -98,13 +98,13 @@ integration retains committed history and its attribution.
 
 Do not bypass the gate or change frozen limits.
 
-There is no standalone `check` command or required preflight normalization.
+Use the optional hosted `epistemic-check` and `slop-check` commands when a separate review is needed.
 
-inspect its actual writes and any partial failure before retrying.
+Inspect actual writes and any partial failure before retrying.
 
-The receipt reports `semantic_check:deferred`, not semantic approval.
+Before submitting knowledge, read [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] to handle Core's epistemic review.
 
-Agents remain responsible for evidence, meaning and authority.
+Read the actual receipt to establish whether checking completed. Agents remain responsible for interpreting the evidence within the user's authority.
 
 Raw Git can bypass this cooperative workflow.
 
@@ -144,17 +144,27 @@ continue independent permitted work.
 
 ## Accepted reading and completion
 
-`accepted HOME` returns a separate checked detached view (`status:ready`, `accepted`, `version`, `view`, `home_advanced:false`).
+`accepted HOME` returns a separate checked detached view. Its LEAN receipt includes the accepted identity and version with the reading path in `view` (`status:ready`, `home_advanced:F`).
 
 Read that view when the normal home cannot move.
 
-A submit receipt with `status:accepted_incomplete` and `check:accepted_finish_incomplete` confirms acceptance. Inspect the reader and draft before treating the save as complete, because finishing failed after acceptance.
+A submit receipt with `status:accepted_incomplete` and `check:accepted_finish_incomplete` confirms that acceptance succeeded but finishing failed.
 
-To continue reading, run `sifttext accepted HOME`. Check the returned accepted identity and version before reading its `view`. The normal home may remain behind, and draft cleanup still needs the original submit request.
+Inspect the reader and draft to establish which finishing work remains.
 
-For a dirty reader, inspect `git -C HOME status --short` without changing its files. Core generates its retrieval database at `.sifttext/index.sqlite`. An untracked root `sifttext.db` has unknown ownership. Do not delete, relocate or ignore it merely to advance the reader.
+### Read while finishing is blocked
 
-While ownership or preservation authority is unknown, leave the blocking file and normal home unchanged. Continue reading the accepted view and hand off reader recovery to the owner.
+Run `sifttext accepted HOME` and check its accepted identity and version before reading the returned `view`.
+
+The normal home can remain behind while that view is read. Draft cleanup still needs the original submit request.
+
+### Preserve a dirty reader
+
+Inspect `git -C HOME status --short` without changing files.
+
+Core generates its retrieval database at `.sifttext/index.sqlite`. An untracked root `sifttext.db` is a different file with unknown ownership. Do not delete, relocate or ignore it merely to advance the reader.
+
+Leave the blocking file and normal home unchanged while ownership or preservation authority is unknown. Hand reader recovery to the owner and use the accepted view for reading in the meantime.
 
 Keep the draft and pending journals with the exact original submit arguments. After an authorized recovery resolves the blocker, retry those arguments to finish the pending save. `advance HOME` alone does not finish pending draft cleanup.
 

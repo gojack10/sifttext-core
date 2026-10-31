@@ -141,14 +141,16 @@ Choose a plan and sign in through Zitadel to continue to Stripe checkout.
 
 | Plan | Price | Included services |
 | --- | --- | --- |
-| [Plus](https://app.sifttext.com/subscribe?plan=plus) | $20 USD/month | Hosted MCP and knowledge sync. |
-| [Pro](https://app.sifttext.com/subscribe?plan=pro) | $50 USD/month | Plus services and the additional services advertised below. |
+| [Plus](https://app.sifttext.com/subscribe?plan=plus) | $20 USD/month | Hosted MCP, knowledge sync, browser tooling and both checkers with 2,000 monthly credits. |
+| [Pro](https://app.sifttext.com/subscribe?plan=pro) | $50 USD/month | Plus services, greater parallel connection capacity and 10,000 monthly credits. |
 
-| Additional advertised Pro service | Purpose |
-| --- | --- |
-| Interactive browser through MCP | Agent browser access. |
-| Writing checks | Review AI-sounding prose. |
-| Tree organization checks | Review knowledge structure. |
+Browser use depends on the connected client's available tools.
+
+External AI-client subscriptions are separate purchases.
+
+Read [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) for hosted command usage and billing.
+
+Use [AI Slop Writing Check](nodes/869c330b-ec65-4ecd-9d03-9a09dab87010/node.md) when writing review is requested.
 
 Handle an existing subscription according to its current state:
 
@@ -184,6 +186,8 @@ Offline knowledge work and official updates remain available without payment or 
 ### Authorize knowledge sharing
 
 Record sharing permission and any local-only exclusions using the installed account/sync guide before enabling transfers.
+
+For remote-client OAuth setup and the hosted instruction bootstrap, follow [Connect Hosted MCP](nodes/c5dd1192-f75f-4369-bd9e-852f86b55121/node.md).
 
 | Command | Effect |
 | --- | --- |
@@ -250,9 +254,13 @@ Follow the installed Managed Releases and Updates guide:
 | Commit | Inspect and commit the intended repair in that draft. |
 | Resume | Run `sifttext update --resume` for checked submission and activation. |
 
-A repairable refusal is not automatically a blocker. When a knowledge change needs additional permission, show its exact delta and ask for approval. Preserve the draft while waiting and continue independent work. Stop the affected operation when its prerequisite cannot be repaired within permission, such as a checksum mismatch or unavailable filesystem.
+Investigate a repairable refusal within the user's permission.
 
-Resume submits the retained draft's committed update and any committed descendant repair through publication checks, carrying its status transitions as explicit requests.
+If the repair needs more permission, show its exact knowledge delta and ask for approval. Preserve the draft while waiting and continue independent work.
+
+Stop the affected operation when its prerequisite cannot be repaired within permission. A checksum mismatch or unavailable filesystem can prevent continuation.
+
+Resume submits the committed update from the retained draft, including committed descendant repairs. It passes that candidate's status transitions to publication as explicit requests.
 
 After a manual submission from the same draft, resume retrieves the saved request and checks its accepted Git history before completing activation. Preserve the recovery files until this finishes. Do not edit `pending` or remove a save journal to force a new update.
 

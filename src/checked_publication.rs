@@ -87,6 +87,8 @@ pub struct Receipt {
     /// Both computed and final exact-candidate graph checks, not proof tokens.
     pub graph_checks: Vec<gate::GraphCheck>,
     pub semantic_check: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hosted_check: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifecycle: Vec<owned::Note>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -105,7 +107,7 @@ impl Receipt {
             "tree":self.tree,"draft_commit":self.draft_commit,"draft_base":self.draft_base,
             "draft_branch":self.draft_branch,"version":self.version,
             "failure_kind":self.failure_kind,"failure_operation":self.failure_operation,
-            "problem":self.problem,
+            "problem":self.problem,"semantic_check":self.semantic_check,
             "rule":gate::CANDIDATE_RULE,"rows":self.lifecycle,
         }))
         .map_err(|e| std::io::Error::other(e).into())
@@ -174,7 +176,14 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
             output["lifecycle"] = serde_json::to_value(incomplete)?;
         }
     }
-    output["semantic_check"] = json!("deferred");
+    output["semantic_check"] = value.get("semantic_check").cloned().unwrap_or(json!("deferred"));
+    if crate::hosted_gate::configured() {
+        if let Some(check) = value.get("hosted_check") {
+            // Keep native machine receipts parseable and content-free. The host
+            // retrieves retained findings by request ID, never from a journal.
+            output["hosted_check"] = crate::hosted_checks::publication_record(check);
+        }
+    }
     serde_json::to_string_pretty(&output).map_err(Into::into)
 }
 
@@ -222,6 +231,7 @@ fn cli_receipt_hides_graph_routing_but_keeps_actionable_validation() {
         draft_index_available: false,
         graph_checks: vec![graph],
         semantic_check: "deferred",
+        hosted_check: None,
         lifecycle: vec![],
         failure_kind: None,
         failure_operation: None,
@@ -981,6 +991,7 @@ fn submit_inner(
         draft_index_available: false,
         graph_checks: vec![],
         semantic_check: "deferred",
+        hosted_check: None,
         lifecycle: vec![],
         failure_kind: None,
         failure_operation: None,
@@ -1423,6 +1434,61 @@ fn execute(
     r.validation = Some(checked);
     require(valid, "combined candidate rejected")?;
     require(r.version.as_deref() == Some(final_view.version.as_str()), "validated candidate version mismatch")?;
+    // The binary owns this gate: caller instructions and caller-supplied receipts
+    // cannot authorize paid publication. Check only the exact combined candidate.
+    if crate::hosted_gate::configured() {
+        r.check = "hosted_parent_unavailable";
+        // Initial immutable acceptance has no accepted baseline. A new submit
+        // must use the final combined view; a recovery never checks a backlog.
+        let result = crate::hosted_gate::check(&mut reader,
+            if draft.is_some() { Some(&before) } else { None },
+            &final_view, &sha, draft.is_some() && already)?;
+        r.semantic_check = match result["status"].as_str() {
+            Some("passed") => "passed",
+            Some("findings") => "findings",
+            Some("not_required") => "not_required",
+            _ => "unchecked",
+        };
+        r.hosted_check = Some(result);
+        if r.semantic_check == "findings" {
+            r.check = "hosted_epistemic_findings";
+            return Err("hosted epistemic findings; draft preserved".into());
+        }
+    } else if draft.is_some() || common.join("sifttext-hosted-checks").try_exists()? {
+        let records = common.join("sifttext-hosted-checks");
+        if !records.try_exists()? { fs::create_dir(&records)?; }
+        crate::real_dir(&records)?;
+        let path = records.join(format!("{}.json", final_view.tree));
+        if draft.is_some() && !already {
+            r.check = "hosted_epistemic_unavailable";
+            let result = crate::hosted_checks::publication(&mut reader, &before, &final_view);
+            let mut file = tempfile::NamedTempFile::new_in(&records)?;
+            serde_json::to_writer(&mut file, &crate::hosted_checks::publication_record(&result))?;
+            file.as_file().sync_all()?;
+            file.persist(&path)?;
+            fs::File::open(&records)?.sync_all()?;
+            r.semantic_check = match result["status"].as_str() {
+                Some("passed") => "passed",
+                Some("findings") => "findings",
+                Some("not_required") => "not_required",
+                _ => "unchecked",
+            };
+            r.hosted_check = Some(result);
+            if r.semantic_check == "findings" {
+                r.check = "hosted_epistemic_findings";
+                return Err("hosted epistemic findings; draft preserved".into());
+            }
+        } else if path.try_exists()? {
+            let result: serde_json::Value = serde_json::from_slice(&crate::read_regular(&path)?)?;
+            // Historical diagnostics only: never use this file to authorize a new candidate.
+            r.semantic_check = match result["status"].as_str() {
+                Some("passed") => "passed",
+                Some("not_required") => "not_required",
+                _ => "unchecked",
+            };
+            r.hosted_check = Some(result);
+        }
+    }
     drop(final_view);
     drop(before);
     reader.release_views();

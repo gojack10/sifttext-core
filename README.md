@@ -2,9 +2,9 @@
 
 ## Understand SiftText without installing it
 
-For a product question, follow the [public bundled knowledge entry](nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md)'s read-only explanation route for an adaptable example without an account or private knowledge.
+For product questions, start at the [public bundled knowledge entry](nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md). Its read-only route adapts an example to your project without an account or access to private knowledge.
 
-Before rendering any tree delta, follow SiftText Commit and Dialogue's required reads and selected procedures, even for a fictional, read-only example.
+Before showing a tree delta, read SiftText Commit and Dialogue. Follow their required reads and selected procedures for fictional, read-only examples too.
 
 ## Get started
 
@@ -25,8 +25,22 @@ The [website](https://sifttext.com/#plans) offers these plans:
 | Plan | Price (USD) | Included offering |
 | --- | --- | --- |
 | Core | Free | Local Markdown files with Git history for agents with file and terminal access. |
-| [Plus](https://app.sifttext.com/subscribe?plan=plus) | $20/month | Core, hosted MCP access, and cloud sync. |
-| [Pro](https://app.sifttext.com/subscribe?plan=pro) | $50/month | Plus, an interactive browser through MCP, writing checks, and automatic tree organization checks. |
+| [Plus](https://app.sifttext.com/subscribe?plan=plus) | $20/month | Hosted MCP, knowledge sync, browser tooling and both checkers with 2,000 monthly credits. |
+| [Pro](https://app.sifttext.com/subscribe?plan=pro) | $50/month | Plus services, greater parallel connection capacity and 10,000 monthly credits. |
+
+Browser use depends on the connected client's available tools.
+
+External AI-client subscriptions are separate purchases.
+
+| Hosted operation | Guidance |
+| --- | --- |
+| `sifttext epistemic-check FILE` | [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) |
+| `sifttext slop-check FILE` | [AI Slop Writing Check](nodes/869c330b-ec65-4ecd-9d03-9a09dab87010/node.md), on demand only |
+| `sifttext check-result REQUEST_ID` | Retrieve a saved check without another run or charge |
+
+Each check saves a nonsecret receipt under `~/.config/sifttext/account/` and prints its `client_` request ID before sending. If the connection drops, use `sifttext check-result ID` with that ID: retrieval never starts another check or charge. A missing request is reported as not recorded. Older saved UUIDs still work. Local receipts contain no input, result text or credentials. Hosted results remain until you delete them.
+
+Read the checker guidance before sending sensitive text or explaining credits.
 
 For setup details or an inspect-before-run option, follow [INSTALL.md](INSTALL.md).
 
@@ -61,7 +75,22 @@ Bring your team’s work into one place for people and agents.
 
 Knowledge lives in local Markdown files with Git history. Related questions form branches that agents explore through outlines and search, using the bundled instructions to find the relevant research as a project develops.
 
-To change that knowledge, an agent edits ordinary files in a private Git worktree, reviews and commits the intended paths, then submits the commit and its base SHA. Submit normalizes statuses and checks the exact combined candidate before updating accepted main. Accepted changes remain in Git history; incomplete drafts remain recoverable. Semantic checking is deferred, not reported as passed.
+Agents edit knowledge as ordinary files in a private Git worktree.
+
+To submit an edit:
+
+1. Review and commit the intended paths.
+2. Submit that commit with its base SHA.
+
+Submit normalizes statuses and checks the exact combined candidate before updating accepted main.
+
+Accepted changes remain in Git history. Incomplete drafts remain available for recovery.
+
+For a logged-in paid account with credits, the binary checks changed candidate node Markdown before accepting submit.
+
+Follow [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle findings or an unchecked save after credit exhaustion or technical failure.
+
+Logged-out and free offline work remains available.
 
 `worktree HOME` allocates a sparse draft without a full checkout. Expand an existing or new node with `git -C WORKTREE sparse-checkout add nodes/UUID`; this does not pull a newer version. `sifttext create` selects its new node and parent automatically. Then edit and stage ordinary authored files in that draft. For manually created files outside the selection, select their directory first (or deliberately stage with `git add --sparse`). Read an omitted node with `sifttext read WORKTREE UUID` without materializing it. SQL, search, outlines and submit use the complete logical version, including omitted Git content and valid uncommitted changes; missing sparse paths are not deletions. Submit materializes only nodes requiring status patches. `git -C WORKTREE sparse-checkout disable` is the full-draft fallback. The normal home stays complete; keep durable task artifacts there, not in the disposable draft.
 
@@ -84,22 +113,17 @@ It does not repair or accelerate Core's isolated checked-publication helpers.
 
 ## Recover an incomplete save
 
-An `accepted_incomplete` receipt means accepted main contains the save. Reader
-advancement or completed-draft cleanup remains unfinished, so keep the original
-submit arguments, draft and journals for recovery. Do not recreate the saved
-knowledge in another draft or reset accepted history.
+An `accepted_incomplete` receipt means accepted main contains the save, but reader advancement or completed-draft cleanup remains unfinished.
 
-While finishing is blocked, use `sifttext accepted HOME` for a separate checked
-reading view. Its receipt says `status: ready` and `home_advanced: false`. Reading
-there does not finish the pending save. Once the blocking work is preserved with
-its owner's permission and the normal home is clean, retry the original
-`submit HOME DRAFT COMMIT BASE` arguments to complete that request. `advance HOME`
-changes the reader only, leaving pending draft cleanup for the original submit.
+Preserve the original submit arguments with the draft and journals so Core can finish the same request. Do not recreate the saved knowledge in another draft or reset accepted history.
 
-A root-level `sifttext.db` has unknown ownership. Core stores its generated retrieval
-index at `.sifttext/index.sqlite` and leaves the root-level database in place.
-Continue reading through the checked view while the file's owner decides what to
-do with it. Do not delete, move or ignore the database merely to clear publication.
+Use `sifttext accepted HOME` to read a separate checked view while finishing is blocked. Its LEAN receipt says `status:ready` and `home_advanced:F`.
+
+Reading the checked view leaves the save unfinished. To finish it, preserve the blocking work with its owner's permission and clean the normal home. Then retry the original `submit HOME DRAFT COMMIT BASE` arguments. `advance HOME` changes the reader only, leaving draft cleanup for the original submit.
+
+Core's generated retrieval index is `.sifttext/index.sqlite`. A root-level `sifttext.db` has unknown ownership and stays in place.
+
+Use the checked reading view while the file's owner decides what to do. Do not delete, move or ignore that database merely to clear publication.
 
 ## Inspect a release
 

@@ -9,17 +9,29 @@ The tree lives in Markdown files with Git history, allowing agents to use it acr
 ## Plans
 
 - Core is free for agents with file and terminal access.
-- Plus costs $20 USD/month for MCP access to synced cloud trees.
-- Pro costs $50 USD/month and includes Plus, with these tools on local or cloud MCP:
-  - Cloud browser environment for agents.
-  - Writing checks for AI-sounding prose.
-  - Automatic tree organization checks.
+
+| Plan | Price | Included services |
+| --- | --- | --- |
+| Plus | $20 USD/month | Hosted MCP, sync, browser tooling and both checkers with 2,000 monthly credits |
+| Pro | $50 USD/month | Plus services, greater parallel connection capacity and 10,000 monthly credits |
+
+Browser use depends on the connected client's available tools.
+
+External AI-client subscriptions are separate purchases.
+
+The binary enforces epistemic checking on paid submissions with credits.
+
+Read [Epistemic Check](https://github.com/gojack10/sifttext-core/blob/main/nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) before using the commands or handling findings and unchecked saves.
+
+Free offline work is unchanged.
+
+Use [AI Slop Writing Check](https://github.com/gojack10/sifttext-core/blob/main/nodes/869c330b-ec65-4ecd-9d03-9a09dab87010/node.md) on demand for writing review.
 
 ## Read-only product explanations
 
 Follow the [public bundled knowledge entry](https://github.com/gojack10/sifttext-core/blob/main/nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md)'s read-only explanation route to adapt one illustrative tree to the user's project without installation or private memory.
 
-Before rendering any tree delta, follow [SiftText Commit](https://github.com/gojack10/sifttext-core/blob/main/nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and [Dialogue](https://github.com/gojack10/sifttext-core/blob/main/nodes/d00ab6fd-b475-49ef-b37a-812807879308/node.md)'s required reads and selected procedures, even for a fictional, read-only example.
+Before showing a tree delta, read [SiftText Commit](https://github.com/gojack10/sifttext-core/blob/main/nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and [Dialogue](https://github.com/gojack10/sifttext-core/blob/main/nodes/d00ab6fd-b475-49ef-b37a-812807879308/node.md). Follow their required reads and selected procedures for fictional, read-only examples too.
 
 ## Product links
 

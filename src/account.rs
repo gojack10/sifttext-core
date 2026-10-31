@@ -4,7 +4,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sifttext_file_graph::Result;
+use crate::Result;
 use std::{
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
@@ -19,6 +19,8 @@ use std::{
 };
 
 const PLATFORM: &str = "https://app.sifttext.com";
+// The checker service bounds the complete UTF-8 JSON body, not just source text.
+pub(crate) const CHECK_REQUEST_LIMIT: usize = 128 * 1024;
 
 pub fn is_command(command: &str) -> bool {
     matches!(command, "login" | "account" | "logout")
@@ -39,7 +41,7 @@ fn now() -> Result<u64> {
     Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
 }
 
-fn random() -> Result<String> {
+pub(crate) fn random() -> Result<String> {
     let mut bytes = [0; 32];
     File::open("/dev/urandom")?.read_exact(&mut bytes)?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
@@ -202,18 +204,55 @@ fn config_string(value: &str) -> Result<String> {
     ))
 }
 
-pub(super) fn http(
+pub fn http(
     origin: &str,
     path: &str,
     bearer: Option<&str>,
     body: Option<(&str, &str)>,
 ) -> Result<(u16, Value)> {
-    let mut config = format!("url = {}\n", config_string(&format!("{origin}{path}"))?);
+    http_method(
+        origin, path, bearer, body,
+        if body.is_some() { "POST" } else { "GET" },
+    )
+}
+
+pub fn http_method(
+    origin: &str,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<(&str, &str)>,
+    method: &str,
+) -> Result<(u16, Value)> {
+    http_method_idempotent(origin, path, bearer, body, method, None)
+}
+
+fn http_method_idempotent(
+    origin: &str,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<(&str, &str)>,
+    method: &str,
+    idempotency_key: Option<&str>,
+) -> Result<(u16, Value)> {
+    if !matches!(method, "GET" | "POST" | "DELETE") {
+        return Err("unsupported Platform HTTP method".into());
+    }
+    let mut config = format!(
+        "url = {}\nrequest = {}\n",
+        config_string(&format!("{origin}{path}"))?, config_string(method)?,
+    );
     if let Some(token) = bearer {
         config.push_str(&format!(
             "header = {}\n",
             config_string(&format!("Authorization: Bearer {token}"))?
         ));
+    }
+    if let Some(key) = idempotency_key {
+        crate::require(!key.is_empty() && key.len() <= 128
+            && key.bytes().all(|b| (b' '..=b'~').contains(&b)),
+            "invalid checkout request key")?;
+        config.push_str(&format!("header = {}\n",
+            config_string(&format!("Idempotency-Key: {key}"))?));
     }
     if let Some((content_type, data)) = body {
         config.push_str(&format!(
@@ -230,7 +269,7 @@ pub(super) fn http(
             "--connect-timeout",
             "5",
             "--max-time",
-            "20",
+            if path == "/api/checks" { "600" } else { "20" },
             "--max-filesize",
             if path.starts_with("/sync/v1/") { "46137344" } else { "1048576" },
             "--proto",
@@ -323,12 +362,71 @@ fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
 
 // Keep one login/rotation lease for the complete sync exchange. Renewal never
 // silently reloads a different account; sync verifies its stable home before replay.
-pub(super) struct SyncAccess {
+pub struct SyncAccess {
     store: Store,
     credentials: Credentials,
 }
 impl SyncAccess {
-    pub(super) fn open(resource: &str) -> Result<Self> {
+    /// No directory creation or network access for an ordinary logged-out save.
+    pub(crate) fn saved_login_exists() -> Result<bool> {
+        let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
+        let path = PathBuf::from(home).join(".config/sifttext/account/credentials.json");
+        match fs::symlink_metadata(path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub(crate) fn checks() -> Result<Self> {
+        Self::open(&format!("{}/mcp", origin()?))
+    }
+
+    /// Persist non-content recovery custody before any checker dispatch.
+    pub(crate) fn prepare_check_request(&self, body: &Value) -> Result<(String, PathBuf)> {
+        crate::require(serde_json::to_vec(body)?.len() <= CHECK_REQUEST_LIMIT,
+            "Encoded check request exceeds 128 KiB. Select a smaller input to allow for JSON fields and escaping.")?;
+        let id = format!("client_{}", random()?);
+        let path = self.store.dir.join(format!("check-{id}.json"));
+        let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW).open(&path)?;
+        serde_json::to_writer(&mut file, &json!({"request_id":id,
+            "origin":self.credentials.origin,"checker":body["checker"],"created":now()?}))?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        File::open(&self.store.dir)?.sync_all()?;
+        Ok((id, path))
+    }
+
+    pub(crate) fn request(
+        &mut self, method: &str, path: &str, body: Option<&Value>,
+    ) -> Result<(u16, Value)> {
+        self.request_idempotent(method, path, body, None)
+    }
+
+    pub(crate) fn request_idempotent(
+        &mut self, method: &str, path: &str, body: Option<&Value>, key: Option<&str>,
+    ) -> Result<(u16, Value)> {
+        let encoded = body.map(serde_json::to_string).transpose()?;
+        if path == "/api/checks" || path.starts_with("/api/checks/") {
+            crate::require(encoded.as_ref().is_none_or(|body| body.len() <= CHECK_REQUEST_LIMIT),
+                "Encoded check request exceeds 128 KiB. Select a smaller input to allow for JSON fields and escaping.")?;
+        }
+        let resource = format!("{}/mcp", self.credentials.origin);
+        if self.credentials.resource != resource {
+            self.renew(&resource)?;
+        }
+        let body = encoded.as_deref().map(|s| ("application/json", s));
+        let mut response = http_method_idempotent(&self.credentials.origin, path, Some(self.token()?), body, method, key)?;
+        if response.0 == 401 {
+            let resource = format!("{}/mcp", self.credentials.origin);
+            self.renew(&resource)?;
+            response = http_method_idempotent(&self.credentials.origin, path, Some(self.token()?), body, method, key)?;
+        }
+        Ok(response)
+    }
+
+    pub fn open(resource: &str) -> Result<Self> {
         let store = Store::open()?;
         let mut credentials = store.load()?;
         if credentials.origin != origin()? {
@@ -344,13 +442,13 @@ impl SyncAccess {
         }
         Ok(Self { store, credentials })
     }
-    pub(super) fn token(&self) -> Result<&str> {
+    pub fn token(&self) -> Result<&str> {
         if self.store.load()? != self.credentials {
             return Err("saved login changed during sync; no further transfer attempted".into());
         }
         Ok(&self.credentials.access_token)
     }
-    pub(super) fn renew(&mut self, resource: &str) -> Result<()> {
+    pub fn renew(&mut self, resource: &str) -> Result<()> {
         self.token()?;
         refresh_for(&self.store, &mut self.credentials, resource)
     }
@@ -624,17 +722,25 @@ fn login(store: &Store) -> Result<()> {
     }
 }
 
+pub fn guide_path() -> Result<PathBuf> {
+    let path = crate::local::runtime()?.join("docs/account-sync.md");
+    if !path.is_file() {
+        return Err("installed account/sync guide missing; preserve local knowledge and repair the package".into());
+    }
+    Ok(path)
+}
+
 fn show_account(account: &Value) -> Result<()> {
     // Serialize only known account fields; never dump a token-bearing response.
     let output = json!({"id":account["id"], "email":account["email"],
         "subscription_status":account["subscription_status"], "paid":account["paid"],
         "subscription_plan":account["subscription_plan"],
-        "guide":super::sync::guide_path()?,
+        "guide":guide_path()?,
         "next":"Read the installed account/sync guide and inspect local consent before setup. Login and payment do not authorize upload."});
     writeln!(
         std::io::stdout(),
         "{}",
-        sifttext_file_graph::lean_render::render_receipt(&output)
+        crate::lean_render::render_receipt(&output)
             .map_err(std::io::Error::other)?
     )?;
     Ok(())

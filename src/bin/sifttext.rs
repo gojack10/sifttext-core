@@ -1,4 +1,4 @@
-mod account;
+use sifttext_file_graph::account;
 mod sync;
 
 use serde_json::json;
@@ -45,7 +45,7 @@ impl std::error::Error for AcceptedSubmissionIncomplete {}
 
 const HELP: &str = include_str!("../../docs/cli-help.txt");
 
-fn run() -> Result<()> {
+fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     macro_rules! println {
         ($($arg:tt)*) => {
             writeln!(std::io::stdout().lock(), $($arg)*)?;
@@ -67,6 +67,9 @@ fn run() -> Result<()> {
             return Err(format!("usage: sifttext {command}").into());
         }
         return account::run(command);
+    }
+    if args.first().is_some_and(|cmd| sifttext_file_graph::hosted_checks::is_command(cmd)) {
+        return sifttext_file_graph::hosted_checks::run(&args);
     }
     if args
         .as_slice()
@@ -185,6 +188,7 @@ fn run() -> Result<()> {
     }
     let output = match args.as_slice() {
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
+        [cmd] if cmd == "hosted-gate-protocol" => json!({"hosted_gate":1}),
         [cmd, root, home] if cmd == "install-home" => {
             sifttext_file_graph::updates::initialize(&policy, &absolute(root)?, &absolute(home)?)?
         }
@@ -237,11 +241,22 @@ fn run() -> Result<()> {
                 ),
                 force || receipt["status"] == "current",
             )?;
-            if receipt["status"] != "current" {
-                if receipt["published"] == true || receipt["publication"] == "accepted_incomplete" {
-                    return Err(AcceptedSubmissionIncomplete.into());
+            let failure: Option<Box<dyn std::error::Error>> = if receipt["status"] == "current" {
+                None
+            } else if receipt["published"] == true || receipt["publication"] == "accepted_incomplete" {
+                Some(AcceptedSubmissionIncomplete.into())
+            } else {
+                Some("submission unavailable; retain draft and inspect receipt".into())
+            };
+            if std::env::var_os("SIFTTEXT_HOSTED_GATE_FD").is_none() {
+                if let Some(check) = receipt.get("hosted_check") {
+                    // Main prints diagnostics and existing updater notices first,
+                    // after releasing the operation lock, then flushes credits last.
+                    *hosted_summary = Some(sifttext_file_graph::hosted_checks::render_publication(check));
                 }
-                return Err("submission unavailable; retain draft and inspect receipt".into());
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
             return Ok(());
         }
@@ -421,9 +436,14 @@ fn render_cli_receipt(output: &serde_json::Value) -> Result<String> {
 }
 
 fn render_publication_receipt(receipt: &impl serde::Serialize) -> Result<String> {
-    // Retain the existing customer projection and the internal JSON API.
+    // The trusted parent parses this single JSON transaction receipt. Ordinary
+    // local receipts retain the same projection through the LEAN renderer.
     let json = sifttext_file_graph::checked_publication::cli_json(receipt)?;
-    render_cli_receipt(&serde_json::from_str(&json)?)
+    if std::env::var_os("SIFTTEXT_HOSTED_GATE_FD").is_some() {
+        Ok(json)
+    } else {
+        render_cli_receipt(&serde_json::from_str(&json)?)
+    }
 }
 
 fn checked_policy(runtime: &Path) -> Result<Policy> {
@@ -878,19 +898,23 @@ mod tests {
 fn main() {
     let authentication = std::env::args()
         .nth(1)
-        .is_some_and(|arg| account::is_command(&arg));
+        .is_some_and(|arg| account::is_command(&arg) || sifttext_file_graph::hosted_checks::is_command(&arg));
     let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
+    let mut hosted_summary = None;
     let result = (|| -> Result<()> {
         let _operation = if updating || authentication {
             None
         } else {
             sifttext_file_graph::updates::operation_lock()?
         };
-        run()
+        run(&mut hosted_summary)
     })();
+    let failed = result.is_err();
     if let Err(error) = result {
         if let Some(suppressed) = error.downcast_ref::<LargeReturnSuppressed>() {
             let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
+        } else if error.is::<sifttext_file_graph::hosted_checks::ReportedCheckFailure>() {
+            // The command already flushed its diagnostic followed by credits.
         } else {
             let rendered = if error.is::<AcceptedSubmissionIncomplete>() {
                 format!("{error}\n")
@@ -901,9 +925,17 @@ fn main() {
             };
             let _ = std::io::stderr().lock().write_all(rendered.as_bytes());
         }
-        std::process::exit(1);
-    }
-    if !updating && !authentication {
+    } else if !updating && !authentication {
         sifttext_file_graph::updates::opportunistic();
+    }
+    if let Some(summary) = hosted_summary {
+        let mut out = std::io::stdout().lock();
+        if let Err(error) = writeln!(out, "{summary}").and_then(|_| out.flush()) {
+            let _ = writeln!(std::io::stderr().lock(), "rejected: {error}");
+            std::process::exit(1);
+        }
+    }
+    if failed {
+        std::process::exit(1);
     }
 }
