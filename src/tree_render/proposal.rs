@@ -496,7 +496,7 @@ fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Prop
         for (i, id) in ids.iter().enumerate() {
             let name = if ids.len() == 1 { text.clone() } else { format!("{} - {text}", label(i)) };
             labels.insert(id.clone(), match anchors.get(id) {
-                Some(anchor) => format!("{anchor} - {name}"), None => name,
+                Some(anchor) => format!("{anchor} - {name} ({})", delta.artifact_home.join("nodes").join(id).display()), None => name,
             });
         }
     }

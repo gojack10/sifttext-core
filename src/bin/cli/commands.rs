@@ -57,7 +57,8 @@ const GROUPS: &[Group] = &[
             command("search STORE QUERY [UNDER_UUID] [-y]", "Search with ancestor context"),
             command("sql STORE 'SELECT ...' [-y]", "Query the read-only index").guide("4cc0b396-4b55-415e-bb26-b51c97e6ca78"),
             command("index STORE [--repair]", "Refresh derived retrieval files"),
-            command("tree-render STORE SELECTION.json", "Render selected trees or proposals").guide("c72d552d-3499-445b-a8d5-05d0ff7824f2").full_help_only(),
+            command("tree-render STORE SELECTION.json", "Render selected trees or proposals").guide("5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f").full_help_only(),
+            command("tree-render WORKTREE --auto [PROPOSAL.json]", "Derive draft selection; declare artifact links yourself").guide("5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f").full_help_only(),
         ],
     },
     Group {
