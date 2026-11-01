@@ -27,7 +27,7 @@ Keep worktrees short-lived. Read SiftText, do the work, save through SiftText Co
 
 Active operations and drafts with submitted-save journals are retained. Expiry does not delete accepted Git history or draft branches.
 
-Earlier workspaces outside this temporary namespace are not swept by age. Cleanup failures retain the affected workspace and do not prevent the requested command.
+Cleanup failures retain the affected workspace and do not prevent the requested command.
 
 ## Authority and private draft
 
