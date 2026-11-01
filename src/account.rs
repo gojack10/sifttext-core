@@ -12,7 +12,7 @@ use std::{
     net::{TcpListener, TcpStream},
     os::fd::AsRawFd,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -35,6 +35,24 @@ struct Credentials {
     expires_at: u64,
     #[serde(default)]
     resource: String,
+}
+
+impl Credentials {
+    fn load(dir: &Path) -> Result<Self> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(dir.join("credentials.json"))
+            .map_err(|_| "No usable saved login. Run sifttext login.")?;
+        check_file(&file)?;
+        let mut bytes = Vec::new();
+        (&mut file).take(65537).read_to_end(&mut bytes)?;
+        if bytes.len() > 65536 {
+            return Err("oversized credential file".into());
+        }
+        serde_json::from_slice(&bytes)
+            .map_err(|_| "Invalid saved login. Run sifttext login.".into())
+    }
 }
 
 fn now() -> Result<u64> {
@@ -120,19 +138,7 @@ impl Store {
     }
 
     fn load(&self) -> Result<Credentials> {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(self.path())
-            .map_err(|_| "No usable saved login. Run sifttext login.")?;
-        check_file(&file)?;
-        let mut bytes = Vec::new();
-        (&mut file).take(65537).read_to_end(&mut bytes)?;
-        if bytes.len() > 65536 {
-            return Err("oversized credential file".into());
-        }
-        serde_json::from_slice(&bytes)
-            .map_err(|_| "Invalid saved login. Run sifttext login.".into())
+        Credentials::load(&self.dir)
     }
 
     fn save(&self, credentials: &Credentials) -> Result<()> {
@@ -360,10 +366,10 @@ fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
     refresh_for(store, credentials, &resource)
 }
 
-// Keep one login/rotation lease for the complete sync exchange. Renewal never
-// silently reloads a different account; sync verifies its stable home before replay.
+// Lock credential access/rotation, not the work using an access token. Atomic
+// credential replacement permits lock-free reads between network requests.
 pub struct SyncAccess {
-    store: Store,
+    dir: PathBuf,
     credentials: Credentials,
 }
 impl SyncAccess {
@@ -387,14 +393,14 @@ impl SyncAccess {
         crate::require(serde_json::to_vec(body)?.len() <= CHECK_REQUEST_LIMIT,
             "Encoded check request exceeds 128 KiB. Select a smaller input to allow for JSON fields and escaping.")?;
         let id = format!("client_{}", random()?);
-        let path = self.store.dir.join(format!("check-{id}.json"));
+        let path = self.dir.join(format!("check-{id}.json"));
         let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600)
             .custom_flags(libc::O_NOFOLLOW).open(&path)?;
         serde_json::to_writer(&mut file, &json!({"request_id":id,
             "origin":self.credentials.origin,"checker":body["checker"],"created":now()?}))?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        File::open(&self.store.dir)?.sync_all()?;
+        File::open(&self.dir)?.sync_all()?;
         Ok((id, path))
     }
 
@@ -440,17 +446,32 @@ impl SyncAccess {
         if saved_resource != resource || credentials.expires_at <= now()?.saturating_add(60) {
             refresh_for(&store, &mut credentials, resource)?;
         }
-        Ok(Self { store, credentials })
+        Ok(Self { dir: store.dir.clone(), credentials })
     }
     pub fn token(&self) -> Result<&str> {
-        if self.store.load()? != self.credentials {
+        if Credentials::load(&self.dir)? != self.credentials {
             return Err("saved login changed during sync; no further transfer attempted".into());
         }
         Ok(&self.credentials.access_token)
     }
     pub fn renew(&mut self, resource: &str) -> Result<()> {
-        self.token()?;
-        refresh_for(&self.store, &mut self.credentials, resource)
+        let store = Store::open()?;
+        let saved = store.load()?;
+        // Each browser login registers a new client. Never adopt another login,
+        // but reuse a concurrent rotation rather than replaying its old refresh token.
+        if store.dir != self.dir || saved.origin != self.credentials.origin
+            || saved.client_id != self.credentials.client_id
+        {
+            return Err("saved login changed during sync; no further transfer attempted".into());
+        }
+        let rotated = saved != self.credentials;
+        self.credentials = saved;
+        if rotated && self.credentials.resource == resource
+            && self.credentials.expires_at > now()?.saturating_add(60)
+        {
+            return Ok(());
+        }
+        refresh_for(&store, &mut self.credentials, resource)
     }
 }
 
