@@ -33,6 +33,10 @@ fn cli(bin: &Path, tools: &Path, args: &[&str]) -> Output {
 
 fn json(bin: &Path, tools: &Path, args: &[&str]) -> serde_json::Value {
     let output = cli(bin, tools, args).stdout;
+    if args.first() == Some(&"instructions") {
+        let text = std::str::from_utf8(&output).unwrap();
+        return sifttext_file_graph::outlines::decode_lean(&format!("{}\n", text.lines().next().unwrap())).unwrap();
+    }
     // Nested-schema receipts use JSON; search and sql use LEAN like other ordinary results.
     if matches!(
         args.first(),
@@ -79,7 +83,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     let pointer = fs::read(Path::new(home).join("AGENTS.md")).unwrap();
     let pipeline = json(bin, tools, &["instructions", home]);
     assert_eq!(
-        pipeline["path"].as_str().unwrap(),
+        pipeline["onboarding-entry"].as_str().unwrap(),
         format!("{home}/nodes/{entry}/node.md")
     );
     assert_eq!(cli(bin, tools, &["read", home, entry]).stdout, original);

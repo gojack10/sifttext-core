@@ -1786,7 +1786,22 @@ fn check_releases(root: &Path) -> Result<Value> {
     cached_notice(root, &state)
 }
 
+/// Read the existing release observation for onboarding, without network or activation.
+pub fn instruction_notice() -> Result<Value> {
+    let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") else {
+        return Ok(Value::Null);
+    };
+    let root = Path::new(&root);
+    let state: State = load(&root.join("state.json"))?;
+    cached_notice(root, &state)
+}
+
 pub fn opportunistic() {
+    opportunistic_with_notice(true);
+}
+
+/// Keep the existing release-check scheduling when the caller renders its own notice.
+pub fn opportunistic_with_notice(show_notice: bool) {
     let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") else {
         return;
     };
@@ -1795,7 +1810,7 @@ pub fn opportunistic() {
         let state: State = load(&root.join("state.json"))?;
         // The interval throttles network checks, not notices for an already cached release.
         match cached_notice(root, &state) {
-            Ok(value) if value["status"] != "not_due" && value["status"] != "current" => {
+            Ok(value) if show_notice && value["status"] != "not_due" && value["status"] != "current" => {
                 eprintln!("{}", crate::lean_render::render(&value)?);
             }
             Err(error) => eprintln!("SiftText update deferred: {error}"),

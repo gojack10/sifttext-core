@@ -279,14 +279,16 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
     assert_eq!(result["starter_nodes"], source_nodes);
     assert_eq!(inventory(&independent), authored);
     fs::rename(&hidden, source.join("nodes")).unwrap();
-    let instructions = sifttext_file_graph::outlines::decode_lean(&commands.run(
+    let entry_receipt = |output: &str| {
+        sifttext_file_graph::outlines::decode_lean(&format!("{}\n", output.lines().next().unwrap())).unwrap()
+    };
+    let instructions = entry_receipt(&commands.run(
         text(&bin),
         &["instructions", text(&home)],
         true,
-    ))
-    .unwrap();
+    ));
     assert_eq!(
-        instructions["path"].as_str().unwrap(),
+        instructions["onboarding-entry"].as_str().unwrap(),
         text(&home.join(format!("nodes/{ENTRY}/node.md")))
     );
     assert_eq!(
@@ -295,12 +297,11 @@ fn file_first_install_preserves_native_knowledge_and_refuses_unsafe_targets() {
         "the single returned entry precedes its conditional children"
     );
     assert_eq!(
-        sifttext_file_graph::outlines::decode_lean(&commands.run(
+        entry_receipt(&commands.run(
             text(&bin),
             &["instructions"],
             true
-        ))
-        .unwrap(),
+        )),
         instructions,
         "omitting STORE should select $HOME/sifttext"
     );

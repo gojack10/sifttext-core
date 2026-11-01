@@ -1086,8 +1086,17 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     let state = store.load()?;
     let mut repairs = Vec::new();
     let error = runner::error(&store)?;
+    if let Some(check) = &state.hosted_check {
+        repairs.push(json!({"hosted_check":check}));
+    }
     if !error.is_null() {
-        repairs.push(json!({"status":"sync_failed","runner_error":error["error"],"retry":error["retry"]}));
+        // The runner retains the checker display on a findings refusal. Do not
+        // present that same refusal again as an unrelated runner failure.
+        let checker_findings = state.hosted_check.as_ref().is_some_and(|check| check["status"] == "findings")
+            && error["error"].as_str().is_some_and(|text| text.starts_with("Not accepted. Draft preserved."));
+        if !checker_findings {
+            repairs.push(json!({"status":"sync_failed"}));
+        }
     }
     if state.repairs().next().is_none()
         && state
@@ -1115,10 +1124,6 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     );
     Ok(repairs)
 }
-pub(super) fn guide_path() -> Result<PathBuf> {
-    account::guide_path()
-}
-
 fn migrate(store: &Store) -> Result<()> {
     let legacy = store.root.join("state.json");
     if !legacy.try_exists()? {

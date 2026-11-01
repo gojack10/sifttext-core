@@ -458,6 +458,31 @@ pub fn publication_record(check: &Value) -> Value {
     record
 }
 
+/// Last retained submit check, for onboarding only; never acceptance evidence.
+/// Reading this observation neither runs a checker nor creates a journal.
+pub fn retained_publication(home: &Path) -> Result<Option<Value>> {
+    let common = crate::local::reader_git(home, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    let records = Path::new(&common).join("sifttext-hosted-checks");
+    if !records.try_exists()? {
+        return Ok(None);
+    }
+    crate::real_dir(&records)?;
+    let mut latest = None;
+    for entry in std::fs::read_dir(&records)? {
+        let path = entry?.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = std::fs::symlink_metadata(&path)?;
+        crate::require(metadata.is_file(), "unsafe retained check record")?;
+        let candidate = (metadata.modified()?, path);
+        if latest.as_ref().is_none_or(|previous| &candidate > previous) {
+            latest = Some(candidate);
+        }
+    }
+    latest.map(|(_, path)| Ok(serde_json::from_slice(&crate::read_regular(&path)?)?)).transpose()
+}
+
 pub fn render_publication(check: &Value) -> String {
     let mut lines = Vec::new();
     match check["status"].as_str() {
