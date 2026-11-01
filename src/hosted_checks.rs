@@ -94,7 +94,8 @@ fn response(
     if code == "request_not_recorded" {
         return Err("No request is recorded for this account and client ID. It may not have reached the service. No check was started by this lookup.".into());
     }
-    Err(recover(format!("Hosted check unavailable (HTTP {status}, {code}). Retain your input for recovery.").into()))
+    let detail = value["detail"].as_str().unwrap_or("No further service detail.");
+    Err(recover(format!("Hosted check unavailable (HTTP {status}, {code}): {detail} Retain your input for recovery.").into()))
 }
 
 fn request_id(value: &Value) -> Result<&str> {
@@ -324,14 +325,14 @@ pub fn run(args: &[String]) -> Result<()> {
 
 /// Called only on validated immutable final input, before conditional ref publication.
 /// Changed node markdown is the entire upload allowlist; no artifacts or unrelated nodes.
-pub(crate) fn publication(reader: &mut GitReader, before: &GitView, after: &GitView) -> Value {
+pub(crate) fn publication(reader: &mut GitReader, before: Option<&GitView>, after: &GitView) -> Value {
     match SyncAccess::saved_login_exists() {
         Ok(false) => return json!({"status":"not_required","reason":"logged_out"}),
         Err(error) => return unavailable(error),
         Ok(true) => (),
     }
     match SyncAccess::checks() {
-        Ok(mut access) => publication_with_access(reader, Some(before), after, &mut access),
+        Ok(mut access) => publication_with_access(reader, before, after, &mut access),
         Err(error) => unavailable(error),
     }
 }
@@ -377,7 +378,9 @@ fn publication_with_access(
         let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
         require(
             status == 200 && account["paid"].is_boolean(),
-            "could not confirm subscription",
+            &format!("Account balance request failed (HTTP {status}, {}): {}",
+                account["error"].as_str().unwrap_or("invalid_account_response"),
+                account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
         )?;
         if account["paid"] != true {
             return Ok(json!({"status":"not_required","reason":"free_account"}));

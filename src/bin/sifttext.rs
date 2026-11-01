@@ -162,7 +162,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             |receipt| preflight_update_receipt(&mode, receipt, force),
             &mut submission,
         );
-        if std::env::var_os("SIFTTEXT_HOSTED_GATE_FD").is_none()
+        if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() != Ok("json")
             && let Some(receipt) = submission
         {
             if let Some(check) = receipt.get("hosted_check") {
@@ -212,7 +212,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     }
     let output = match args.as_slice() {
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
-        [cmd] if cmd == "hosted-gate-protocol" => json!({"hosted_gate":1}),
+        [cmd] if cmd == "hosted-account-protocol" => json!({"hosted_account":1}),
         [cmd, root, home] if cmd == "install-home" => {
             sifttext_file_graph::updates::initialize(&policy, &absolute(root)?, &absolute(home)?)?
         }
@@ -272,7 +272,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             } else {
                 Some("submission unavailable; retain draft and inspect receipt".into())
             };
-            if std::env::var_os("SIFTTEXT_HOSTED_GATE_FD").is_none() {
+            if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() != Ok("json") {
                 if let Some(check) = receipt.get("hosted_check") {
                     // Main prints diagnostics and existing updater notices first,
                     // after releasing the operation lock, then flushes credits last.
@@ -462,6 +462,9 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
 }
 
 fn render_cli_receipt(output: &serde_json::Value) -> Result<String> {
+    if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() == Ok("json") {
+        return Ok(serde_json::to_string_pretty(output)?);
+    }
     sifttext_file_graph::lean_render::render_receipt(output)
         .map_err(|error| std::io::Error::other(error).into())
 }
@@ -470,7 +473,7 @@ fn render_publication_receipt(receipt: &impl serde::Serialize) -> Result<String>
     // The trusted parent parses this single JSON transaction receipt. Ordinary
     // local receipts retain the same projection through the LEAN renderer.
     let json = sifttext_file_graph::checked_publication::cli_json(receipt)?;
-    if std::env::var_os("SIFTTEXT_HOSTED_GATE_FD").is_some() {
+    if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() == Ok("json") {
         Ok(json)
     } else {
         render_cli_receipt(&serde_json::from_str(&json)?)

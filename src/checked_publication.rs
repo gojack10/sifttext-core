@@ -177,7 +177,7 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
         }
     }
     output["semantic_check"] = value.get("semantic_check").cloned().unwrap_or(json!("deferred"));
-    if crate::hosted_gate::configured() {
+    if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() == Ok("json") {
         if let Some(check) = value.get("hosted_check") {
             // Keep native machine receipts parseable and content-free. The host
             // retrieves retained findings by request ID, never from a journal.
@@ -1441,32 +1441,19 @@ fn execute(
     require(r.version.as_deref() == Some(final_view.version.as_str()), "validated candidate version mismatch")?;
     // The binary owns this gate: caller instructions and caller-supplied receipts
     // cannot authorize paid publication. Check only the exact combined candidate.
-    if crate::hosted_gate::configured() {
-        r.check = "hosted_parent_unavailable";
-        // Initial immutable acceptance has no accepted baseline. A new submit
-        // must use the final combined view; a recovery never checks a backlog.
-        let result = crate::hosted_gate::check(&mut reader,
-            if draft.is_some() { Some(&before) } else { None },
-            &final_view, &sha, draft.is_some() && already)?;
-        r.semantic_check = match result["status"].as_str() {
-            Some("passed") => "passed",
-            Some("findings") => "findings",
-            Some("not_required") => "not_required",
-            _ => "unchecked",
-        };
-        r.hosted_check = Some(result);
-        if r.semantic_check == "findings" {
-            r.check = "hosted_epistemic_findings";
-            return Err("hosted epistemic findings; draft preserved".into());
-        }
-    } else if draft.is_some() || common.join("sifttext-hosted-checks").try_exists()? {
+    let host_acceptance = std::env::var("SIFTTEXT_HOSTED_ACCEPTANCE").as_deref() == Ok("1");
+    require(!host_acceptance || crate::account::managed(), "host acceptance requires server account transport")?;
+    if draft.is_some() || host_acceptance || common.join("sifttext-hosted-checks").try_exists()? {
         let records = common.join("sifttext-hosted-checks");
         if !records.try_exists()? { fs::create_dir(&records)?; }
         crate::real_dir(&records)?;
         let path = records.join(format!("{}.json", final_view.tree));
-        if draft.is_some() && !already {
+        // An initial host import has no baseline. Later acceptance recovery reads
+        // the ordinary Core record; it never schedules a backlog check.
+        if (draft.is_some() && !already) || (draft.is_none() && host_acceptance && !path.try_exists()?) {
             r.check = "hosted_epistemic_unavailable";
-            let result = crate::hosted_checks::publication(&mut reader, &before, &final_view);
+            let result = crate::hosted_checks::publication(&mut reader,
+                if draft.is_some() { Some(&before) } else { None }, &final_view);
             let mut file = tempfile::NamedTempFile::new_in(&records)?;
             serde_json::to_writer(&mut file, &crate::hosted_checks::publication_record(&result))?;
             file.as_file().sync_all()?;
@@ -1489,9 +1476,14 @@ fn execute(
             r.semantic_check = match result["status"].as_str() {
                 Some("passed") => "passed",
                 Some("not_required") => "not_required",
+                Some("findings") => "findings",
                 _ => "unchecked",
             };
             r.hosted_check = Some(result);
+            if r.semantic_check == "findings" {
+                r.check = "hosted_epistemic_findings";
+                return Err("hosted epistemic findings; draft preserved".into());
+            }
         }
     }
     drop(final_view);

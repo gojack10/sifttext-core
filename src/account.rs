@@ -127,7 +127,9 @@ impl Store {
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(dir.join("lock"))?;
         check_file(&lock)?;
-        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        // Managed requests have no rotating login file. Their independent
+        // create-new recovery receipts do not need the native login lease.
+        if !managed() && unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err("another authentication command is running".into());
         }
         Ok(Self { dir, _lock: lock })
@@ -243,11 +245,19 @@ fn http_method_idempotent(
     if !matches!(method, "GET" | "POST" | "DELETE") {
         return Err("unsupported Platform HTTP method".into());
     }
+    let socket = std::env::var_os("SIFTTEXT_ACCOUNT_SOCKET");
     let mut config = format!(
         "url = {}\nrequest = {}\n",
-        config_string(&format!("{origin}{path}"))?, config_string(method)?,
+        config_string(&format!("{}{path}", if socket.is_some() { "http://localhost" } else { origin }))?,
+        config_string(method)?,
     );
-    if let Some(token) = bearer {
+    if let Some(socket) = &socket {
+        let socket = PathBuf::from(socket);
+        crate::require(socket.is_absolute(), "absolute managed account socket required")?;
+        config.push_str(&format!("unix-socket = {}\nproxy = \"\"\n",
+            config_string(socket.to_str().ok_or("invalid account socket path")?)?));
+    }
+    if let Some(token) = bearer.filter(|_| socket.is_none()) {
         config.push_str(&format!(
             "header = {}\n",
             config_string(&format!("Authorization: Bearer {token}"))?
@@ -306,7 +316,7 @@ fn http_method_idempotent(
     let value = if body.is_empty() {
         Value::Null
     } else {
-        serde_json::from_str(body).map_err(|_| "invalid Platform JSON response")?
+        serde_json::from_str(body).map_err(|_| format!("Platform returned a non-JSON response (HTTP {status}); request did not yield a checker result"))?
     };
     Ok((status, value))
 }
@@ -370,11 +380,12 @@ fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
 // credential replacement permits lock-free reads between network requests.
 pub struct SyncAccess {
     dir: PathBuf,
-    credentials: Credentials,
+    credentials: Option<Credentials>,
 }
 impl SyncAccess {
     /// No directory creation or network access for an ordinary logged-out save.
     pub(crate) fn saved_login_exists() -> Result<bool> {
+        if managed() { return Ok(true); }
         let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
         let path = PathBuf::from(home).join(".config/sifttext/account/credentials.json");
         match fs::symlink_metadata(path) {
@@ -396,8 +407,10 @@ impl SyncAccess {
         let path = self.dir.join(format!("check-{id}.json"));
         let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600)
             .custom_flags(libc::O_NOFOLLOW).open(&path)?;
+        let origin = self.credentials.as_ref().map(|credentials| credentials.origin.as_str())
+            .unwrap_or("managed");
         serde_json::to_writer(&mut file, &json!({"request_id":id,
-            "origin":self.credentials.origin,"checker":body["checker"],"created":now()?}))?;
+            "origin":origin,"checker":body["checker"],"created":now()?}))?;
         file.write_all(b"\n")?;
         file.sync_all()?;
         File::open(&self.dir)?.sync_all()?;
@@ -418,22 +431,26 @@ impl SyncAccess {
             crate::require(encoded.as_ref().is_none_or(|body| body.len() <= CHECK_REQUEST_LIMIT),
                 "Encoded check request exceeds 128 KiB. Select a smaller input to allow for JSON fields and escaping.")?;
         }
-        let resource = format!("{}/mcp", self.credentials.origin);
-        if self.credentials.resource != resource {
+        let body = encoded.as_deref().map(|s| ("application/json", s));
+        let Some(credentials) = self.credentials.as_ref() else {
+            return http_method_idempotent(&origin()?, path, None, body, method, key);
+        };
+        let origin = credentials.origin.clone();
+        let resource = format!("{origin}/mcp");
+        if credentials.resource != resource {
             self.renew(&resource)?;
         }
-        let body = encoded.as_deref().map(|s| ("application/json", s));
-        let mut response = http_method_idempotent(&self.credentials.origin, path, Some(self.token()?), body, method, key)?;
+        let mut response = http_method_idempotent(&origin, path, Some(self.token()?), body, method, key)?;
         if response.0 == 401 {
-            let resource = format!("{}/mcp", self.credentials.origin);
             self.renew(&resource)?;
-            response = http_method_idempotent(&self.credentials.origin, path, Some(self.token()?), body, method, key)?;
+            response = http_method_idempotent(&origin, path, Some(self.token()?), body, method, key)?;
         }
         Ok(response)
     }
 
     pub fn open(resource: &str) -> Result<Self> {
         let store = Store::open()?;
+        if managed() { return Ok(Self { dir: store.dir.clone(), credentials: None }); }
         let mut credentials = store.load()?;
         if credentials.origin != origin()? {
             return Err("saved login belongs to another Platform".into());
@@ -446,35 +463,36 @@ impl SyncAccess {
         if saved_resource != resource || credentials.expires_at <= now()?.saturating_add(60) {
             refresh_for(&store, &mut credentials, resource)?;
         }
-        Ok(Self { dir: store.dir.clone(), credentials })
+        Ok(Self { dir: store.dir.clone(), credentials: Some(credentials) })
     }
     pub fn token(&self) -> Result<&str> {
+        // The socket supplies authority; this is never a bearer credential.
+        let Some(credentials) = self.credentials.as_ref() else { return Ok(""); };
         let saved = Credentials::load(&self.dir)?;
-        // Rotation can serve another resource without invalidating this access
-        // token. A fresh browser login, unlike rotation, has a new client ID.
-        if saved.origin != self.credentials.origin || saved.client_id != self.credentials.client_id {
+        // Rotation may serve another resource without replacing the login.
+        if saved.origin != credentials.origin || saved.client_id != credentials.client_id {
             return Err("saved login changed during sync; no further transfer attempted".into());
         }
-        Ok(&self.credentials.access_token)
+        Ok(&credentials.access_token)
     }
     pub fn renew(&mut self, resource: &str) -> Result<()> {
+        let Some(credentials) = self.credentials.as_mut() else { return Ok(()); };
         let store = Store::open()?;
         let saved = store.load()?;
-        // Each browser login registers a new client. Never adopt another login,
-        // but reuse a concurrent rotation rather than replaying its old refresh token.
-        if store.dir != self.dir || saved.origin != self.credentials.origin
-            || saved.client_id != self.credentials.client_id
+        // Never adopt a new login or replay a concurrently rotated refresh token.
+        if store.dir != self.dir || saved.origin != credentials.origin
+            || saved.client_id != credentials.client_id
         {
             return Err("saved login changed during sync; no further transfer attempted".into());
         }
-        let rotated = saved != self.credentials;
-        self.credentials = saved;
-        if rotated && self.credentials.resource == resource
-            && self.credentials.expires_at > now()?.saturating_add(60)
+        let rotated = saved != *credentials;
+        *credentials = saved;
+        if rotated && credentials.resource == resource
+            && credentials.expires_at > now()?.saturating_add(60)
         {
             return Ok(());
         }
-        refresh_for(&store, &mut self.credentials, resource)
+        refresh_for(&store, credentials, resource)
     }
 }
 
@@ -770,7 +788,26 @@ fn show_account(account: &Value) -> Result<()> {
     Ok(())
 }
 
+pub fn managed() -> bool {
+    std::env::var_os("SIFTTEXT_ACCOUNT_SOCKET").is_some()
+}
+
 pub fn run(command: &str) -> Result<()> {
+    if managed() {
+        if command == "logout" {
+            return Err("This workspace uses your MCP login. Logout is unavailable inside the hosted workspace; disconnect the MCP client instead.".into());
+        }
+        let (status, account) = http(&origin()?, "/oauth/account", None, None)?;
+        crate::require(status == 200 && account["paid"].is_boolean(),
+            &format!("Host account request failed (HTTP {status}, {}): {}",
+                account["error"].as_str().unwrap_or("invalid_account_response"),
+                account["detail"].as_str().unwrap_or("The host did not confirm this workspace's account.")))?;
+        show_account(&account)?;
+        if command == "login" {
+            writeln!(std::io::stdout(), "Already signed in through SiftText MCP.")?;
+        }
+        return Ok(());
+    }
     let store = Store::open()?;
     match command {
         "login" => login(&store),
