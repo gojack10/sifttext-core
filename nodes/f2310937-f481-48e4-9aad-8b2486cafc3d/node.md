@@ -5,6 +5,7 @@ micro_summary: "Routes post-save reconciliation to the affected knowledge and it
 status: "resolved"
 see_also: []
 scope: "Routes post-save reconciliation to the affected knowledge and its consumers."
+position: 5120
 ---
 Use [[Reconcile Affected Branches|d6f8402b-a2af-4658-b6cc-943062361297]] after saving to restore coherent affected knowledge.
 

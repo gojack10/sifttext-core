@@ -5,6 +5,7 @@ micro_summary: "Explains SiftText for a user's project without installing it or 
 status: "resolved"
 see_also: []
 scope: "Give a read-only product explanation with one illustrative tree and a source-grounded account of current capabilities."
+position: 4096
 ---
 ## Read only what the explanation needs
 

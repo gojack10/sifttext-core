@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Why trees beat conversations. Chat is ephemeral and degrades. Trees persist and compound. Content as persistent explanation. The ladder problem. Why the 50th session is better than the 1st."
 warnings: ""
+position: 5120
 ---
 Saved understanding gives a later conversation a starting point grounded in earlier work.
 

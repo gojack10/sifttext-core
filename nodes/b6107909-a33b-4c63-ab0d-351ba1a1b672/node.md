@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Find knowledge files and identify rebuildable local views."
 warnings: ""
+position: 2048
 ---
 ## Locate the home
 
@@ -19,8 +20,9 @@ Keep it separate from the Core source checkout and the software installation.
 
 ```text
 nodes/UUID/node.md
-nodes/UUID/children.order
 nodes/UUID/children/UUID
+nodes/UUID/outline.lean
+nodes/UUID/outline.full.lean
 nodes/UUID/artifacts/NAME
 trees/ROOT_UUID
 .sifttext/index.sqlite
@@ -29,7 +31,9 @@ trees/ROOT_UUID
 
 The UUID identifies a node.
 
-Parentage comes from child symlinks, and order comes from children.order.
+Parentage comes from child symlinks. Display order comes from each child node's `position` in its front matter. Legacy homes may still use `children.order` until explicitly migrated; upgrade every writer before converting one.
+
+Generated views live at `nodes/<id>/outline.lean` (the node and its direct children) and `nodes/<id>/outline.full.lean` (the whole subtree). Prefer ordinary file tools on them. The outline command fast-tracks the same files and prepends `outline-file` with the selected file's full absolute path. These rebuildable views may need generation before they exist.
 
 Accepted knowledge belongs to one rooted tree.
 

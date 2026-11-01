@@ -5,6 +5,7 @@ micro_summary: "Checks what a later reader can conclude or do after reconciled a
 status: "resolved"
 see_also: []
 scope: "Checks what a later reader can conclude or do after reconciled and verified changes."
+position: 7168
 ---
 Read the affected current instructions after saving and verification.
 

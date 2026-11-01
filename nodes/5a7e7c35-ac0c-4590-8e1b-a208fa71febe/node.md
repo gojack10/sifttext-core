@@ -5,6 +5,7 @@ micro_summary: "Guides names and micro-summaries that identify a unit without ca
 status: "resolved"
 see_also: []
 scope: "Author names and micro-summaries that help a reader select the bounded unit to inspect."
+position: 2048
 ---
 ## Purpose
 

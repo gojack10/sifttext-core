@@ -5,6 +5,7 @@ micro_summary: "Links durable directories and places approved ad hoc artifacts u
 status: "resolved"
 see_also: []
 scope: "Propose and complete per-node artifact custody without moving durable projects or claiming unperformed transfers or backups."
+position: 1024
 ---
 Identify each external directory materially used by an affected knowledge node.
 

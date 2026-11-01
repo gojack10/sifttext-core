@@ -5,6 +5,7 @@ micro_summary: "Saves the approved delta and restores coherent continuation thro
 status: "resolved"
 see_also: []
 scope: "Saves the approved delta and restores coherent continuation through reconciliation and readback."
+position: 1024
 ---
 ## Apply the approved change
 Receive the reviewed candidate and actual saving authority from [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]].

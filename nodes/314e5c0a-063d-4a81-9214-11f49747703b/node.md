@@ -5,6 +5,7 @@ micro_summary: "Applies general naming, evidence, ownership and navigation rules
 status: "resolved"
 see_also: []
 scope: "Route an authorized project contribution through its applicable semantic, evidence, action and communication methods without imposing unrelated historical reading."
+position: 9216
 ---
 ## Apply the assignment
 Recover the actual request and its authority before choosing a method.

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"488a3d9f-3d7f-4208-957c-211bd43d50e9","reason":"Explains how the agent receives or retrieves context."}]
 scope: "Answer questions about permission to read and save knowledge."
 warnings: ""
+position: 10240
 ---
 You control which knowledge the current agent can read and which changes it may save.
 

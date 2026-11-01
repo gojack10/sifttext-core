@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "How traversal happens in SiftText. The language model itself navigates the graph, reading a node and deciding what to follow next based on its current task. There is no deterministic outer script orchestrating the hops."
 warnings: ""
+position: 8192
 ---
 The current agent reads a node and chooses the next relevant child or reference.
 

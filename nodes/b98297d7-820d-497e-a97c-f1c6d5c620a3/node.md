@@ -5,6 +5,7 @@ micro_summary: "Separates requirements, observations and author-selected methods
 status: "resolved"
 see_also: []
 scope: "Ground an instruction revision in the actual human request, observed need, available inputs and authority before choosing its procedure."
+position: 1024
 ---
 Read the existing instruction owner and relevant source evidence before proposing its replacement.
 

@@ -6,5 +6,6 @@ status: "resolved"
 see_also: []
 scope: "Introduce manual or external-agent local knowledge work without requiring a hosted account or built-in assistant."
 warnings: ""
+position: 1024
 ---
 Follow [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] for executable setup and applicable instruction reads.

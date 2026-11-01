@@ -5,6 +5,7 @@ micro_summary: "Shows the exact operations in a proposed knowledge change."
 status: "resolved"
 see_also: []
 scope: "Present a knowledge-tree change for review."
+position: 2048
 ---
 These synthetic examples illustrate the notation used by [[Present the Reviewable Delta|4036d3c5-e596-4a9c-b432-1c4ccc3162b4]].
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"dcdd97b3-9557-41e3-b7cb-1f6f9744267d","reason":"Required repo commit conventions before staging and committing local knowledge."},{"target":"c72d552d-3499-445b-a8d5-05d0ff7824f2","reason":"Local proposal, approval and verification discipline before authored changes."}]
 scope: "Carry an authorized local edit through proposal, private Git work, validation, review, publication and recovery without overwriting another owner."
 warnings: "Cooperative isolation, not an OS sandbox. One publisher owns accepted knowledge at a time; no force, reset, automatic push, or overwriting another worktree."
+position: 4096
 ---
 ## Supported workflow
 

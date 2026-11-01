@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The scope field. What this node is about. The boundary of what belongs here and what does not."
 warnings: ""
+position: 1024
 ---
 Scope states the boundary of what a node covers.
 

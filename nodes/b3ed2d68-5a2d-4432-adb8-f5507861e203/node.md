@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Express an authorized relationship between nodes in different rooted trees of the same knowledge repository."
 warnings: "A link grants no access to another repository; all native edge targets must exist in the selected forest."
+position: 2048
 ---
 Nodes in different rooted trees of one knowledge home share a UUID namespace.
 

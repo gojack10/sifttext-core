@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "What local Core provides, what an external agent contributes, and which client capabilities are needed."
 warnings: ""
+position: 3072
 ---
 SiftText stores knowledge in Markdown files with Git history.
 

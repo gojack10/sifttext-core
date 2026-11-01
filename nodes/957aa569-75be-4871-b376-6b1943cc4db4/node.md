@@ -5,6 +5,7 @@ micro_summary: "Guides the design and review of complete, navigable agent instru
 status: "resolved"
 see_also: []
 scope: "Guides the design and review of complete, navigable agent instructions."
+position: 2048
 ---
 Read [[Author Navigable Procedures|6c1273a2-59f3-4037-af16-d884c9d7ac23]] and its required responsibility branches.
 

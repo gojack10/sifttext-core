@@ -5,6 +5,7 @@ micro_summary: "Recognizes useful contributions and develops missing understandi
 status: "resolved"
 see_also: []
 scope: "Recognizes useful contributions and develops missing understanding without needless questioning."
+position: 1024
 ---
 Use when user input materially changes the work.
 

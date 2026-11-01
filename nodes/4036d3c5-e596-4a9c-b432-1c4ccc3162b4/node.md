@@ -5,6 +5,7 @@ micro_summary: "Shows the user exactly what would change before asking for appro
 status: "resolved"
 see_also: []
 scope: "Present the complete proposed knowledge change for review."
+position: 2048
 ---
 Receive the complete reviewed candidate from [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]].
 

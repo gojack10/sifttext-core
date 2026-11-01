@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Use Claude Code as an external local harness without a remote SiftText configuration."
 warnings: ""
+position: 3072
 ---
 Use Claude Code's current harness instructions to identify its persistent-instruction location and available tools.
 

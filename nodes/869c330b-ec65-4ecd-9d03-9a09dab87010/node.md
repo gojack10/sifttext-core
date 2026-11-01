@@ -5,6 +5,7 @@ micro_summary: "Checks supplied prose on demand and guides revisions without cha
 status: "resolved"
 see_also: []
 scope: "Use hosted slop checking for writing the user wants reviewed, while preserving meaning, permission and credit limits."
+position: 2048
 ---
 ## Choose the text and purpose
 

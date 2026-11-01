@@ -5,6 +5,7 @@ micro_summary: "Reconsiders changed evidence and current applicability without e
 status: "resolved"
 see_also: []
 scope: "Reconcile changed grounds and judgments with their current uses while preserving source history and meaningful alternatives."
+position: 5120
 ---
 Read the affected conclusion and the evidence that supported it.
 

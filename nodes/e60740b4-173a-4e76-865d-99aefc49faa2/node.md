@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The philosophy of linking. Why links are the highest-leverage thing you can do in a tree. Human intuition creates connections, language models traverse them. Links are how your gut feel becomes the model's map."
 warnings: ""
+position: 2048
 ---
 A meaningful link helps the current agent find knowledge that bears on its question.
 

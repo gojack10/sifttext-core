@@ -5,6 +5,7 @@ micro_summary: "Sets up SiftText for the user's agent."
 status: "resolved"
 see_also: []
 scope: "Set up the agent's persistent instructions and preserve imported memory."
+position: 1024
 ---
 ## Authority
 

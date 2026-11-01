@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Status value. Actively being worked on. Scope is defined, content is evolving."
 warnings: ""
+position: 2048
 ---
 Use in_progress while actively examining a question or completing its work.
 

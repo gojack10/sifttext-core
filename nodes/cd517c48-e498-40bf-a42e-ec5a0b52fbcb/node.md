@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Which operations local Core delivers and which remain human or external-agent work."
 warnings: ""
+position: 1024
 ---
 Core initializes a knowledge home and supplies a CLI for retrieval and checked Git publication.
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Cite local nodes in prose without claiming that saving text creates indexed references or backlinks."
 warnings: "Prose citations do not author graph edges; use a validated see_also target/reason for an indexed relationship."
+position: 1024
 ---
 Cite a node in prose with its actual UUID in the native form.
 

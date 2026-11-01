@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Create and inspect a first local tree without assuming an automatic interview or web interface."
 warnings: ""
+position: 3072
 ---
 Agree what the first tree should help you understand or accomplish.
 

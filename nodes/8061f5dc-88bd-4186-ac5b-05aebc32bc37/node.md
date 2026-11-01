@@ -6,5 +6,6 @@ status: "resolved"
 see_also: []
 scope: "Priority value. Nice to have. Can wait. Will not block anything."
 warnings: ""
+position: 3072
 ---
 Low priority identifies useful work that can wait without blocking the current goal.

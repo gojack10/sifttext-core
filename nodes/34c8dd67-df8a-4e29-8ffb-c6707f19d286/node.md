@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Status value. Done. The question is answered, the decision is made, the work is complete."
 warnings: ""
+position: 3072
 ---
 Use resolved when the node's own completion condition is satisfied and its body records the supporting result.
 

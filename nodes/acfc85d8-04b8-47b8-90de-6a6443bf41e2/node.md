@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The warnings field. Cautions for anyone reading or working on this node. Safety rails and gotchas."
 warnings: ""
+position: 5120
 ---
 Use the warnings metadata string for concise cautions a reader must see before acting on the node.
 

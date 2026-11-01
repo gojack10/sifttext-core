@@ -5,6 +5,7 @@ micro_summary: "Shows how a tree exposes the development of an investigation."
 status: "resolved"
 see_also: []
 scope: "Choose meaningful parentage and bounded reading paths."
+position: 1024
 ---
 Use the relevant synthetic case when organizing a tree.
 

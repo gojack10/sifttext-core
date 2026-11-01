@@ -4,6 +4,7 @@ name: "Managed Releases and Updates"
 status: "resolved"
 micro_summary: "Guides verified managed updates while preserving user knowledge."
 see_also: []
+position: 1024
 ---
 # Managed releases and updates
 
@@ -19,7 +20,7 @@ curl -fsSL https://sifttext.com/install | sh
 
 INSTALL.md describes an inspect-before-run option.
 
-Keep application files separate from the knowledge home.
+Keep application files separate from the knowledge home so replacing the software does not replace the user's independently authored knowledge.
 
 ```sh
 "$BIN" update
@@ -31,17 +32,15 @@ Local knowledge work and official release updates need no payment or cloud login
 
 ## Release notices
 
-Release checks run in the background every four hours.
+Ordinary commands may start a background release check when one is due. In Core's `src/updates.rs`, `opportunistic_with_notice` uses `due`: four hours since a successful check and at least five minutes since the last attempt. This is command-driven scheduling, not a timer that guarantees a check every four hours.
 
-A failed check waits at least five minutes before retrying.
+Ordinary commands do not prompt, wait for a release download, or apply updates. Offline work uses the local build. No update-suppression environment variable is needed.
 
-A newer compatible release produces an `update_available` notice without activating it automatically.
+An `update_available` notice records an available release, not proof that it can read every local format. Inspect the release's compatibility and the current pin before changing a converted home. A pin may preserve a newer private format even when an official release is advertised.
 
-Act on the update notice at the earliest convenient pause in your work. Do not interrupt important work to update.
+Under ask permission, follow: “Read update-guide. When the user is next present, ask for permission to update SiftText.” Keep other work moving while the user is absent.
 
-Run `"$BIN" update` under the user's recorded standing permission.
-
-When the update needs permission, ask whether the user authorizes it.
+Under standing permission, follow: “Read update-guide. At a convenient pause, update SiftText. The user has already given standing permission.” The agent follows this permission; terminal detection does not create or revoke it.
 
 Record routine permission only after the user's approval:
 
@@ -66,7 +65,9 @@ If activation was interrupted, retain its state files and run `"$BIN" update --r
 
 A coupled application/knowledge release stays pending until the candidate application can accept the knowledge update.
 
-Continue local reads during a blocked merge.
+Continue independent local work with the active build during a blocked merge. If a command reports that derived data needs preparation, follow that receipt rather than assuming reads can proceed.
+
+The updater runs preparation with the incoming executable before activation, including retained worktrees. For a retained installation whose derived views need preparation, use `"$BIN" update --prepare` within maintenance permission. This prepares local data without selecting a new release; ordinary reads do not rebuild the whole home to cross a processing-version boundary.
 
 ## Reconcile a blocked knowledge update
 
@@ -117,7 +118,7 @@ While pinned, knowledge-only releases can apply with the active executable.
 "$BIN" update --config
 ```
 
-Treat the pin as a local user choice.
+Treat the pin as a local user choice. Position-based homes require a position-aware writer. Before deliberately selecting an older binary, follow `docs/child-order.md` from the matching source to restore legacy order in a private draft with the newer binary, then commit and submit it. Do not reset the home or re-enable an older full-history sync runner.
 
 ## Rollback
 

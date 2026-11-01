@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Distinguish supplied context from on-demand navigation in local files, without promising automatic push, reminders or reader compliance."
 warnings: ""
+position: 10240
 ---
 Push means supplying context before the agent chooses what to read.
 

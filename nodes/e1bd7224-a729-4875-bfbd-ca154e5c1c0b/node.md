@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Orient an independent local Core user before their first knowledge contribution."
 warnings: ""
+position: 1024
 ---
 SiftText gives you a local, structured knowledge home that the current agent can read and maintain with your permission.
 

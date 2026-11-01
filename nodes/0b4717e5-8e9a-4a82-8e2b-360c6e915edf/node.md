@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Status value. Considered and rejected. Kept for the historical record."
 warnings: ""
+position: 5120
 ---
 Use discarded for an approach or interpretation that was considered and rejected.
 

@@ -5,6 +5,7 @@ micro_summary: "Finds relevant source nodes efficiently with files, rg, fd, boun
 status: "resolved"
 see_also: []
 scope: "Guide a fresh agent from an unfamiliar question to source-grounded understanding without unnecessary scanning or unbounded outline reads."
+position: 1024
 ---
 ## Choose a retrieval path
 
@@ -13,6 +14,8 @@ Read a known file directly.
 Search node names and body phrases with rg.
 
 Find files and directories with fd.
+
+Prefer rg and fd when available; ordinary file tools or a better task-specific method are also valid. Check availability rather than assuming another installation has these tools.
 
 Read a shallow outline to choose a relevant branch.
 
@@ -46,6 +49,8 @@ Open the matched node body before drawing a conclusion, because a match locates 
 Exclude attached datasets unless they are relevant.
 
 Account for ignore rules and symlinks before treating an empty result as absent.
+
+Prefer ordinary file tools on `nodes/<id>/outline.lean` for the node and direct children, or `nodes/<id>/outline.full.lean` for the whole subtree. If a generated file is absent or stale, `sifttext outline STORE UUID [full]` selects it and prepends its full absolute path as `outline-file`.
 
 Read a shallow outline first and expand only the branches the question needs.
 

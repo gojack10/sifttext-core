@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The content field. What is known. Conclusions, decisions, working notes, the evolving state of understanding."
 warnings: ""
+position: 2048
 ---
 Content is a node's Markdown record of what is understood about its subject.
 

@@ -5,6 +5,7 @@ micro_summary: "Saves approved changes through native publication and verifies t
 status: "resolved"
 see_also: []
 scope: "Execute only approved local knowledge changes after Dialogue and Forcing Pass; return actual file and publication evidence."
+position: 4096
 ---
 Use [[Save and Restore Continuation|a609e77c-8164-40d2-b391-e675194fd2ad]] to apply approved knowledge changes through [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]].
 

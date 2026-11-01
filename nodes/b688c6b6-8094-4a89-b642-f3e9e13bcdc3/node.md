@@ -6,5 +6,6 @@ status: "resolved"
 see_also: []
 scope: "Priority value. Needs attention now. Blocking, deadline-driven, or critical."
 warnings: ""
+position: 1024
 ---
 High priority identifies work whose delay would materially harm the current goal.

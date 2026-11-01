@@ -5,6 +5,7 @@ micro_summary: "Tree-native Git commit procedure: inspect the worktree, split un
 status: "resolved"
 see_also: []
 scope: "Turn a working-tree diff into clean, reviewable Scoped Commits: inspect and separate unrelated changes, write repository-appropriate commit messages, commit only the intended files, and report the landed commit."
+position: 1024
 ---
 ## Scoped Commit convention
 

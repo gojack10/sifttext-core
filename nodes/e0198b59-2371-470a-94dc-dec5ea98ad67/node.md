@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Use the native see_also field for indexed target/reason relationships, including dependencies, without confusing narrative citations with graph edges."
 warnings: ""
+position: 7168
 ---
 The see_also array records indexed relationships between existing nodes.
 

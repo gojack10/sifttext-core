@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The children field. How decomposition works. When to create a child vs a sibling vs a new tree. The parent-child contract."
 warnings: ""
+position: 8192
 ---
 Each child covers a meaningful part of its parent's subject.
 

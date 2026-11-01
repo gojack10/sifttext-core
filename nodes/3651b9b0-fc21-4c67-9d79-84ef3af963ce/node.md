@@ -5,6 +5,7 @@ micro_summary: "Associates session evidence during Commit and distinguishes link
 status: "resolved"
 see_also: []
 scope: "Document shipped opt-in session-retention behavior, verified configuration fields and commands, and the private-data and backup boundaries."
+position: 8192
 ---
 ## Associate evidence
 Use during Commit when a session materially supports the knowledge being recorded.

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "How to use the tree when you don't know the shape of the problem yet. The probe pattern: create child nodes as cheap experiments, explore them, discard what fails. The tree accumulates your map of dead ends and survivors."
 warnings: ""
+position: 7168
 ---
 Record a bounded question for each promising approach when the route to an outcome is unknown.
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Reusable general skills for reading, writing, instruction authoring and knowledge work."
 warnings: ""
+position: 8192
 ---
 Read the skill whose stated trigger applies to the task.
 

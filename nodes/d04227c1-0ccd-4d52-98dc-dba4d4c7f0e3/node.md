@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "How to choose external reasoning support without assuming Core includes an assistant or subscription."
 warnings: ""
+position: 2048
 ---
 Choose the current agent according to the task and the tools it can actually use.
 

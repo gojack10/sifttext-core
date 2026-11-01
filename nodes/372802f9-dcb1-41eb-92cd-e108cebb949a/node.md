@@ -4,6 +4,7 @@ name: "Migrate Hosted Knowledge"
 status: "resolved"
 micro_summary: "Guides an authorized, source-accounted move from hosted SiftText into a new local knowledge home."
 see_also: []
+position: 6144
 ---
 ## Export the source
 

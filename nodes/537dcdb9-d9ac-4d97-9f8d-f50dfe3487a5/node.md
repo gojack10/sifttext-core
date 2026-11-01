@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "How local tree structure evolves from large nodes to focused children, and when a rejected approach needs its own visible owner."
 warnings: ""
+position: 6144
 ---
 Start with a coherent record of the question and what is already known.
 

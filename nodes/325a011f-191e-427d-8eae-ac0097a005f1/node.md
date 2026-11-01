@@ -5,6 +5,7 @@ micro_summary: "Compares saved fields, navigation and authority with the approve
 status: "resolved"
 see_also: []
 scope: "Compares saved fields, navigation and authority with the approved delta."
+position: 1024
 ---
 Read back the saved changes.
 

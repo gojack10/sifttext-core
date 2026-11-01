@@ -5,7 +5,12 @@ micro_summary: "Routes the current agent through retrieval, reading, setup and a
 status: "resolved"
 see_also: []
 scope: "Routes the current agent through retrieval, reading, setup and approved knowledge changes."
+position: 5120
 ---
+Knowledge nodes live at `nodes/<id>/node.md` in the knowledge home.
+
+Run `sifttext instructions` first and follow its `agent-instructions` before other work. The command appends a help index automatically; `sifttext help` lists the command forms and their guide nodes.
+
 Read this entry before operating in the knowledge home.
 
 Read [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] before retrieving project knowledge.
