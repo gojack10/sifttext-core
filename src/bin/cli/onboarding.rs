@@ -11,7 +11,7 @@ fn field(lines: &mut Vec<String>, key: &str, value: Value) -> Result<()> {
 
 fn findings(check: &Value, flagged: &mut BTreeMap<(String, String), Value>) {
     for result in check["results"].as_array().into_iter().flatten() {
-        if result["response"]["passed"] != false { continue }
+        if !hosted_checks::has_findings(&result["response"]) { continue }
         if let (Some(node), Some(request)) = (result["node"].as_str(), result["response"]["request_id"].as_str()) {
             flagged.insert((node.to_owned(), request.to_owned()), result.clone());
         }

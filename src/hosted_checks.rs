@@ -124,6 +124,11 @@ fn completed(value: &Value) -> bool {
         && request_id(value).is_ok()
 }
 
+/// A false verdict on an incomplete service response is not a semantic finding.
+pub fn has_findings(response: &Value) -> bool {
+    completed(response) && response["passed"] == false
+}
+
 fn input(path: &Path) -> Result<String> {
     let mut data = String::new();
     if path == Path::new("-") {
@@ -401,18 +406,18 @@ fn publication_with_access(
                 false,
             )?;
             let passed = completed(&value) && value["passed"] == true;
-            let findings = completed(&value) && value["passed"] == false;
+            let findings = has_findings(&value);
             results.push(json!({"node":id,"text_sha256":crate::sha256(text.as_bytes()),
                 "review_sha256":crate::sha256(crate::ordering::without_position(&text).as_bytes()),
                 "response":value}));
             if !passed && !findings {
                 return Ok(
-                    json!({"status":if results.iter().any(|item| item["response"]["passed"] == false) {"findings"} else {"unchecked"},
+                    json!({"status":if results.iter().any(|item| has_findings(&item["response"])) {"findings"} else {"unchecked"},
                         "reason":"checker_unavailable_or_no_credits","results":results}),
                 );
             }
         }
-        Ok(if results.iter().any(|item| item["response"]["passed"] == false) {
+        Ok(if results.iter().any(|item| has_findings(&item["response"])) {
             json!({"status":"findings","results":results})
         } else if results.is_empty() {
             json!({"status":"not_required","reason":"no_changed_node_text"})
@@ -423,7 +428,7 @@ fn publication_with_access(
     match attempt() {
         Ok(value) => value,
         Err(error) => {
-            json!({"status":if results.iter().any(|item| item["response"]["passed"] == false) {"findings"} else {"unchecked"},
+            json!({"status":if results.iter().any(|item| has_findings(&item["response"])) {"findings"} else {"unchecked"},
                 "reason":"service_unavailable","detail":error.to_string(),"uncertain_usage":true,"results":results})
         }
     }
@@ -497,7 +502,7 @@ pub fn retained_findings(home: &Path) -> Result<Vec<Value>> {
         let path = entry?.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") { continue }
         let item: Value = serde_json::from_slice(&crate::read_regular(&path)?)?;
-        if item["response"]["passed"] != false { continue }
+        if !has_findings(&item["response"]) { continue }
         let id = item["node"].as_str().ok_or("missing retained node")?;
         require(crate::uuid(id), "invalid retained node")?;
         let node = home.join("nodes").join(id).join("node.md");
