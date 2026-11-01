@@ -72,6 +72,35 @@ pub(crate) fn write_field_into(key: &str, value: &Value, text: &mut String) -> R
     }
 }
 
+/// Render a uniform table with caller-selected column order using the same LEAN cells.
+pub fn render_table(key: &str, fields: &[&str], rows: &[Vec<Value>]) -> Result<String, String> {
+    validate_key(key)?;
+    for field in fields {
+        validate_key(field)?;
+    }
+    let mut text = format!("{key}[{}]:", rows.len());
+    if rows.is_empty() {
+        return Ok(text);
+    }
+    if fields.is_empty() {
+        return Err("table must have columns".into());
+    }
+    text.push_str(&fields.join("\t"));
+    for row in rows {
+        if row.len() != fields.len() {
+            return Err("table row does not match its columns".into());
+        }
+        text.push_str("\n  ");
+        for (index, value) in row.iter().enumerate() {
+            if index > 0 {
+                text.push('\t');
+            }
+            text.push_str(&cell(value)?);
+        }
+    }
+    Ok(text)
+}
+
 fn rows_of(value: &Value) -> Result<&[Value], String> {
     let Value::Array(items) = value else {
         return Err("rows must be an array of objects".to_owned());

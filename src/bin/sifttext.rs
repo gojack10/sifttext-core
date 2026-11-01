@@ -1,5 +1,7 @@
 use sifttext_file_graph::account;
 mod sync;
+#[path = "cli/commands.rs"]
+mod commands;
 
 use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
@@ -52,8 +54,6 @@ impl std::fmt::Display for ReportedRenderFailure {
 }
 impl std::error::Error for ReportedRenderFailure {}
 
-const HELP: &str = include_str!("../../docs/cli-help.txt");
-
 fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     macro_rules! println {
         ($($arg:tt)*) => {
@@ -65,8 +65,8 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     if args.len() == 2 && matches!(args[1].as_str(), "-h" | "--help") {
         args.remove(0);
     }
-    if args.is_empty() || args == ["-h"] || args == ["--help"] {
-        println!("{HELP}");
+    if args.is_empty() || args == ["help"] || args == ["-h"] || args == ["--help"] {
+        println!("{}", commands::help()?);
         return Ok(());
     }
     if let Some(command) = args.first()
