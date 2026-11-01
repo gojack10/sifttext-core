@@ -902,5 +902,6 @@ pub(crate) fn indexed_outline(
             }
         }
     }
+    document["outline-file"] = json!(root.join("nodes").join(id).join(if full { "outline.full.lean" } else { "outline.lean" }));
     Ok(crate::lean_render::render(&document)? + "\n")
 }

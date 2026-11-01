@@ -43,7 +43,11 @@ pub fn write_into(document: &Value, text: &mut String) -> Result<(), String> {
         return write_field_into("path", &root["path"], text);
     }
     let mut first = true;
-    for (key, value) in root.iter().filter(|(key, _)| key.as_str() != ROWS) {
+    if let Some(path) = root.get("outline-file") {
+        write_field_into("outline-file", path, text)?;
+        first = false;
+    }
+    for (key, value) in root.iter().filter(|(key, _)| !matches!(key.as_str(), ROWS | "outline-file")) {
         if !first { text.push('\n'); }
         first = false;
         write_field_into(key, value, text)?;
