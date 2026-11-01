@@ -407,7 +407,8 @@ fn publication_with_access(
                 "response":value}));
             if !passed && !findings {
                 return Ok(
-                    json!({"status":"unchecked","reason":"checker_unavailable_or_no_credits","results":results}),
+                    json!({"status":if results.iter().any(|item| item["response"]["passed"] == false) {"findings"} else {"unchecked"},
+                        "reason":"checker_unavailable_or_no_credits","results":results}),
                 );
             }
         }
@@ -422,7 +423,8 @@ fn publication_with_access(
     match attempt() {
         Ok(value) => value,
         Err(error) => {
-            json!({"status":"unchecked","reason":"service_unavailable","detail":error.to_string(),"uncertain_usage":true,"results":results})
+            json!({"status":if results.iter().any(|item| item["response"]["passed"] == false) {"findings"} else {"unchecked"},
+                "reason":"service_unavailable","detail":error.to_string(),"uncertain_usage":true,"results":results})
         }
     }
 }
@@ -471,6 +473,8 @@ pub fn retain_results(home: &Path, check: &Value) -> Result<()> {
     crate::real_dir(&records)?;
     let record = publication_record(check);
     for item in record["results"].as_array().into_iter().flatten() {
+        // A technical failure cannot clear an earlier finding on the same text.
+        if !item["response"]["passed"].is_boolean() || item["response"]["complete"] != true { continue }
         let (Some(node), Some(hash)) = (item["node"].as_str(), item["review_sha256"].as_str()) else { continue };
         require(crate::uuid(node) && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid retained node check identity")?;
         let mut file = tempfile::NamedTempFile::new_in(&records)?;
