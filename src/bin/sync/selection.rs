@@ -245,7 +245,8 @@ impl Snapshot {
     }
     fn children(&self, id: &str) -> Result<Vec<String>> {
         let Some(file) = self.files.get(&format!("nodes/{id}/children.order")) else {
-            let own = self.files.get(&format!("nodes/{id}/node.md")).ok_or("missing parent")?;
+            // Incoming creations have no parent record in the old full baseline.
+            let Some(own) = self.files.get(&format!("nodes/{id}/node.md")) else { return Ok(Vec::new()); };
             if sifttext_file_graph::ordering::position(std::str::from_utf8(&own.bytes)?)?.is_none() {
                 return Err("missing children.order or per-node position".into());
             }
