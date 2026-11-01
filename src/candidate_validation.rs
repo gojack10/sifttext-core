@@ -811,11 +811,15 @@ fn check(
             .filter(|b| b.store.nodes.contains_key(id))
             .map(|b| state(b, id))
             .transpose()?;
-        let changed = before.as_ref().is_some_and(|b| {
-            b.store.nodes.contains_key(id)
-                && (b.store.inventory.get(&path) != store.inventory.get(&path)
-                    || b.store.children.get(id) != store.children.get(id))
-        });
+        let changed = if let Some(b) = before.as_ref().filter(|b| b.store.nodes.contains_key(id)) {
+            let prior = b.store.inventory.get(&path).ok_or("missing before source")?;
+            let text_changed = if Some(prior) == store.inventory.get(&path) { false } else {
+                let prior = prior.bytes()?;
+                crate::ordering::without_position(std::str::from_utf8(&prior)?)
+                    != crate::ordering::without_position(std::str::from_utf8(&bytes)?)
+            };
+            text_changed || b.store.children.get(id) != store.children.get(id)
+        } else { false };
         let transitioned = match status::transition(
             old.as_ref(),
             &requested,
@@ -985,7 +989,7 @@ fn check_git(
     let old: BTreeMap<_, _> = before.nodes.iter().map(|(id, node)| (id.clone(), node.state.clone())).collect();
     let requested: BTreeMap<_, _> = candidate.nodes.iter().map(|(id, node)| (id.clone(), node.state.clone())).collect();
     let edited: BTreeSet<_> = candidate.nodes.iter().filter(|(id, node)|
-        before.nodes.get(*id).is_some_and(|prior| prior.raw_hash != node.raw_hash))
+        before.nodes.get(*id).is_some_and(|prior| prior.text_hash != node.text_hash))
         .map(|(id, _)| id.clone()).collect();
     let normalized = status::normalized_states(&old, &requested, &before.children,
         &candidate.children, &edited, explicit);
