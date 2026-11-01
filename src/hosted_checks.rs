@@ -402,17 +402,18 @@ fn publication_with_access(
             )?;
             let passed = completed(&value) && value["passed"] == true;
             let findings = completed(&value) && value["passed"] == false;
-            results.push(json!({"node":id,"response":value}));
-            if findings {
-                return Ok(json!({"status":"findings","results":results}));
-            }
-            if !passed {
+            results.push(json!({"node":id,"text_sha256":crate::sha256(text.as_bytes()),
+                "review_sha256":crate::sha256(crate::ordering::without_position(&text).as_bytes()),
+                "response":value}));
+            if !passed && !findings {
                 return Ok(
                     json!({"status":"unchecked","reason":"checker_unavailable_or_no_credits","results":results}),
                 );
             }
         }
-        Ok(if results.is_empty() {
+        Ok(if results.iter().any(|item| item["response"]["passed"] == false) {
+            json!({"status":"findings","results":results})
+        } else if results.is_empty() {
             json!({"status":"not_required","reason":"no_changed_node_text"})
         } else {
             json!({"status":"passed","results":results})
@@ -458,6 +459,52 @@ pub fn publication_record(check: &Value) -> Value {
     record
 }
 
+/// Persist per-node, exact-review-text diagnostics in the existing check store.
+/// These records are never acceptance credentials and contain no submitted text.
+pub fn retain_results(home: &Path, check: &Value) -> Result<()> {
+    let common = crate::local::reader_git(home, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    let root = Path::new(&common).join("sifttext-hosted-checks");
+    if !root.try_exists()? { fs::create_dir(&root)?; }
+    crate::real_dir(&root)?;
+    let records = root.join("nodes");
+    if !records.try_exists()? { fs::create_dir(&records)?; }
+    crate::real_dir(&records)?;
+    let record = publication_record(check);
+    for item in record["results"].as_array().into_iter().flatten() {
+        let (Some(node), Some(hash)) = (item["node"].as_str(), item["review_sha256"].as_str()) else { continue };
+        require(crate::uuid(node) && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid retained node check identity")?;
+        let mut file = tempfile::NamedTempFile::new_in(&records)?;
+        serde_json::to_writer(&mut file, item)?;
+        file.as_file().sync_all()?;
+        file.persist(records.join(format!("{node}-{hash}.json")))?;
+    }
+    fs::File::open(&records)?.sync_all()?;
+    Ok(())
+}
+
+/// Findings for the current text, not merely the most recent submission.
+pub fn retained_findings(home: &Path) -> Result<Vec<Value>> {
+    let common = crate::local::reader_git(home, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    let records = Path::new(&common).join("sifttext-hosted-checks/nodes");
+    if !records.try_exists()? { return Ok(Vec::new()); }
+    crate::real_dir(&records)?;
+    let mut findings = Vec::new();
+    for entry in fs::read_dir(&records)? {
+        let path = entry?.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue }
+        let item: Value = serde_json::from_slice(&crate::read_regular(&path)?)?;
+        if item["response"]["passed"] != false { continue }
+        let id = item["node"].as_str().ok_or("missing retained node")?;
+        require(crate::uuid(id), "invalid retained node")?;
+        let node = home.join("nodes").join(id).join("node.md");
+        if !node.try_exists()? { continue }
+        let bytes = crate::read_regular(&node)?;
+        let hash = crate::sha256(crate::ordering::without_position(std::str::from_utf8(&bytes)?).as_bytes());
+        if item["review_sha256"] == hash { findings.push(item); }
+    }
+    Ok(findings)
+}
+
 /// Last retained submit check, for onboarding only; never acceptance evidence.
 /// Reading this observation neither runs a checker nor creates a journal.
 pub fn retained_publication(home: &Path) -> Result<Option<Value>> {
@@ -487,6 +534,7 @@ pub fn render_publication(check: &Value) -> String {
     let mut lines = Vec::new();
     match check["status"].as_str() {
         Some("passed") => (),
+        Some("findings") if check["replication"] == true => lines.push("Epistemic findings retained for repair; own-account replication is not blocked.".into()),
         Some("findings") => lines.push("Not accepted. Draft preserved.".into()),
         Some("not_required") if check["reason"] == "no_changed_node_text" => lines.push("Epistemic submit check: no changed node text.".into()),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),

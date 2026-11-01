@@ -672,8 +672,10 @@ fn upload(
     let check = sifttext_file_graph::hosted_checks::sync_publication(
         &super::checked_policy(runtime)?, &store.home, remote, commit, &mut exchange.auth,
     );
+    sifttext_file_graph::hosted_checks::retain_results(consent_home, &check)?;
     let mut metadata = sifttext_file_graph::hosted_checks::publication_record(&check);
     metadata["publication"] = json!(commit);
+    metadata["replication"] = json!(true);
     state.hosted_check = Some(metadata);
     store.save(state)?;
     // Checker calls use the ordinary Platform MCP audience. Restore the sync
@@ -685,9 +687,6 @@ fn upload(
     compatible(&verified)?;
     if verified["accepted"].as_str() != remote || verified["pending"] != *remote_pending {
         return Err("hosted state changed during checking; local knowledge retained, retry sync".into());
-    }
-    if check["status"] == "findings" {
-        return Err(sifttext_file_graph::hosted_checks::render_publication(&check).into());
     }
     let bundle = tempfile::NamedTempFile::new_in(&store.root)?;
     let path = bundle.path().to_str().ok_or("non-UTF8 bundle")?;
@@ -1080,23 +1079,31 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
         .join(".git/sifttext-sync/selected-state.json")
         .try_exists()?
     {
-        return Ok(Vec::new());
+        return Ok(vec![json!({"transport":"not-configured"})]);
     }
     let store = Store::open(home, false, false)?;
     let state = store.load()?;
-    let mut repairs = Vec::new();
+    let settings = selection::settings(home)?;
+    let transport = if settings.mode != "enabled" {
+        settings.mode.as_str()
+    } else if state.remote_pending.as_array().is_some_and(|items| !items.is_empty()) {
+        "pending"
+    } else if state.projection.as_ref().is_some_and(|p| p.local != head(home).unwrap_or_default()) {
+        "local-changes"
+    } else if state.uploaded.is_none() {
+        "not-yet-synced"
+    } else {
+        "last-sync-complete"
+    };
+    let mut repairs = vec![json!({"transport":transport})];
     let error = runner::error(&store)?;
     if let Some(check) = &state.hosted_check {
         repairs.push(json!({"hosted_check":check}));
     }
     if !error.is_null() {
-        // The runner retains the checker display on a findings refusal. Do not
-        // present that same refusal again as an unrelated runner failure.
-        let checker_findings = state.hosted_check.as_ref().is_some_and(|check| check["status"] == "findings")
-            && error["error"].as_str().is_some_and(|text| text.starts_with("Not accepted. Draft preserved."));
-        if !checker_findings {
-            repairs.push(json!({"status":"sync_failed"}));
-        }
+        // Even an old checker refusal really stopped transport. Retain that
+        // state until a successful cycle clears it, rather than hiding it.
+        repairs.push(json!({"status":"sync_failed"}));
     }
     if state.repairs().next().is_none()
         && state

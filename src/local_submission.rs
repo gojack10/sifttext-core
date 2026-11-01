@@ -519,6 +519,7 @@ fn submit_with_status(
             policy,
             &request,
             &draft_lease,
+            received,
             received_reader.as_mut(),
             previous_heads
                 .as_ref()
