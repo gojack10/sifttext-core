@@ -1060,6 +1060,9 @@ fn status(store: &Store, state: &State) -> Result<Value> {
             reconciliations.push(json!({"status":"reconciliation_required","accepted":accepted,"incoming":p.incoming,"source_device":p.source_device.as_deref().unwrap_or("shared-hosted-main"),"pending_count":pending.len(),"conflicted_files":conflicts,"repair_guide":p.guide,"repair_worktree":p.worktree,"check":p.check}));
         }
     }
+    for repair in &mut reconciliations {
+        repair["agent"] = json!(REPAIR_INSTRUCTION);
+    }
     let pending = if reconciliations.is_empty() {
         Value::Null
     } else {
@@ -1069,6 +1072,8 @@ fn status(store: &Store, state: &State) -> Result<Value> {
         json!({"enabled":selection::settings(&store.home)?.mode == "enabled","consent":selection::settings(&store.home)?,"device":state.device,"binding":state.binding,"accepted":accepted,"uploaded_publication":state.uploaded,"hosted_check":state.hosted_check,"publication":state.projection,"reconciliation":pending,"additional_reconciliations":reconciliations,"remote_pending":state.remote_pending,"runner":runner::status(&store.home),"runner_error":runner::error(store)?}),
     )
 }
+const REPAIR_INSTRUCTION: &str = "Read repair_guide. Resolve it for the user before using the affected notes while keeping other work moving, asking only if resolution would change meaning or sharing.";
+
 /// No network or credentials on ordinary instructions. Only retained received work.
 pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     if !home
@@ -1094,7 +1099,9 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     }
     let result = status(&store, &state)?;
     if let Some(blocked) = state.projection.as_ref().and_then(|p| p.blocked.as_ref()) {
-        repairs.push(blocked.clone());
+        let mut repair = blocked.clone();
+        repair["agent"] = json!(REPAIR_INSTRUCTION);
+        repairs.push(repair);
     }
     if !result["reconciliation"].is_null() {
         repairs.push(result["reconciliation"].clone());

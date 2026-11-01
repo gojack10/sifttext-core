@@ -359,8 +359,9 @@ fn status_file(path: &Path, expected: Option<Fingerprint>) -> Result<(Vec<u8>, F
 
 struct StatusInput {
     hash: [u8; 32],
+    text_hash: [u8; 32],
     node: Fingerprint,
-    order: Fingerprint,
+    order: Option<Fingerprint>,
     owner: Directory,
     children: Directory,
     links: Vec<Fingerprint>,
@@ -449,7 +450,8 @@ impl StatusSnapshot {
             let dir = nodes.join(id);
             input.owner.unchanged(&dir)?;
             input.node.unchanged(&dir.join("node.md"))?;
-            input.order.unchanged(&dir.join("children.order"))?;
+            if let Some(order) = input.order { order.unchanged(&dir.join("children.order"))?; }
+            else { require(!dir.join("children.order").try_exists()?, "legacy order appeared during normalization")?; }
             let children = dir.join("children");
             input.children.unchanged(&children)?;
             let (members, marker) = status_members(&children)?;
@@ -471,6 +473,7 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
     let children_dir = Directory::at(&children_path)?;
     let (bytes, node) = status_file(&dir.join("node.md"), None)?;
     let hash = crate::Sha256::digest(&bytes).into();
+    let text_hash = crate::Sha256::digest(crate::ordering::without_position(std::str::from_utf8(&bytes)?).as_bytes()).into();
     let parsed = markdown(std::str::from_utf8(&bytes)?)
         .map_err(|e| format!("node {id}: {e}"))?;
     require(parsed.authored.id == id, "mismatched status node UUID")?;
@@ -478,8 +481,10 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
         .map_err(|e| format!("node {id}: {e}"))?;
     drop(parsed);
     drop(bytes);
-    let (order_bytes, order) = status_file(&dir.join("children.order"), None)?;
-    let ordered: Vec<String> = std::str::from_utf8(&order_bytes)?.lines().map(str::to_owned).collect();
+    let order = if dir.join("children.order").try_exists()? {
+        Some(status_file(&dir.join("children.order"), None)?.1)
+    } else { None };
+    let ordered = crate::ordering::children(nodes.parent().ok_or("missing status home")?, id)?;
     let (members, marker) = status_members(&children_path)?;
     require(ordered.iter().all(|id| uuid(id))
         && ordered.len() == members.len()
@@ -498,7 +503,7 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
     }
     owner.unchanged(&dir)?;
     children_dir.unchanged(&children_path)?;
-    Ok((state, ordered, StatusInput { hash, node, order, owner,
+    Ok((state, ordered, StatusInput { hash, text_hash, node, order, owner,
         children: children_dir, links, marker }))
 }
 
@@ -569,8 +574,8 @@ impl Baseline {
                 let links = ordered.iter().map(|child| Fingerprint::at(&children.join(child)))
                     .collect::<Result<Vec<_>>>()?;
                 let input = StatusInput {
-                    hash: [0; 32], node: Fingerprint::at(&dir.join("node.md"))?,
-                    order: Fingerprint::at(&dir.join("children.order"))?,
+                    hash: [0; 32], text_hash: [0; 32], node: Fingerprint::at(&dir.join("node.md"))?,
+                    order: if dir.join("children.order").try_exists()? { Some(Fingerprint::at(&dir.join("children.order"))?) } else { None },
                     owner, children: children_dir, links,
                     marker: if marker { Some(Fingerprint::at(&children.join(".keep"))?) } else { None },
                 };
@@ -580,7 +585,7 @@ impl Baseline {
             digest_directory(&mut hash, b"owner", input.owner);
             digest_directory(&mut hash, b"children", input.children);
             digest_leaf(&mut hash, b"node.md", Some(input.node));
-            digest_leaf(&mut hash, b"children.order", Some(input.order));
+            digest_leaf(&mut hash, b"children.order", input.order);
             digest_leaf(&mut hash, b"children-marker", input.marker);
             digest_field(&mut hash, b"child-count", &(ordered.len() as u64).to_le_bytes());
             // children.order bytes are guarded by their exact metadata fingerprint;
@@ -728,7 +733,7 @@ pub(crate) fn normalize_git(
     let requested: BTreeMap<_, _> = candidate.nodes.iter()
         .map(|(id, node)| (id.clone(), node.state.clone())).collect();
     let edited = candidate.nodes.iter()
-        .filter(|(id, node)| before.nodes.get(*id).is_none_or(|old| old.raw_hash != node.raw_hash))
+        .filter(|(id, node)| before.nodes.get(*id).is_none_or(|old| old.text_hash != node.text_hash))
         .map(|(id, _)| id.clone()).collect();
     let result = normalized_states(
         &old, &requested, &before.children, &candidate.children, &edited, explicit,
@@ -806,7 +811,7 @@ pub fn normalize_with_preflight(
     let before = Baseline::scan(before, true, |id, old, children, input| {
         old.validate().map_err(|e| format!("node {id}: {e}"))?;
         if let Some(requested) = candidate.inputs.get(id) {
-            let changed = input.hash != requested.hash || children != candidate.children[id];
+            let changed = input.text_hash != requested.text_hash || children != candidate.children[id];
             result.insert(id.to_owned(), normalized_state(id, Some(old), &candidate.states,
                 &candidate.children, changed, explicit)?);
         }
@@ -906,19 +911,21 @@ struct IndexedStatuses {
     states: BTreeMap<String, State>,
     children: BTreeMap<String, Vec<String>>,
     hashes: BTreeMap<String, String>,
+    positions: BTreeMap<String, (Option<serde_json::Value>, String)>,
 }
 impl IndexedStatuses {
     fn read(policy: &Policy, path: &Path) -> Result<Self> {
-        let (version, (states, children, hashes)) = crate::index::with_current(policy, path, |tx, _| {
+        let (version, (states, children, hashes, positions)) = crate::index::with_current(policy, path, |tx, _| {
             let mut states = BTreeMap::new();
             let mut children = BTreeMap::new();
             let mut hashes = BTreeMap::new();
+            let mut positions = BTreeMap::new();
             let mut stmt = tx.prepare("SELECT n.id,n.record,s.content_hash FROM nodes n
                 JOIN sources s ON s.path='nodes/'||n.id||'/node.md'")?;
             let mut rows = stmt.query([])?;
             while let Some(row) = rows.next()? {
                 let id: String = row.get(0)?;
-                let record: serde_json::Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let mut record: serde_json::Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
                 let state = State {
                     status: serde_json::from_value(record["status"].clone())?,
                     reasons: ["blocker", "deferred_reason", "discard_reason"].into_iter()
@@ -928,13 +935,17 @@ impl IndexedStatuses {
                 };
                 children.insert(id.clone(), serde_json::from_value(record["children"].clone())?);
                 hashes.insert(id.clone(), row.get(2)?);
+                let object = record.as_object_mut().ok_or("invalid status record")?;
+                let position = object.remove("position");
+                object.remove("children");
+                positions.insert(id.clone(), (position, crate::sha256(&serde_json::to_vec(&record)?)));
                 states.insert(id, state);
             }
             let count: i64 = tx.query_row("SELECT count(*) FROM nodes", [], |r| r.get(0))?;
             require(states.len() as i64 == count, "missing logical status source identity")?;
-            Ok((states, children, hashes))
+            Ok((states, children, hashes, positions))
         })?;
-        Ok(Self { version, states, children, hashes })
+        Ok(Self { version, states, children, hashes, positions })
     }
     fn unchanged(&self, policy: &Policy, path: &Path) -> Result<()> {
         let (version, ()) = crate::index::with_current(policy, path, |_, _| Ok(()))?;
@@ -953,8 +964,14 @@ fn normalize_sparse(
     let after_path = &after_owner.path;
     let before = IndexedStatuses::read(policy, &before_path)?;
     let mut candidate = IndexedStatuses::read(policy, &after_path)?;
-    let edited = candidate.hashes.iter().filter(|(id, hash)| before.hashes.get(*id) != Some(*hash))
-        .map(|(id, _)| id.clone()).collect();
+    let edited = candidate.hashes.iter().filter(|(id, hash)| {
+        if before.hashes.get(*id) == Some(*hash) { return false; }
+        // Position-only changes are display changes, not a restart of the work.
+        !before.positions.get(*id).is_some_and(|old| {
+            let new = &candidate.positions[*id];
+            old.0 != new.0 && old.1 == new.1
+        })
+    }).map(|(id, _)| id.clone()).collect();
     let result = normalized_states(&before.states, &candidate.states, &before.children,
         &candidate.children, &edited, explicit)?;
     let depths = status_depths(candidate.states.keys(), &candidate.children)?;

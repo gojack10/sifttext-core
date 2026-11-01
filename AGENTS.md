@@ -41,7 +41,7 @@ For work using this source checkout, read these files with ordinary file tools b
 1. `nodes/5e565245-14fe-406c-977c-cf94a9be246b/node.md`.
 2. `nodes/5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d/node.md` before interpreting stored knowledge, and `nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md` before an authorized knowledge write.
 
-The entrypoint selects the remaining direct children under `nodes/5e565245-14fe-406c-977c-cf94a9be246b/children.order` only when the task needs them, so setup and knowledge publication follow the same local procedure without a fixed child count. If a required file is missing or unreadable, stop and report its exact path. Resume that read after repair without substituting another instruction source.
+The entrypoint selects the remaining direct children under `nodes/5e565245-14fe-406c-977c-cf94a9be246b/children/` only when the task needs them, so setup and knowledge publication follow the same local procedure without a fixed child count. If a required file is missing or unreadable, stop and report its exact path. Resume that read after repair without substituting another instruction source.
 
 If a prerequisite needs additional permission or a consequential decision, ask the human before proceeding. When they are unavailable, retain a continuation for that action and continue independent work within existing permissions.
 

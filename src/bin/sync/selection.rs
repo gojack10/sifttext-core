@@ -244,11 +244,21 @@ impl Snapshot {
         Ok(result)
     }
     fn children(&self, id: &str) -> Result<Vec<String>> {
-        let bytes = self
-            .files
-            .get(&format!("nodes/{id}/children.order"))
-            .map(|f| f.bytes.as_slice())
-            .unwrap_or_default();
+        let Some(file) = self.files.get(&format!("nodes/{id}/children.order")) else {
+            // Incoming creations have no parent record in the old full baseline.
+            let Some(own) = self.files.get(&format!("nodes/{id}/node.md")) else { return Ok(Vec::new()); };
+            if sifttext_file_graph::ordering::position(std::str::from_utf8(&own.bytes)?)?.is_none() {
+                return Err("missing children.order or per-node position".into());
+            }
+            let prefix = format!("nodes/{id}/children/");
+            let members = self.files.keys().filter_map(|path| path.strip_prefix(&prefix))
+                .filter(|child| uuid(child)).map(str::to_owned);
+            return sifttext_file_graph::ordering::sort(members, |child| {
+                let file = self.files.get(&format!("nodes/{child}/node.md")).ok_or("missing child")?;
+                sifttext_file_graph::ordering::position(std::str::from_utf8(&file.bytes)?)
+            });
+        };
+        let bytes = file.bytes.as_slice();
         let children: Vec<_> = std::str::from_utf8(bytes)?
             .lines()
             .map(str::to_owned)
@@ -309,7 +319,7 @@ impl Snapshot {
         nodes: &BTreeSet<String>,
         children: &BTreeMap<String, Vec<String>>,
         parents: &BTreeMap<String, String>,
-    ) {
+    ) -> Result<()> {
         self.files.retain(|p, _| {
             !(p.starts_with("trees/") || p.ends_with("/children.order") || p.contains("/children/"))
         });
@@ -317,15 +327,13 @@ impl Snapshot {
         self.put("trees/.keep".into(), "100644", Vec::new());
         for id in nodes {
             let order = children.get(id).cloned().unwrap_or_default();
-            self.put(
-                format!("nodes/{id}/children.order"),
-                "100644",
-                order
-                    .iter()
-                    .map(|id| format!("{id}\n"))
-                    .collect::<String>()
-                    .into_bytes(),
-            );
+            let node = self.files.get(&format!("nodes/{id}/node.md")).ok_or("missing topology node")?;
+            if sifttext_file_graph::ordering::position(std::str::from_utf8(&node.bytes)?)?.is_none() {
+                self.put(
+                    format!("nodes/{id}/children.order"), "100644",
+                    order.iter().map(|id| format!("{id}\n")).collect::<String>().into_bytes(),
+                );
+            }
             self.put(format!("nodes/{id}/children/.keep"), "100644", Vec::new());
             for child in order {
                 self.put(
@@ -342,6 +350,7 @@ impl Snapshot {
                 );
             }
         }
+        Ok(())
     }
     fn selected(&self, policy: &Settings) -> Result<BTreeSet<String>> {
         let parents = self.parents()?;
@@ -383,7 +392,7 @@ impl Snapshot {
                     .collect(),
             );
         }
-        result.topology(&selected, &children, &parents);
+        result.topology(&selected, &children, &parents)?;
         Ok(result)
     }
     fn write(&self, repo: &Path, parent: Option<&str>) -> Result<String> {
@@ -688,7 +697,7 @@ fn inverse(
         }
         children.insert(id.clone(), order);
     }
-    result.topology(&nodes, &children, &parents);
+    result.topology(&nodes, &children, &parents)?;
     let now = result.selected(policy)?;
     if original
         .intersection(&nodes)
@@ -725,6 +734,8 @@ pub(super) fn import(
             blocked["incoming"] == incoming
                 && blocked["local_tip"] == local_tip
                 && blocked["policy_id"] == policy_id
+                // The removed blanket guard must not strand its old notice.
+                && blocked["check"].as_str() != Some("concurrent local and hosted topology needs local reconciliation before sharing can change")
         })
     {
         return Err("hosted contribution remains in local reconciliation; follow retained guide before retrying unchanged work".into());
@@ -785,9 +796,6 @@ pub(super) fn import(
     let remote = Snapshot::read(&publication.home, incoming)?;
     let result = inverse(&full, &baseline, &remote, &policy)?;
     let current = Snapshot::read(&store.home, &head(&store.home)?)?;
-    if result.parents()? != full.parents()? && current.parents()? != full.parents()? {
-        return Err("concurrent local and hosted topology needs local reconciliation before sharing can change".into());
-    }
     let original_ids = full.nodes()?;
     let current_ids = current.nodes()?;
     if remote

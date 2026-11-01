@@ -14,6 +14,7 @@ Editing and publication
   sifttext worktree HOME                         Allocate a sparse private draft
   sifttext create WORKTREE NAME SUMMARY [PARENT_UUID]
                                                 Create a root or child without committing
+  sifttext migrate-order WORKTREE [--legacy]    Convert child ordering in a private draft
   sifttext normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]
                                                 Apply status changes in the draft
   sifttext submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses] [-y]

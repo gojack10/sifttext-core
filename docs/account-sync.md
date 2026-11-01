@@ -28,6 +28,17 @@ Claim official integration support only with maintainer confirmation.
 
 For remote-client OAuth setup and the hosted instruction bootstrap, follow [Connect Hosted MCP](../nodes/c5dd1192-f75f-4369-bd9e-852f86b55121/node.md).
 
+## Inside a hosted MCP workspace
+
+When the host supplies account access, `sifttext account` and the checker/credit
+commands use the verified MCP account. No personal login token is stored in the
+guest. Both `login` and `logout` are unavailable there: manage the session through
+the MCP client. Normal Mac/Linux login and logout remain unchanged.
+
+The MCP gateway already handles this workspace's knowledge synchronization.
+The native sync enrollment and scheduling instructions below are for your own
+machine, not a second sync runner inside the hosted workspace.
+
 ## Checker credits
 
 Use `sifttext credits` to read the current checker balance.

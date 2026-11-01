@@ -93,7 +93,6 @@ mod checked_publication_tests;
 mod coherent_capture;
 pub(crate) mod git_snapshot;
 pub mod hosted_checks;
-mod hosted_gate;
 pub(crate) mod source_version;
 #[cfg(test)]
 #[path = "../tests/successor/coherent_capture.rs"]
@@ -119,6 +118,7 @@ pub mod outline_artifacts;
 mod outline_residue_tests;
 pub mod outline_rows;
 pub mod outlines;
+pub mod ordering;
 pub mod tree_render;
 pub mod tree_selection;
 #[cfg(test)]
