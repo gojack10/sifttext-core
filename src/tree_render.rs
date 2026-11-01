@@ -17,7 +17,8 @@ pub struct Request {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
-    pub root: String,
+    #[serde(alias = "root")]
+    pub start: String,
     #[serde(default = "default_depth")]
     pub depth: usize,
     #[serde(default)]
@@ -125,7 +126,7 @@ fn validate(reader: &mut Reader<'_>, request: &Request) -> Result<Vec<Value>> {
         problem(&mut errors, "trees".into(), "select at least one tree");
     }
     for (i, selection) in request.trees.iter().enumerate() {
-        let mut ids = vec![(format!("trees[{i}].root"), selection.root.as_str())];
+        let mut ids = vec![(format!("trees[{i}].start"), selection.start.as_str())];
         ids.extend(selection.centres.iter().enumerate().map(|(j, id)| (format!("trees[{i}].centres[{j}]"), id.as_str())));
         ids.extend(selection.rules.iter().enumerate().map(|(j, rule)| (format!("trees[{i}].rules[{j}].node"), rule.node.as_str())));
         ids.extend(selection.branches.iter().enumerate().map(|(j, branch)| (format!("trees[{i}].branches[{j}].node"), branch.node.as_str())));
@@ -154,7 +155,7 @@ fn validate(reader: &mut Reader<'_>, request: &Request) -> Result<Vec<Value>> {
         }
         if !valid { continue }
         for (j, branch) in selection.branches.iter().enumerate() {
-            if branch.node != selection.root && !reader.ancestors(&branch.node)?.contains(&selection.root) {
+            if branch.node != selection.start && !reader.ancestors(&branch.node)?.contains(&selection.start) {
                 problem(&mut errors, format!("trees[{i}].branches[{j}].node"), "branch is outside the selected subtree");
             }
             if !reader.allowed(selection, &branch.node)? {
@@ -163,15 +164,15 @@ fn validate(reader: &mut Reader<'_>, request: &Request) -> Result<Vec<Value>> {
         }
         for (j, id) in selection.centres.iter().enumerate() {
             let ancestors = reader.ancestors(id)?;
-            if id != &selection.root && !ancestors.contains(&selection.root) {
+            if id != &selection.start && !ancestors.contains(&selection.start) {
                 problem(&mut errors, format!("trees[{i}].centres[{j}]"), "centre is outside the selected subtree");
             }
             if !reader.allowed(selection, id)? {
                 problem(&mut errors, format!("trees[{i}].centres[{j}]"), "centre is excluded by selection rules");
             }
         }
-        if !reader.allowed(selection, &selection.root)? {
-            problem(&mut errors, format!("trees[{i}].root"), "selected root is excluded by selection rules");
+        if !reader.allowed(selection, &selection.start)? {
+            problem(&mut errors, format!("trees[{i}].start"), "selected start is excluded by selection rules");
         }
     }
     Ok(errors)
@@ -224,7 +225,7 @@ fn compact_tail(reader: &Reader<'_>, view: &View, start: &str) -> String {
 fn select(reader: &mut Reader<'_>, selection: &Selection) -> Result<View> {
     let mut visible = BTreeSet::new();
     let depths: BTreeMap<_, _> = selection.branches.iter().map(|b| (b.node.as_str(), b.depth)).collect();
-    let mut pending = vec![(selection.root.clone(), selection.depth)];
+    let mut pending = vec![(selection.start.clone(), selection.depth)];
     pending.extend(selection.branches.iter().map(|b| (b.node.clone(), b.depth)));
     let mut visited = BTreeMap::new();
     while let Some((id, remaining)) = pending.pop() {
@@ -250,7 +251,7 @@ fn select(reader: &mut Reader<'_>, selection: &Selection) -> Result<View> {
     for rule in &selection.rules {
         if rule.action == Action::Include {
             let ancestors = reader.ancestors(&rule.node)?;
-            if rule.node == selection.root || ancestors.contains(&selection.root) {
+            if rule.node == selection.start || ancestors.contains(&selection.start) {
                 centres.insert(rule.node.clone());
             }
         }
@@ -261,8 +262,8 @@ fn select(reader: &mut Reader<'_>, selection: &Selection) -> Result<View> {
             neighbourhood(reader, selection, &mut visible, centre)?;
         }
     }
-    let ancestors = reader.ancestors(&selection.root)?;
-    let root = ancestors.last().cloned().unwrap_or_else(|| selection.root.clone());
+    let ancestors = reader.ancestors(&selection.start)?;
+    let root = ancestors.last().cloned().unwrap_or_else(|| selection.start.clone());
     visible.insert(root.clone());
     let mut routes = visible.clone();
     for id in &visible { routes.extend(reader.ancestors(id)?); }
@@ -295,6 +296,8 @@ fn name(node: &Node) -> String {
         .replace(['—', '–'], "-")
 }
 
+const STATUS_NOTATION: &str = "[ ] not examined, [~] in progress, [✓] resolved, [/] blocked, [=] deferred, [x] discarded";
+
 fn render(reader: &Reader<'_>, view: &View) -> Result<String> {
     let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for id in &view.named { names.entry(name(&reader.nodes[id])).or_default().push(id.clone()); }
@@ -302,7 +305,7 @@ fn render(reader: &Reader<'_>, view: &View) -> Result<String> {
     for ids in names.values().filter(|ids| ids.len() > 1) {
         for (i, id) in ids.iter().enumerate() { aliases.insert(id.clone(), label(i)); }
     }
-    let mut output = String::new();
+    let mut output = format!("{STATUS_NOTATION}\n\n");
     // Iterative traversal avoids stack growth on a very deep authored tree.
     let mut pending: Vec<_> = view.roots.iter().rev().map(|root|
         (Some(root.clone()), String::new(), String::new(), String::new())
@@ -348,9 +351,25 @@ fn processing() -> &'static str {
 /// Render all requested static views at one accepted index version, then create fresh files.
 /// Temp files are not persisted until every selection has validated and rendered successfully.
 pub fn run(policy: &Policy, home: &Path, request: &Request) -> Result<Value> {
+    run_mode(policy, home, request, false)
+}
+
+/// Derive selection and allocation base; ignored artifact links remain declared.
+pub fn automatic(policy: &Policy, home: &Path, declarations: Option<&Path>) -> Result<Value> {
+    let mut proposal: proposal::Proposal = match declarations {
+        Some(path) => serde_json::from_slice(&crate::read_regular(path)?)?,
+        None => serde_json::from_value(json!({"artifacts":[]}))?,
+    };
+    let base = proposal::allocation_base(home)?;
+    require(proposal.base.is_empty() || proposal.base == base, "automatic proposal base differs from draft allocation")?;
+    proposal.base = base;
+    run_mode(policy, home, &Request { trees: Vec::new(), proposal: Some(proposal) }, true)
+}
+
+fn run_mode(policy: &Policy, home: &Path, request: &Request, automatic: bool) -> Result<Value> {
     let (_, result) = crate::index::with_current(policy, home, |tx, version| {
         if let Some(proposal) = &request.proposal {
-            return proposal::documents(tx, home, request, proposal, version);
+            return proposal::documents(tx, home, request, proposal, version, automatic);
         }
         let mut reader = Reader::new(tx);
         let errors = validate(&mut reader, request)?;

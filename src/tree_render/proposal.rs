@@ -7,6 +7,7 @@ use std::path::{Component, PathBuf};
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Proposal {
+    #[serde(default)]
     pub base: String,
     pub artifacts: Vec<Artifact>,
     #[serde(default)]
@@ -340,7 +341,7 @@ fn selected(reader: &mut Reader<'_>, selection: &Selection, delta: &Delta, propo
     for id in &delta.changed {
         let ancestors = reader.ancestors(id)?;
         let old = delta.old_ancestors(reader.connection, id)?;
-        if id != &selection.root && !ancestors.contains(&selection.root) && !old.contains(&selection.root) { continue }
+        if id != &selection.start && !ancestors.contains(&selection.start) && !old.contains(&selection.start) { continue }
         // Selected deltas never silently suppress a changed node using context rules.
         view.routes.insert(id.clone());
         view.focus.insert(id.clone());
@@ -369,7 +370,7 @@ fn selected(reader: &mut Reader<'_>, selection: &Selection, delta: &Delta, propo
         .cloned().collect();
     let mut prune = Vec::new();
     for id in &view.routes {
-        if !delta.deleted.contains(id) || explicit.contains(id) || id == &selection.root { continue }
+        if !delta.deleted.contains(id) || explicit.contains(id) || id == &selection.start { continue }
         let ancestors = delta.old_ancestors(reader.connection, id)?;
         let deletion_depth = ancestors.iter().take_while(|a| delta.deleted.contains(*a)).count();
         let parent_id = delta.old_parents.get(id).and_then(|p| p.as_ref());
@@ -477,7 +478,13 @@ fn entries(reader: &Reader<'_>, view: &View, delta: &Delta, id: &str) -> Vec<Ent
 }
 
 fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Proposal, anchors: &BTreeMap<String, String>) -> Result<String> {
-    let mut output = String::new();
+    let mut output = format!("[+] added, [!] revised, [-] removed, [→][!] moved here, [←] moved away\n{STATUS_NOTATION}\n… omitted context\n");
+    if proposal.artifacts.is_empty() {
+        output.push_str("Artifact link changes are never derived. None declared; declare intended additions/removals explicitly.\n");
+    } else {
+        output.push_str("artifacts/ = file links owned by the topic above it: + new link, - removed link, @1 = shorthand for a full path already shown once in this render\n");
+    }
+    output.push('\n');
     for (i, stage) in proposal.work_record.iter().enumerate() {
         output.push_str(&format!("### {}. {}\n{}\n\n", i+1, stage.title, stage.body));
     }
@@ -620,7 +627,7 @@ fn reveal_targets(reader: &mut Reader<'_>, view: &mut View, request: &Request, d
             let node = reader.node(&id)?;
             let ancestors = reader.ancestors(&id)?;
             let root = ancestors.last().cloned().unwrap_or_else(|| id.clone());
-            let selection = request.trees.iter().find(|s| s.root == id || ancestors.contains(&s.root));
+            let selection = request.trees.iter().find(|s| s.start == id || ancestors.contains(&s.start));
             let capped = request.trees.iter().any(|s| s.branches.iter().any(|b| b.node == id && b.depth == 0));
             view.focus.insert(id.clone());
             view.routes.insert(id.clone());
@@ -647,10 +654,43 @@ fn reveal_targets(reader: &mut Reader<'_>, view: &mut View, request: &Request, d
     Ok(targets.into_iter().enumerate().map(|(i,id)| (id, format!("@{}", i+1))).collect())
 }
 
-pub(super) fn documents(connection: &Connection, home: &Path, request: &Request, proposal: &Proposal, version: &str) -> Result<std::result::Result<Vec<(String, usize)>, Vec<Value>>> {
+/// Native allocation metadata, with the original branch-creation reflog as a
+/// compatibility source for older drafts. Never substitute current main.
+pub(super) fn allocation_base(home: &Path) -> Result<String> {
+    let stored = reader_git(home, &["config", "--worktree", "--get", "sifttext.draftBase"]);
+    let base = if let Ok(base) = stored { base } else {
+        let branch = reader_git(home, &["symbolic-ref", "HEAD"])?;
+        require(branch.starts_with("refs/heads/sifttext/"), "automatic mode requires a native private draft; use the allocation receipt for manual rendering")?;
+        let history = reader_git(home, &["reflog", "show", "--format=%H %gs", &branch])?;
+        let first = history.lines().last().ok_or("allocation base unavailable; use the original receipt in manual rendering")?;
+        let (sha, message) = first.split_once(' ').ok_or("invalid allocation reflog")?;
+        require(message == format!("branch: Created from {sha}"), "original allocation reflog unavailable; use the receipt in manual rendering")?;
+        sha.to_owned()
+    };
+    require(matches!(base.len(), 40 | 64) && base.bytes().all(|b| b.is_ascii_hexdigit()), "invalid draft allocation base")?;
+    reader_git(home, &["merge-base", "--is-ancestor", &base, "HEAD"])?;
+    Ok(base)
+}
+
+pub(super) fn documents(connection: &Connection, home: &Path, request: &Request, proposal: &Proposal, version: &str, automatic: bool) -> Result<std::result::Result<Vec<(String, usize)>, Vec<Value>>> {
     let delta = capture(connection, home, proposal)?;
     let mut reader = Reader::new(connection);
     reader.delta = Some(&delta);
+    let derived;
+    let request = if automatic {
+        let mut roots: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for id in &delta.changed {
+            let ancestors = reader.ancestors(id)?;
+            let root = ancestors.last().cloned().unwrap_or_else(|| id.clone());
+            roots.entry(root).or_default().push(id.clone());
+        }
+        require(!roots.is_empty(), "no authored changes or declared artifact changes to render")?;
+        derived = Request { trees: roots.into_iter().map(|(start, centres)| Selection {
+            start, depth: 0, ascend: Ascend::Compact, centres, branches: Vec::new(),
+            default: Action::Include, rules: Vec::new(),
+        }).collect(), proposal: None };
+        &derived
+    } else { request };
     let mut errors = validate(&mut reader, request)?;
     errors.extend(check_packet(&delta, proposal));
     if !errors.is_empty() { return Ok(Err(errors)) }

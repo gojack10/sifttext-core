@@ -907,6 +907,7 @@ fn worktree_inner(
         // --no-checkout leaves an empty index; populate it after selection so
         // Git materializes only the sparse paths, not the complete collection.
         reader_git(&path, &["read-tree", "-mu", &base])?;
+        reader_git(&path, &["config", "--worktree", "sifttext.draftBase", &base])?;
         after_create(&path)?;
         // Git cannot retain empty directories. Hydrate only this newly allocated draft.
         for name in ["nodes", "trees"] {

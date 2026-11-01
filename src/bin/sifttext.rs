@@ -389,6 +389,16 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             );
             return Ok(());
         }
+        [cmd, path, flag, rest @ ..] if cmd == "tree-render" && flag == "--auto" => {
+            let declarations = match rest {
+                [] => None,
+                [file] => Some(Path::new(file)),
+                _ => return Err("usage: sifttext tree-render WORKTREE --auto [PROPOSAL.json]".into()),
+            };
+            let output = sifttext_file_graph::tree_render::automatic(&policy, Path::new(path), declarations)?;
+            println!("{}", render_cli_receipt(&output)?);
+            return if output["status"] == "render-success" { Ok(()) } else { Err(ReportedRenderFailure.into()) };
+        }
         [cmd, path, selection] if cmd == "tree-render" => {
             let input = std::fs::read(selection)?;
             let request = serde_json::from_slice(&input)?;
