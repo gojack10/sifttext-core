@@ -43,7 +43,11 @@ pub fn write_into(document: &Value, text: &mut String) -> Result<(), String> {
         return write_field_into("path", &root["path"], text);
     }
     let mut first = true;
-    for (key, value) in root.iter().filter(|(key, _)| key.as_str() != ROWS) {
+    if let Some(path) = root.get("outline-file") {
+        write_field_into("outline-file", path, text)?;
+        first = false;
+    }
+    for (key, value) in root.iter().filter(|(key, _)| !matches!(key.as_str(), ROWS | "outline-file")) {
         if !first { text.push('\n'); }
         first = false;
         write_field_into(key, value, text)?;
@@ -66,6 +70,35 @@ pub(crate) fn write_field_into(key: &str, value: &Value, text: &mut String) -> R
         text.push_str(&scalar(value).map_err(|error| format!("metadata {key}: {error}"))?);
         Ok(())
     }
+}
+
+/// Render a uniform table with caller-selected column order using the same LEAN cells.
+pub fn render_table(key: &str, fields: &[&str], rows: &[Vec<Value>]) -> Result<String, String> {
+    validate_key(key)?;
+    for field in fields {
+        validate_key(field)?;
+    }
+    let mut text = format!("{key}[{}]:", rows.len());
+    if rows.is_empty() {
+        return Ok(text);
+    }
+    if fields.is_empty() {
+        return Err("table must have columns".into());
+    }
+    text.push_str(&fields.join("\t"));
+    for row in rows {
+        if row.len() != fields.len() {
+            return Err("table row does not match its columns".into());
+        }
+        text.push_str("\n  ");
+        for (index, value) in row.iter().enumerate() {
+            if index > 0 {
+                text.push('\t');
+            }
+            text.push_str(&cell(value)?);
+        }
+    }
+    Ok(text)
 }
 
 fn rows_of(value: &Value) -> Result<&[Value], String> {

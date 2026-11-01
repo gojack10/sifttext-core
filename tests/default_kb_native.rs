@@ -98,6 +98,9 @@ impl Native {
     }
     fn json(&mut self, args: &[&str]) -> Value {
         let output = self.cli(args, true);
+        if args.first() == Some(&"instructions") {
+            return sifttext_file_graph::outlines::decode_lean(&format!("{}\n", output.lines().next().unwrap())).unwrap();
+        }
         if args.first().is_some_and(|cmd| {
             !matches!(
                 *cmd,
@@ -159,7 +162,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     assert_eq!(original, source, "exact readable source bytes and links");
     let pipeline = n.json(&["instructions", h]);
     assert_eq!(
-        pipeline["path"].as_str().unwrap(),
+        pipeline["onboarding-entry"].as_str().unwrap(),
         format!("{h}/nodes/{ENTRY}/node.md")
     );
     let ordered: Vec<&str> = std::iter::once(ENTRY).chain(ORDER).collect();
@@ -191,7 +194,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         )
         .map(|id| fs::canonicalize(home.join(format!("nodes/{id}/node.md"))).unwrap())
         .collect();
-    let entry_path = fs::canonicalize(pipeline["path"].as_str().unwrap()).unwrap();
+    let entry_path = fs::canonicalize(pipeline["onboarding-entry"].as_str().unwrap()).unwrap();
     assert!(
         from_pointer.contains(&entry_path),
         "the single returned entry path must be the pointer's own first read target"
@@ -397,7 +400,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
     let d = text(&draft);
     assert!(!draft.join("AGENTS.md").exists());
     assert_eq!(
-        n.json(&["instructions", d])["path"].as_str().unwrap(),
+        n.json(&["instructions", d])["onboarding-entry"].as_str().unwrap(),
         format!("{d}/nodes/{ENTRY}/node.md")
     );
     let created = n.json(&[

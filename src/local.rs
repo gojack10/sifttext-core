@@ -44,6 +44,10 @@ fn pointer_text() -> String {
          local discovery, not authored knowledge: it is untracked, excluded from this home's\n\
          Git history, and rerunning `sifttext init` never rewrites, reseeds or removes it.\n\
          \n\
+         Run `sifttext instructions` first and follow its agent-instructions lines.\n\
+         Knowledge nodes live at nodes/<id>/node.md in the home.\n\
+         rg and fd are installed and much faster in this home; prefer them for search.\n\
+         \n\
          Read in this order with ordinary local file tools:\n\
          \n\
          1. `nodes/{ENTRY}/node.md` - the Local Core Agent Entrypoint for this home.\n\

@@ -122,6 +122,9 @@ impl Native {
     }
     fn cli(&mut self, args: &[&str]) -> Value {
         let output = self.run(env!("CARGO_BIN_EXE_sifttext"), args, true);
+        if args.first() == Some(&"instructions") {
+            return sifttext_file_graph::outlines::decode_lean(&format!("{}\n", output.lines().next().unwrap())).unwrap();
+        }
         if args.first().is_some_and(|cmd| {
             !matches!(
                 *cmd,
@@ -223,7 +226,7 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     let pipeline = native.cli(&["instructions", text(&home)]);
     let ids: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
     assert_eq!(
-        pipeline["path"].as_str().unwrap(),
+        pipeline["onboarding-entry"].as_str().unwrap(),
         text(&home.join("nodes").join(ENTRY).join("node.md"))
     );
     assert_eq!(ids.first(), Some(&ENTRY));
@@ -295,7 +298,7 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     assert!(!draft.join("AGENTS.md").exists());
     let draft_pipeline = native.cli(&["instructions", text(&draft)]);
     assert_eq!(
-        draft_pipeline["path"].as_str().unwrap(),
+        draft_pipeline["onboarding-entry"].as_str().unwrap(),
         text(&draft.join("nodes").join(ENTRY).join("node.md")),
         "worktree instruction lookup must use its own authored entry"
     );
@@ -381,7 +384,7 @@ fn pointer_cli_preserves_authored_knowledge_through_publication_and_refusals() {
     );
     assert_eq!(authored(&home), authored(&view));
     assert_eq!(native.cli(&["advance", text(&home)])["advanced"], false);
-    let entry_path = native.cli(&["instructions", text(&home)])["path"]
+    let entry_path = native.cli(&["instructions", text(&home)])["onboarding-entry"]
         .as_str()
         .unwrap()
         .to_owned();

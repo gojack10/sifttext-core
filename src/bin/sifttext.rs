@@ -1,5 +1,9 @@
 use sifttext_file_graph::account;
 mod sync;
+#[path = "cli/commands.rs"]
+mod commands;
+#[path = "cli/onboarding.rs"]
+mod onboarding;
 
 use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
@@ -52,8 +56,6 @@ impl std::fmt::Display for ReportedRenderFailure {
 }
 impl std::error::Error for ReportedRenderFailure {}
 
-const HELP: &str = include_str!("../../docs/cli-help.txt");
-
 fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     macro_rules! println {
         ($($arg:tt)*) => {
@@ -65,8 +67,8 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     if args.len() == 2 && matches!(args[1].as_str(), "-h" | "--help") {
         args.remove(0);
     }
-    if args.is_empty() || args == ["-h"] || args == ["--help"] {
-        println!("{HELP}");
+    if args.is_empty() || args == ["help"] || args == ["-h"] || args == ["--help"] {
+        println!("{}", commands::help()?);
         return Ok(());
     }
     if let Some(command) = args.first()
@@ -198,17 +200,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
         let instructions = local::instructions(&policy, &path)?;
-        let output = json!({"version":instructions["version"],"version_scope":instructions["version_scope"],"path":instructions["path"],"account_sync_guide":sync::guide_path()?});
-        println!(
-            "{}",
-            sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
-        );
-        match sync::instructions(&path) {
-            Ok(repairs) => for repair in repairs {
-                println!("{}", render_cli_receipt(&repair)?);
-            },
-            Err(error) => eprintln!("Sync continuation unavailable: {error}. Local accepted instructions above remain usable; preserve sync state and inspect sifttext sync status HOME."),
-        }
+        println!("{}", onboarding::render(&path, &instructions)?);
         return Ok(());
     }
     let output = match args.as_slice() {
@@ -975,7 +967,11 @@ fn main() {
             let _ = std::io::stderr().lock().write_all(rendered.as_bytes());
         }
     } else if !updating && !authentication {
-        sifttext_file_graph::updates::opportunistic();
+        let args: Vec<_> = std::env::args().skip(1).collect();
+        let onboarding_or_help = args.is_empty()
+            || args.first().is_some_and(|arg| matches!(arg.as_str(), "instructions" | "help" | "-h" | "--help"))
+            || (args.len() == 2 && matches!(args[1].as_str(), "-h" | "--help"));
+        sifttext_file_graph::updates::opportunistic_with_notice(!onboarding_or_help);
     }
     if let Some(summary) = hosted_summary {
         let mut out = std::io::stdout().lock();
