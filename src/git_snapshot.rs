@@ -19,13 +19,14 @@ use std::{
     sync::{Arc, Weak},
 };
 
-const FACT_PROCESSOR: &str = "git-node-facts-v1;authored-merkle-v2;native-markdown-v1";
+const FACT_PROCESSOR: &str = "git-node-facts-v2;authored-merkle-v2;native-markdown-v1";
 const TOKEN_PROCESSOR: &str = "tiktoken-rs/0.6.0;ordinary;content/v1";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NodeFacts {
     pub(crate) id: String,
+    pub(crate) position: Option<u64>,
     #[serde(with = "state_record")]
     pub(crate) state: State,
     pub(crate) body_nonblank: bool,
@@ -695,7 +696,7 @@ impl GitReader {
         drop(entries);
         let mut missing = Vec::new();
         for id in nodes.keys() {
-            for (tail, kind) in [("", 0), ("/children", 0), ("/children.order", 1)] {
+            for (tail, kind) in [("", 0), ("/children", 0)] {
                 let path = format!("nodes/{id}{tail}");
                 if !ledger.has(&path, kind)? {
                     missing.push(path);
@@ -713,7 +714,14 @@ impl GitReader {
         let mut members = ledger.connection.prepare(
             "SELECT name FROM entries WHERE parent=?1 AND kind=2 ORDER BY name")?;
         for id in nodes.keys() {
-            let order = children.get(id).ok_or("missing Git children.order")?;
+            if !children.contains_key(id) {
+                require(nodes[id].position.is_some(), "missing Git children.order or per-node position")?;
+                let names = members.query_map([format!("nodes/{id}/children")], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                let order = crate::ordering::sort(names, |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
+                children.insert(id.clone(), order);
+            }
+            let order = &children[id];
             // Only one owner's borrowed names are collected, never all links.
             let ordered: BTreeSet<&str> = order.iter().map(String::as_str).collect();
             structural_guard(order.len() == ordered.len(), Some(id), None,
@@ -809,6 +817,7 @@ impl GitReader {
                 )?;
                 Arc::new(NodeFacts {
                     id: id.into(),
+                    position: parsed.fields.get("position").map(|raw| serde_json::from_str(raw)).transpose()?,
                     state,
                     body_nonblank: !parsed.authored.content.trim().is_empty(),
                     raw_hash: Sha256::digest(&bytes).into(),

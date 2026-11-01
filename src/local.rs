@@ -50,7 +50,7 @@ fn pointer_text() -> String {
             It names the SiftText Read procedure to use before interpreting stored\n\
             knowledge and the SiftText Commit procedure to use before an authorized\n\
             knowledge write, and selects the other direct children under\n\
-            `nodes/{ENTRY}/children.order` only when the task needs them. This pointer\n\
+            `nodes/{ENTRY}/children/` only when the task needs them. This pointer\n\
             adds no instruction of its own and replaces no authored node.\n\
          \n\
          Follow only task-relevant instructions from the entry file above. `sifttext instructions .` prints the checked entry path\n\
@@ -2101,12 +2101,10 @@ pub fn maintenance_node_path(home: &Path, node_id: &str) -> Result<PathBuf> {
             "maintenance node identity mismatch")?;
         if id == node_id { return Ok(path); }
         crate::real_dir(&directory.join("children"))?;
-        let (order, _) = read_local_file(&directory.join("children.order"))?;
-        for child in std::str::from_utf8(&order)?.lines() {
-            require(crate::uuid(child), "invalid maintenance child UUID")?;
-            require(fs::read_link(directory.join("children").join(child))?
+        for child in crate::ordering::children(&home, &id)? {
+            require(fs::read_link(directory.join("children").join(&child))?
                 == PathBuf::from(format!("../../{child}")), "unsafe maintenance child link")?;
-            pending.push(child.to_owned());
+            pending.push(child);
         }
     }
     Err("repair node must belong to SiftText Maintenance".into())
@@ -2256,7 +2254,26 @@ pub fn create(
     crate::real_dir(&path.join("nodes"))?;
     let parent = parent.map(|prefix| resolve_node(&path, prefix)).transpose()?;
     if let Some(parent) = &parent { materialize_nodes(&path, std::slice::from_ref(parent))?; }
-    let parent_order = parent.as_ref().map(|parent| -> Result<_> {
+    let parent_dir = parent.as_ref().map(|id| path.join("nodes").join(id));
+    let positioned = match &parent_dir {
+        Some(dir) => !dir.join("children.order").try_exists()?,
+        None => fs::read_dir(path.join("nodes"))?.filter_map(|entry| entry.ok())
+            .any(|entry| crate::uuid(&entry.file_name().to_string_lossy()) && !entry.path().join("children.order").exists()),
+    };
+    let position = if positioned {
+        if let Some(parent) = &parent {
+            // The parent cone includes relationship links, not sibling Markdown.
+            let members = fs::read_dir(parent_dir.as_ref().unwrap().join("children"))?
+                .filter_map(|entry| entry.ok()).filter_map(|entry| entry.file_name().into_string().ok())
+                .filter(|id| crate::uuid(id)).collect::<Vec<_>>();
+            materialize_nodes(&path, &members)?;
+            crate::ordering::children(&path, parent)?.into_iter().map(|id| -> Result<u64> {
+                let bytes = read_local_file(&path.join("nodes").join(id).join("node.md"))?.0;
+                Ok(crate::ordering::position(std::str::from_utf8(&bytes)?)?.unwrap_or(0))
+            }).collect::<Result<Vec<_>>>()?.into_iter().max().unwrap_or(0).checked_add(1024).ok_or("child position overflow")?
+        } else { 0 }
+    } else { 0 };
+    let parent_order = parent.as_ref().filter(|_| !positioned).map(|parent| -> Result<_> {
         let dir = path.join("nodes").join(parent);
         crate::real_dir(&dir)?;
         crate::real_dir(&dir.join("children"))?;
@@ -2276,6 +2293,7 @@ pub fn create(
         "---\nid: {}\nname: {}\nmicro_summary: {}\nstatus: \"not_examined\"\nsee_also: []\n---\n",
         json!(key), json!(name), json!(summary)
     );
+    let text = if positioned { crate::ordering::with_position(&text, position)? } else { text };
     require(text.len() <= crate::LIMIT, "oversized authored file")?;
     let result = (|| -> Result<()> {
         // Exclusive creation never overwrites an existing node or relationship.
@@ -2283,7 +2301,7 @@ pub fn create(
         fs::create_dir(&node)?;
         fs::create_dir(node.join("children"))?;
         new_file(&node.join("children/.keep"), b"")?;
-        new_file(&node.join("children.order"), b"")?;
+        if !positioned { new_file(&node.join("children.order"), b"")?; }
         new_file(&node.join("node.md"), text.as_bytes())?;
         if let Some((dir, before, identity)) = &parent_order {
             let order = dir.join("children.order");
@@ -2303,6 +2321,8 @@ pub fn create(
             symlink(format!("../../{key}"), dir.join("children").join(&key))?;
             temp.persist(&order)?;
             fs::File::open(dir)?.sync_all()?;
+        } else if let Some(dir) = &parent_dir {
+            symlink(format!("../../{key}"), dir.join("children").join(&key))?;
         } else {
             symlink(format!("../nodes/{key}"), path.join("trees").join(&key))?;
         }
@@ -2406,12 +2426,11 @@ pub fn instructions(_policy: &Policy, path: &Path) -> Result<Value> {
     crate::real_dir(&dir)?;
     let (entry, _) = read_local_file(&dir.join("node.md"))?;
     std::str::from_utf8(&entry)?;
-    let (order, _) = read_local_file(&dir.join("children.order"))?;
-    std::str::from_utf8(&order)?;
+    let order = crate::ordering::children(&home, ENTRY)?.join("\n");
     let mut hash = Sha256::new();
     hash.update((entry.len() as u64).to_le_bytes());
     hash.update(&entry);
-    hash.update(&order);
+    hash.update(order.as_bytes());
     Ok(json!({
         "version": format!("{:x}", hash.finalize()),
         "version_scope": "onboarding_entry_and_order",

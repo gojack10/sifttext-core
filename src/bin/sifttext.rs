@@ -211,6 +211,13 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         return Ok(());
     }
     let output = match args.as_slice() {
+        [cmd, draft, flag] if cmd == "migrate-order" && flag == "--legacy" => {
+            sifttext_file_graph::ordering::restore_legacy_draft(&absolute(draft)?)?
+        }
+        [cmd, draft] if cmd == "migrate-order" => {
+            let draft = absolute(draft)?;
+            sifttext_file_graph::ordering::migrate_draft(&draft)?
+        }
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
         [cmd] if cmd == "hosted-account-protocol" => json!({"hosted_account":1}),
         [cmd, root, home] if cmd == "install-home" => {

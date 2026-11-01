@@ -393,6 +393,12 @@ fn publication_with_access(
                 continue;
             }
             let text = String::from_utf8(reader.bytes(after, id)?)?;
+            if let Some(previous) = before.filter(|view| view.nodes.contains_key(id)) {
+                let old = String::from_utf8(reader.bytes(previous, id)?)?;
+                if crate::ordering::without_position(&old) == crate::ordering::without_position(&text) {
+                    continue;
+                }
+            }
             let value = response(
                 access,
                 "POST",

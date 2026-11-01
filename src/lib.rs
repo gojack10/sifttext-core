@@ -118,6 +118,7 @@ pub mod outline_artifacts;
 mod outline_residue_tests;
 pub mod outline_rows;
 pub mod outlines;
+pub mod ordering;
 pub mod tree_render;
 pub mod tree_selection;
 #[cfg(test)]

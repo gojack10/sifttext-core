@@ -117,16 +117,31 @@ fn capture(connection: &Connection, home: &Path, proposal: &Proposal) -> Result<
     }
     ids.extend(proposal.artifacts.iter().map(|a| a.owner.clone()).filter(|id| crate::uuid(id)));
     ids.extend(proposal.deletions.iter().map(|d| d.node.clone()).filter(|id| crate::uuid(id)));
-    let wanted: Vec<_> = ids.iter().flat_map(|id| [format!("nodes/{id}/node.md"), format!("nodes/{id}/children.order")]).collect();
+    let wanted: Vec<_> = ids.iter().flat_map(|id| [format!("nodes/{id}/node.md"), format!("nodes/{id}/children.order"), format!("nodes/{id}/children")]).collect();
     let mut files = BTreeMap::new();
     let mut batch = Batch::new(home)?;
     for group in wanted.chunks(128) {
+        let mut args = vec!["--literal-pathspecs", "ls-tree", "-r", "-l", "-z", &base, "--"];
+        args.extend(group.iter().map(String::as_str));
+        for row in git_bytes(home, &args)?.split(|b| *b == 0).filter(|b| !b.is_empty()) {
+            let (header, path) = std::str::from_utf8(row)?.split_once('\t').ok_or("invalid Git tree entry")?;
+            let words: Vec<_> = header.split_ascii_whitespace().collect();
+            require(words.len() == 4 && ["100644", "120000"].contains(&words[0]) && words[1] == "blob", "invalid historical authored file")?;
+            files.insert(path.to_owned(), batch.bytes(words[2], words[3].parse()?)?);
+        }
+    }
+    let child_ids: BTreeSet<_> = files.keys().filter_map(|path| {
+        let parts: Vec<_> = path.split('/').collect();
+        match parts.as_slice() { ["nodes", _, "children", child] if crate::uuid(child) => Some((*child).to_owned()), _ => None }
+    }).collect();
+    let child_paths: Vec<_> = child_ids.iter().map(|id| format!("nodes/{id}/node.md")).collect();
+    for group in child_paths.chunks(128) {
         let mut args = vec!["--literal-pathspecs", "ls-tree", "-l", "-z", &base, "--"];
         args.extend(group.iter().map(String::as_str));
         for row in git_bytes(home, &args)?.split(|b| *b == 0).filter(|b| !b.is_empty()) {
             let (header, path) = std::str::from_utf8(row)?.split_once('\t').ok_or("invalid Git tree entry")?;
             let words: Vec<_> = header.split_ascii_whitespace().collect();
-            require(words.len() == 4 && words[0] == "100644" && words[1] == "blob", "invalid historical authored file")?;
+            require(words.len() == 4 && words[0] == "100644", "invalid historical child")?;
             files.insert(path.to_owned(), batch.bytes(words[2], words[3].parse()?)?);
         }
     }
@@ -138,8 +153,16 @@ fn capture(connection: &Connection, home: &Path, proposal: &Proposal) -> Result<
     };
     for id in &ids {
         if let Some(bytes) = files.get(&format!("nodes/{id}/node.md")) {
-            let order = files.get(&format!("nodes/{id}/children.order")).ok_or("historical node lacks children.order")?;
-            let children: Vec<String> = std::str::from_utf8(order)?.lines().map(str::to_owned).collect();
+            let children: Vec<String> = if let Some(order) = files.get(&format!("nodes/{id}/children.order")) {
+                std::str::from_utf8(order)?.lines().map(str::to_owned).collect()
+            } else {
+                let prefix = format!("nodes/{id}/children/");
+                let members = files.keys().filter_map(|path| path.strip_prefix(&prefix)).filter(|child| crate::uuid(child)).map(str::to_owned);
+                crate::ordering::sort(members, |child| {
+                    let text = files.get(&format!("nodes/{child}/node.md")).ok_or("missing historical child")?;
+                    crate::ordering::position(std::str::from_utf8(text)?)
+                })?
+            };
             require(children.iter().all(|c| crate::uuid(c)), "invalid historical child order")?;
             delta.before.insert(id.clone(), Record::from_markdown(bytes, children)?);
         }

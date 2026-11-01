@@ -191,6 +191,8 @@ pub(crate) fn from_inventory_mode(
     let mut nodes = BTreeMap::new();
     let mut children = BTreeMap::new();
     let mut metadata = BTreeMap::new();
+    let mut positioned = Vec::new();
+    let mut positions = BTreeMap::new();
     for (id, dir) in &dirs {
         require(uuid(id), "node directory is not a canonical full UUID")?;
         crate::real_dir(dir)?;
@@ -214,7 +216,17 @@ pub(crate) fn from_inventory_mode(
             authored.content = String::new();
         }
         let order_file = PathBuf::from(format!("nodes/{id}/children.order"));
-        let order_bytes = source_error::context(bytes("children.order"), &order_file, None)?;
+        let position = parsed.fields.get("position").map(|raw| serde_json::from_str::<u64>(raw)).transpose()?;
+        positions.insert(id.clone(), position);
+        let legacy = inventory.contains_key(&order_file);
+        let order_bytes = if legacy {
+            source_error::context(bytes("children.order"), &order_file, None)?
+        } else {
+            require(position.is_some(), "missing children.order or per-node position")?;
+            positioned.push(id.clone());
+            std::borrow::Cow::Owned(members.get(id).into_iter().flatten()
+                .map(|child| format!("{child}\n")).collect::<String>().into_bytes())
+        };
         let order: Vec<String> = source_error::context(
             (|| Ok(std::str::from_utf8(&order_bytes)?))(),
             &order_file,
@@ -254,6 +266,11 @@ pub(crate) fn from_inventory_mode(
         );
         nodes.insert(id.clone(), authored);
         children.insert(id.clone(), order);
+    }
+    for id in positioned {
+        let order = crate::ordering::sort(children.remove(&id).unwrap_or_default(),
+            |child| Ok(positions.get(child).copied().flatten()))?;
+        children.insert(id, order);
     }
     Ok((
         Store {
@@ -506,11 +523,10 @@ fn node_identities(
         out.insert(dir.clone(), (m.dev(), m.ino(), 0, 0));
         for file in ["node.md", "children.order", "children"] {
             let p = dir.join(file);
-            let m = source_error::context(
-                fs::symlink_metadata(&p).map_err(Into::into),
-                &relative.join(file),
-                None,
-            )?;
+            let m = match fs::symlink_metadata(&p) {
+                Err(error) if file == "children.order" && error.kind() == std::io::ErrorKind::NotFound => continue,
+                result => source_error::context(result.map_err(Into::into), &relative.join(file), None)?,
+            };
             out.insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
             if file == "children" {
                 identity_walk(&p, out)?;

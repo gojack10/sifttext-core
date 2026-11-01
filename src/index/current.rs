@@ -53,7 +53,7 @@ fn native_boot_id() -> Result<String> {
     Err("unsupported native boot epoch platform".into())
 }
 
-const SCHEMA: &str = "sifttext-index/5";
+const SCHEMA: &str = "sifttext-index/6";
 #[derive(Default)]
 struct Work {
     refreshed: bool,
@@ -401,14 +401,25 @@ fn project(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Resu
 }
 fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Result<Vec<String>> {
     let p = PathBuf::from(format!("nodes/{id}/children.order"));
-    let bytes = bytes(connection, objects, &p)?;
-    let text = std::str::from_utf8(&bytes)?;
-    text.lines()
-        .map(|line| {
+    let legacy: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM expected_sources WHERE path=?1)", [p.to_str()], |row| row.get(0))?;
+    if legacy {
+        let bytes = bytes(connection, objects, &p)?;
+        let text = std::str::from_utf8(&bytes)?;
+        return text.lines().map(|line| {
             require(crate::uuid(line), "children.order entry is not a UUID")?;
             Ok(line.to_owned())
-        })
-        .collect()
+        }).collect();
+    }
+    let own = bytes(connection, objects, &PathBuf::from(format!("nodes/{id}/node.md")))?;
+    require(crate::ordering::position(std::str::from_utf8(&own)?)?.is_some(), "missing children.order or per-node position")?;
+    let prefix = format!("nodes/{id}/children/");
+    let names = connection.prepare("SELECT substr(path,length(?1)+1) FROM expected_sources WHERE path>=?1 AND path<?2 AND substr(signature,1,2)=x'0102'")?
+        .query_map(params![prefix, format!("nodes/{id}/children0")], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    crate::ordering::sort(names, |child| {
+        let text = bytes(connection, objects, &PathBuf::from(format!("nodes/{child}/node.md")))?;
+        crate::ordering::position(std::str::from_utf8(&text)?)
+    })
 }
 fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result<()> {
     let id = row["id"].as_str().ok_or("missing id")?;
@@ -516,6 +527,13 @@ fn refresh(
         }
     }
     drop(delta);
+    // A child's position belongs to that child, but changes its parent's view.
+    let changed: Vec<_> = changes.iter().cloned().collect();
+    for child in changed {
+        let mut parents = connection.prepare("SELECT source FROM child_links WHERE target=?1")?;
+        changes.extend(parents.query_map([child], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?);
+    }
     if force {
         changes.extend(present.iter().cloned());
         changes.extend(connection.prepare("SELECT id FROM nodes")?.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<BTreeSet<_>>>()?);
