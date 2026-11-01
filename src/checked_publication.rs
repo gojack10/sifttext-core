@@ -749,7 +749,8 @@ pub(crate) fn native_index_guard(repo: &Path) -> Result<()> {
             &format!("unsupported working attributes at {}; preserve files before retrying", path.display()))
     };
     check_attributes(Path::new(""))?;
-    let mut files = tempfile::tempfile()?;
+    let operation = crate::scratch::Directory::new()?;
+    let mut files = tempfile::tempfile_in(operation.path())?;
     let output = lifetime::run_stdout_file(command(repo, &["ls-files", "-v", "-z"]), &files)?;
     require(output.status.success(), "Git index inventory unavailable")?;
     if files.metadata()?.len() != 0 {
@@ -894,6 +895,10 @@ fn authored_tree(repo: &Path, revision: &str) -> Result<()> {
     }
     Ok(())
 }
+pub(crate) fn expire_scratch_views(root: &Path, now: std::time::SystemTime) -> Result<()> {
+    owned::expire(root, now)
+}
+
 /// Retire a matching verified retained reader through the same exact finish
 /// used for disposable views. This never adopts an unrecorded legacy view.
 pub(crate) fn remove_owned_view(
@@ -1190,15 +1195,14 @@ fn execute(
         )?;
         None
     };
-    let root = common.join("sifttext-publications");
-    if !root.try_exists()? {
-        fs::create_dir(&root)?;
-    }
-    crate::real_dir(&root)?;
+    let root = crate::scratch::publications(&common)?;
     // Normal publication reads immutable Git objects, not retained view donors.
     // Recovering unrelated historical views is not part of saving this draft.
     if !in_draft {
         owned::recover(&repo, &root, notes)?;
+        // Complete earlier disposable views without relocating their custody.
+        let legacy = common.join("sifttext-publications");
+        if legacy.try_exists()? { owned::recover(&repo, &legacy, notes)?; }
     }
     r.check = "owned_view_setup";
     let mut owned_reader = if reader.is_none() {
@@ -1359,7 +1363,7 @@ fn execute(
             git(view, &["write-tree"])? == old_tree,
             "candidate index changed",
         )?;
-        let temporary = tempfile::tempdir()?;
+        let temporary = crate::scratch::Directory::new()?;
         let index_path = temporary.path().join("index");
         let indexed = |args: &[&str]| -> Result<String> {
             let mut cmd = command(view, args);

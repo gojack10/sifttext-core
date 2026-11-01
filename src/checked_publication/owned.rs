@@ -77,7 +77,8 @@ fn common(repo: &Path) -> Result<PathBuf> {
 fn load(repo: &Path, parent: &Path) -> Result<Record> {
     let common = common(repo)?;
     require(
-        parent.parent() == Some(common.join("sifttext-publications").as_path())
+        (parent.parent() == Some(common.join("sifttext-publications").as_path())
+            || parent.parent() == Some(crate::scratch::publications(&common)?.as_path()))
             && parent
                 .file_name()
                 .is_some_and(|n| n.as_encoded_bytes().starts_with(b"submission-"))
@@ -352,7 +353,8 @@ fn finish(repo: &Path, parent: &Path, retained: bool, own_handoff: bool) -> Resu
     let view = parent.join("view");
     if fs::symlink_metadata(parent).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
         let common = common(repo)?;
-        let root = common.join("sifttext-publications");
+        let legacy = common.join("sifttext-publications");
+        let root = crate::scratch::publications(&common)?;
         let admins = common.join("worktrees");
         if admins.try_exists()? {
             crate::real_dir(&admins)?;
@@ -369,8 +371,8 @@ fn finish(repo: &Path, parent: &Path, retained: bool, own_handoff: bool) -> Resu
             }
         }
         require(
-            parent.parent() == Some(root.as_path())
-                && fs::canonicalize(&root)? == root
+            (parent.parent() == Some(root.as_path()) || parent.parent() == Some(legacy.as_path()))
+                && fs::canonicalize(parent.parent().ok_or("missing operation root")?)? == parent.parent().unwrap()
                 && parent
                     .file_name()
                     .is_some_and(|n| n.as_encoded_bytes().starts_with(b"submission-")),
@@ -479,6 +481,48 @@ fn partial_paths(repo: &Path, view: &Path, revision: &str) -> Result<()> {
         Ok(())
     }
     walk(view, view, &allowed)
+}
+
+/// Expiry discards inactive view files, never accepted Git history. The
+/// existing ownership record and lifecycle gate still select the exact target.
+pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() { continue; }
+        let parent = entry.path();
+        let result = (|| -> Result<()> {
+            if !crate::scratch::inactive(&parent, now)? { return Ok(()); }
+            require(fs::symlink_metadata(parent.join("owner.json"))?.len() <= 4096,
+                "oversized ownership record")?;
+            let bytes = crate::read_regular(&parent.join("owner.json"))?;
+            require(bytes.len() <= 4096, "oversized ownership record")?;
+            let identity: Record = serde_json::from_slice(&bytes)?;
+            let repo = &identity.common;
+            require(root == crate::scratch::publications(repo)?, "foreign scratch root")?;
+            let view = parent.join("view");
+            let gate = crate::local::publication_gate(&view)?;
+            let _custody = Custody::new(&[&gate])?;
+            let record = load(repo, &parent)?;
+            if !crate::scratch::inactive(&parent, now)? { return Ok(()); }
+            if registration(repo, &parent, &record)? {
+                if view.join(".git").try_exists()? {
+                    let admin = PathBuf::from(git(&view, &["rev-parse", "--absolute-git-dir"])?);
+                    if admin.join("index.lock").try_exists()? || !crate::scratch::inactive(&admin, now)? {
+                        return Ok(());
+                    }
+                }
+                let mut args = vec!["worktree", "remove", "--force"];
+                // Only the exact setup lock is eligible for stronger disposal.
+                if !record.initialized { args.push("--force"); }
+                args.push(view.to_str().ok_or("non-UTF-8 view")?);
+                git(repo, &args)?;
+            }
+            fs::remove_dir_all(&parent)?;
+            Ok(())
+        })();
+        if let Err(error) = result { eprintln!("scratch view retained at {}: {error}", parent.display()); }
+    }
+    Ok(())
 }
 
 pub(super) fn recover(repo: &Path, root: &Path, notes: &Notes) -> Result<()> {

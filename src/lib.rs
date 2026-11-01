@@ -151,6 +151,7 @@ mod outlines_tests;
 #[path = "vendor/leviathan/relevance.rs"]
 pub mod relevance;
 pub mod search;
+pub mod scratch;
 pub mod search_document;
 #[path = "vendor/leviathan/snippet.rs"]
 pub mod snippet;
@@ -1297,7 +1298,8 @@ fn invoke_bounded_with_deadline(
         !budget.is_zero() && budget <= MAX_POLICY_DEADLINE,
         "policy deadline exceeds resource budget",
     )?;
-    let mut file = tempfile::NamedTempFile::new()?;
+    let operation = scratch::Directory::new()?;
+    let mut file = tempfile::NamedTempFile::new_in(operation.path())?;
     file.write_all(input)?;
     file.flush()?;
     let mut child = Command::new(executable)

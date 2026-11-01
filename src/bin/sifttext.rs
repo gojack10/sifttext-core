@@ -167,6 +167,9 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         print_large_return(&format!("{rendered}\n"), force)?;
         return Ok(());
     }
+    // Maintenance never runs for update --local-status or other early-return
+    // account/help commands. It is independent of the requested operation.
+    sifttext_file_graph::scratch::cleanup();
     let runtime = local::runtime()?;
     if args.first().is_some_and(|arg| arg == "sync") {
         let output = sync::run(&runtime, &args)?;

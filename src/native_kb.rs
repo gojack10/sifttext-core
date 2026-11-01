@@ -9,7 +9,7 @@ pub fn init(policy: &Policy, home: &Path) -> Result<Value> {
     if fs::symlink_metadata(home).is_ok() {
         return local::init(policy, home, None);
     }
-    let seed = tempfile::tempdir()?;
+    let seed = crate::scratch::Directory::new()?;
     materialize(seed.path())?;
     local::init(policy, home, Some(seed.path()))
 }

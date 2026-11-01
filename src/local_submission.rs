@@ -76,6 +76,39 @@ fn save_root(repo: &Path) -> Result<PathBuf> {
     Ok(root)
 }
 
+/// Expire only an inactive, unsubmitted draft in the private temp namespace.
+/// Keep its branch and request journals: scratch removal is not history GC.
+pub(crate) fn expire_draft(draft: &Path, now: std::time::SystemTime) -> Result<()> {
+    require(draft.parent() == Some(crate::scratch::drafts()?.as_path()), "unsafe expired draft path")?;
+    crate::real_dir(draft)?;
+    let lifecycle = lifecycle_lock(draft, false)?;
+    let common = PathBuf::from(reader_git(draft,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"])?);
+    let root = save_root(&common)?;
+    let key = draft_key(draft)?;
+    let lease = lock(&root.join(format!("{key}.lock")), false)?;
+    // Even a refused prepared request needs its original files for native retry.
+    if root.join(format!("{key}.json")).try_exists()? { return Ok(()); }
+    let name = draft.file_name().and_then(|s| s.to_str())
+        .and_then(|s| s.strip_prefix("sifttext-worktree-")).ok_or("unknown draft name")?;
+    require(crate::uuid(name)
+        && reader_git(draft, &["symbolic-ref", "--quiet", "HEAD"])? == format!("refs/heads/sifttext/{name}"),
+        "expired draft branch changed")?;
+    let admin = PathBuf::from(reader_git(draft, &["rev-parse", "--absolute-git-dir"])?);
+    let initializing = crate::read_regular(&admin.join("locked")).is_ok_and(|bytes| bytes == b"initializing\n");
+    if (admin.join("locked").try_exists()? && !initializing) || admin.join("index.lock").try_exists()?
+        || !crate::scratch::inactive(&admin, now)? || !crate::scratch::inactive(draft, now)?
+    {
+        return Ok(());
+    }
+    let _custody = checked_publication::Custody::new(&[&lifecycle, &lease])?;
+    let mut args = vec!["worktree", "remove", "--force"];
+    if initializing { args.push("--force"); }
+    args.push(draft.to_str().ok_or("non-UTF-8 draft")?);
+    reader_git(&common, &args)?;
+    Ok(())
+}
+
 pub(crate) struct RetainedSubmission {
     pub request: checked_publication::Request,
     pub prepared_delta: Option<(String, String)>,

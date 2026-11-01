@@ -462,7 +462,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
         .transpose()?;
     // A new independent repository cannot inherit an ancestor repo's local
     // identity. Read only the configured author identity before touching the home.
-    let identity = tempfile::tempdir()?;
+    let identity = crate::scratch::Directory::new()?;
     let identity_path = fs::canonicalize(identity.path())?;
     let author_name = git_config_value(&identity_path, "user.name")?;
     let author_email = git_config_value(&identity_path, "user.email")?;
@@ -876,10 +876,7 @@ fn worktree_inner(
     submission::mark_git_lifecycle(&mut lifecycle)?;
     let key = id()?;
     let branch = format!("sifttext/{key}");
-    let path = home
-        .parent()
-        .ok_or("missing parent")?
-        .join(format!("sifttext-worktree-{key}"));
+    let path = crate::scratch::drafts()?.join(format!("sifttext-worktree-{key}"));
     let base = reader_git(&home, &["rev-parse", "refs/heads/main"])?;
     // A worktree starts from this immutable accepted commit, not the reader's
     // current files. Dirty or lagging reader files need neither inspection nor edits.
@@ -981,7 +978,7 @@ pub fn advance(policy: &Policy, home: &Path) -> Result<Value> {
 #[path = "local_submission.rs"]
 mod submission;
 pub use submission::{submit, submit_received};
-pub(crate) use submission::retained_submission;
+pub(crate) use submission::{expire_draft, retained_submission};
 
 fn reader_repository(home: &Path) -> Result<()> {
     use std::path::Component;

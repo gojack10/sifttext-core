@@ -188,10 +188,12 @@ struct TreeEntry {
 pub(crate) struct TreeLedger {
     pub(crate) connection: Connection,
     _file: tempfile::NamedTempFile,
+    _operation: crate::scratch::Directory,
 }
 impl TreeLedger {
     fn new() -> Result<Self> {
-        let file = tempfile::NamedTempFile::new()?;
+        let operation = crate::scratch::Directory::new()?;
+        let file = tempfile::NamedTempFile::new_in(operation.path())?;
         let connection = Connection::open(file.path())?;
         connection.execute_batch("PRAGMA cache_size=-1024; PRAGMA mmap_size=0;
             PRAGMA temp_store=FILE; PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;
@@ -201,7 +203,7 @@ impl TreeLedger {
                 mode TEXT NOT NULL, oid TEXT NOT NULL, len INTEGER NOT NULL
             ) WITHOUT ROWID;
             CREATE INDEX entry_members ON entries(parent,name);")?;
-        Ok(Self { connection, _file: file })
+        Ok(Self { connection, _file: file, _operation: operation })
     }
     fn has(&self, path: &str, kind: u8) -> Result<bool> {
         Ok(self.connection.prepare_cached(
