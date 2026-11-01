@@ -128,6 +128,22 @@ Earlier uploaded versions can remain in hosted Git history or copies already rea
 
 Configure an independent backup separately if the user requests one.
 
+## Review findings and transport
+
+Sync replicates accepted history between your own devices and authenticated
+hosted workspace. Epistemic findings are retained per node and checked text;
+they no longer refuse this transport. Integrity, topology, account binding and
+consent checks still apply. Ordinary authored submissions remain checked.
+
+`instructions` identifies retained findings by node, saved request ID and text
+hash when available. Use `sifttext check-result ID` to recover the actual result
+and repair it through SiftText Commit. A later unrelated save does not clear a
+node's finding. Do not share a flagged node with another person until resolved.
+
+The instructions transport line describes retained state, not a live freshness
+check. An old refused cycle remains stopped until a successful cycle replaces
+that observation; a finding is not a reason to report it as up to date.
+
 ## Run or stop sync
 
 Native scheduling runs `sync tick` every 15 seconds in the user's session.

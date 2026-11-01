@@ -11,6 +11,13 @@ its relationship link. It appends at the maximum sibling position plus 1024.
 To change display order, edit that child's position; gaps allow ordinary inserts.
 Legacy parents still use their original list until explicitly converted.
 
+The bundled knowledge seed and the first root of a new empty home use positions.
+Official instruction updates remove the old bundled parent lists rather than
+reintroducing them into a converted home. Updates still merge through a private
+draft: preserve local instruction edits, positions and independent knowledge
+when reconciling a conflict. Updating bundled instructions is not authority to
+convert unrelated legacy trees or downgrade another device.
+
 ## Authorized conversion
 
 Upgrade all participating local, hosted and guest Core readers/writers first.
