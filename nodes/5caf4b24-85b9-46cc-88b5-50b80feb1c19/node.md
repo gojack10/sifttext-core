@@ -15,6 +15,10 @@ Complete the original question with its result while preserving what was known a
 
 Give an independently meaningful development its own node beneath the work it extends.
 
+Size the decomposition to the work. Several commands or measurements can develop one contribution; distinct contributions need separately retrievable owners. A script run or individual read is not automatically a node.
+
+Update the existing unit when new observations refine its bounded contribution. Split a development when it can be meaningfully retrieved, evaluated or continued separately.
+
 Keep routine bookkeeping within its existing owner.
 
 ## Explain the development
@@ -24,7 +28,9 @@ Keep parallel investigations as siblings when neither develops the other.
 
 Add a deeper owner only for a real subproblem or synthesis.
 
-Use references for shared evidence without duplicating whole answers.
+Name child or parent contributions that supply observations. Use see_also with a contribution reason for relevant non-child nodes.
+
+Keep enough context in each node to understand its contribution and grounds; link the supporting detail. Use references for shared evidence without duplicating whole answers.
 
 Retain useful findings beneath a rejected approach when that is their origin.
 

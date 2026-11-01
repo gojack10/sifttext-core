@@ -11,6 +11,8 @@ Use during Commit when a session materially supports the knowledge being recorde
 
 Record its actual source location and relevant message range when the harness exposes them.
 
+Give each materially supported node a recognizable JSONL entrance under artifacts/. Name one evidence owner so related nodes link to that owner’s artifact path rather than retain duplicate copies.
+
 Use only the source and sharing permissions actually supplied.
 
 State consequential provenance gaps when session access is unavailable.
@@ -30,4 +32,8 @@ Review tracked associations in the private knowledge draft and publish them thro
 
 Verify the link, retained copy or remote backup separately according to what was requested.
 
-Continue ordinary Commit when retention is disabled.
+When retention is enabled and authorized, retain one real copy under its evidence owner and link the other nodes to it. Preserve the file an active harness is writing.
+
+When retention is disabled, use an association to the available durable source and link affected nodes through it. A symlink is not a retained copy or remote backup.
+
+A narrower no-read or no-snapshot grant still controls. Continue ordinary Commit when retention is disabled.

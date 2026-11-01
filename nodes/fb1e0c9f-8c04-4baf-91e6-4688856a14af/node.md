@@ -7,6 +7,28 @@ see_also: [{"target":"dcdd97b3-9557-41e3-b7cb-1f6f9744267d","reason":"Required r
 scope: "Carry an authorized local edit through proposal, private Git work, validation, review, publication and recovery without overwriting another owner."
 warnings: "Cooperative isolation, not an OS sandbox. One publisher owns accepted knowledge at a time; no force, reset, automatic push, or overwriting another worktree."
 ---
+## Supported workflow
+
+Read accepted main; allocate a private worktree from accepted main; edit and commit only in that worktree; submit the exact candidate through Core.
+
+Do not edit the normal home directly or hide edits with Git index flags. Preserving such out-of-workflow edits is not part of the supported publication contract. Preservation instructions below protect active private work and submitted-request recovery; they do not require indefinite retention of disposable metadata or expired abandoned drafts. This does not authorize deleting accepted history, bypassing a current Core refusal, or overwriting another active workspace.
+
+Submission owns its required reader completion. Do not add a ritual `advance`, index refresh or duplicate preflight before ordinary worktree allocation or submission. Use explicit reader recovery only when an actual receipt or reading need calls for it.
+
+## Temporary drafts and expiry
+
+Core allocates new private drafts and internal publication views beneath the platform's temporary directory.
+
+Before ordinary knowledge and sync commands, Core attempts cleanup at most once per hour. Temporary workspaces become eligible after 48 hours without file or directory modifications. Reads alone do not renew that period.
+
+Expiry can delete uncommitted files in an inactive, unsubmitted draft. Keep task artifacts in the durable `artifact_home`, not solely in the draft.
+
+Keep worktrees short-lived. Read SiftText, do the work, save through SiftText Commit, and start the next chat from SiftText.
+
+Active operations and drafts with submitted-save journals are retained. Expiry does not delete accepted Git history or draft branches.
+
+Earlier workspaces outside this temporary namespace are not swept by age. Cleanup failures retain the affected workspace and do not prevent the requested command.
+
 ## Authority and private draft
 
 Follow SiftText Commit and its required reads before knowledge edits.
@@ -23,7 +45,7 @@ The human may stop or reshape the undertaking without waiving unrelated permissi
 
 Inspect status, worktrees and ownership.
 
-preserve unknown or dirty work.
+preserve active private drafts and in-flight submitted work.
 
 Reuse an owned draft for the same undertaking.
 
@@ -174,9 +196,7 @@ it does not resubmit knowledge.
 
 Inspect ownership first.
 
-Only verified invocation-owned clean views may be retired.
-
-unknown or edited views remain.
+Retire completed invocation-owned disposable views through their normal cleanup path. Active or unresolved submitted work is not disposable scratch. Apply Temporary drafts and expiry only within its documented scope. Outside that policy, unknown or edited views remain.
 
 For stale retrieval use `index STORE`, which refreshes the current parseable draft without certifying publication.
 
