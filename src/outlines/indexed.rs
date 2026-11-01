@@ -41,6 +41,34 @@ CREATE TEMP TABLE IF NOT EXISTS outline_affected (id TEXT PRIMARY KEY);
 ";
 const COLUMNS: &str = "path,node_id,full,sidecar,input_fingerprint,processing,bytes_hash,tokens,dev,ino,size,mtime,mtime_ns,ctime,ctime_ns";
 
+/// Selected text views share the working-view SQLite cache and transaction.
+/// Keep only the latest bytes/count per selection, not a history of renders.
+pub(crate) fn selected_view(
+    connection: &Connection,
+    selection: &str,
+    input: &str,
+    processing: &str,
+    render: impl FnOnce() -> Result<String>,
+) -> Result<(String, usize)> {
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS outline_selected_views (
+        selection TEXT PRIMARY KEY, input TEXT NOT NULL, processing TEXT NOT NULL,
+        text TEXT NOT NULL, tokens INTEGER NOT NULL)")?;
+    if let Some(result) = connection.query_row(
+        "SELECT text,tokens FROM outline_selected_views WHERE selection=?1 AND input=?2 AND processing=?3",
+        params![selection, input, processing],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+    ).optional()? {
+        return Ok((result.0, usize::try_from(result.1)?));
+    }
+    let text = render()?;
+    let tokens = crate::token_count::ordinary(&text);
+    connection.execute(
+        "INSERT OR REPLACE INTO outline_selected_views VALUES (?1,?2,?3,?4,?5)",
+        params![selection, input, processing, text, i64::try_from(tokens)?],
+    )?;
+    Ok((text, tokens))
+}
+
 fn processing() -> &'static str {
     static ID: OnceLock<String> = OnceLock::new();
     ID.get_or_init(processing_identity)

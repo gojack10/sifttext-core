@@ -43,6 +43,15 @@ impl std::fmt::Display for AcceptedSubmissionIncomplete {
 
 impl std::error::Error for AcceptedSubmissionIncomplete {}
 
+#[derive(Debug)]
+struct ReportedRenderFailure;
+impl std::fmt::Display for ReportedRenderFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("tree rendering rejected")
+    }
+}
+impl std::error::Error for ReportedRenderFailure {}
+
 const HELP: &str = include_str!("../../docs/cli-help.txt");
 
 fn run(hosted_summary: &mut Option<String>) -> Result<()> {
@@ -379,6 +388,13 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 sifttext_file_graph::lean_render::render(&output).map_err(std::io::Error::other)?
             );
             return Ok(());
+        }
+        [cmd, path, selection] if cmd == "tree-render" => {
+            let input = std::fs::read(selection)?;
+            let request = serde_json::from_slice(&input)?;
+            let output = sifttext_file_graph::tree_render::run(&policy, Path::new(path), &request)?;
+            println!("{}", render_cli_receipt(&output)?);
+            return if output["status"] == "render-success" { Ok(()) } else { Err(ReportedRenderFailure.into()) };
         }
         [cmd, path, id, rest @ ..] if cmd == "outline" => {
             let (full, force) = match rest {
@@ -928,8 +944,15 @@ fn main() {
     if let Err(error) = result {
         if let Some(suppressed) = error.downcast_ref::<LargeReturnSuppressed>() {
             let _ = writeln!(std::io::stdout().lock(), "{suppressed}");
-        } else if error.is::<sifttext_file_graph::hosted_checks::ReportedCheckFailure>() {
-            // The command already flushed its diagnostic followed by credits.
+        } else if error.is::<sifttext_file_graph::hosted_checks::ReportedCheckFailure>() || error.is::<ReportedRenderFailure>() {
+            // The command already printed its receipt.
+        } else if std::env::args().nth(1).as_deref() == Some("tree-render") {
+            let receipt = json!({"status":"rejected", "errors":[{
+                "code":"render_error", "path":"request", "message":error.to_string()
+            }]});
+            if let Ok(text) = render_cli_receipt(&receipt) {
+                let _ = writeln!(std::io::stdout().lock(), "{text}");
+            }
         } else {
             let rendered = if error.is::<AcceptedSubmissionIncomplete>() {
                 format!("{error}\n")

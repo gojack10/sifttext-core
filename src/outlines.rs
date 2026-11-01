@@ -1,7 +1,7 @@
 //! Disposable outline publication. Indexed refresh locking/transactions belong to the caller.
 mod indexed;
 use crate::{Result, outline_artifacts, require, sha256};
-pub(crate) use indexed::{indexed_current, indexed_outline, refresh_indexed_from};
+pub(crate) use indexed::{indexed_current, indexed_outline, refresh_indexed_from, selected_view};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,

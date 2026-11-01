@@ -6,19 +6,8 @@ use std::collections::BTreeMap;
 
 pub(super) const IGNORE: &str = "/.sifttext/\n/nodes/*/node.meta.json\n/nodes/*/outline*.lean\n/nodes/*/outline*.lean.meta.json\n";
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Rule {
-    node: String,
-    action: Action,
-    recurse: bool,
-}
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum Action {
-    Include,
-    Exclude,
-}
+use sifttext_file_graph::tree_selection::{Action, includes};
+pub(super) use sifttext_file_graph::tree_selection::Rule;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Settings {
@@ -328,18 +317,8 @@ impl Snapshot {
             .nodes()?
             .into_iter()
             .filter(|id| {
-                if let Some(rule) = policy.rules.iter().find(|r| r.node == *id) {
-                    return rule.action == Action::Include;
-                }
-                let mut cursor = id;
-                while let Some(parent) = parents.get(cursor) {
-                    if let Some(rule) = policy.rules.iter().find(|r| r.node == *parent && r.recurse)
-                    {
-                        return rule.action == Action::Include;
-                    }
-                    cursor = parent;
-                }
-                policy.default == Action::Include
+                let ancestors = std::iter::successors(parents.get(id), |parent| parents.get(*parent));
+                includes(&policy.rules, policy.default, id, ancestors.map(String::as_str))
             })
             .collect())
     }

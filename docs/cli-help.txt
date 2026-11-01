@@ -6,6 +6,7 @@ Setup and reading
   sifttext read STORE UUID [-y]                  Read node.md, preserving its bytes
   sifttext index STORE [--repair]                Refresh derived retrieval files
   sifttext outline STORE UUID [full] [-y]        Read a shallow or full outline
+  sifttext tree-render STORE SELECTION.json      Write selected trees/proposals to /tmp
   sifttext search STORE QUERY [UNDER_UUID] [-y]  Search with ancestor context
   sifttext sql STORE 'SELECT ...' [-y]           Query the same-version read-only index
 
@@ -87,6 +88,56 @@ Output
   Structured receipts: LEAN
   Settings and transaction files: JSON
   -y: allow returns above 15000 tokens where listed
+
+Static tree rendering
+  Selection: {"trees":[{"root":"UUID","depth":1,"ascend":"compact","centres":[],"branches":[],"default":"include","rules":[]}]}
+  Each rule: {"node":"UUID","action":"include|exclude","recurse":true}
+  Direct rules win over nearest recursive ancestor rules, then default.
+  Depth bounds the selected subtree (default 1). Branch overrides:
+    "branches":[{"node":"UUID","depth":2}]
+  Each override selects that branch and replaces its inherited downward depth.
+  Depth 0 shows the node only; 1 adds children; 2 adds grandchildren. A deeper
+  override can expand or cap its own branch. Recursive exclusions prune traversal.
+  Explicit centres/include rules add one child each, without recursion, unless
+  that node has a branch depth. Siblings are not added automatically.
+  Default ascend:"compact" shows the true root, ... for omitted middle ancestry,
+  and each selected node's immediate parent. No ellipsis when parent is root.
+  Use ascend:"full" to name every ancestor. Ascent never expands sibling branches.
+  ... also marks wholly omitted branches; its nesting distinguishes a hidden path.
+  Without a proposal: names and status only, including when run on main.
+  Each static selection gets a fresh /tmp file. LEAN returns absolute paths and exact
+  o200k_base token counts. There is no output-location option.
+
+Proposal tree rendering (private linked worktrees only)
+  Add "proposal" to the selection JSON:
+    {"base":"FULL_ALLOCATION_COMMIT","artifacts":[],"deletions":[],"work_record":[]}
+  Git supplies authored node changes, including staged/unstaged and new nodes.
+  Base is the exact worktree-allocation commit, never inferred from today's main.
+  Changed nodes within selected subtrees are shown even if context rules exclude
+  them. Parentage/status changes come from Git/index data, not invented operations.
+  Moves show both ends; deletions preserve status and summarize hidden removals.
+  Summary/scope/body edits appear in node proposals, not as outline detail lines.
+  A proposal renders one forest/file, deduplicating overlapping tree selections,
+  timeline and node proposals. Set ascend:"full" on selections to expand ancestry.
+
+  Artifact entry (symlinks only; does not create/remove/follow filesystem links):
+    {"owner":"UUID","operation":"add|remove","destination":"artifacts/name",
+     "target":"/absolute/target","reason":"Contribution or removal reason."}
+  artifacts is required, even when empty. Retained links are not entries.
+  Under artifacts/, link locations are relative to that directory. Internal
+  targets render as @1/artifacts/path; @1 labels the actual target node in the
+  same forest, with its tree below when not already present. Target centres get
+  the same parent/root context and bounded child preview, without sibling loading.
+  No separate target legend. External targets retain their exact absolute paths.
+  To replace a target, remove the old link and add the new one at the same path.
+  Removal means the node's symlink, not its target. Artifact actions cannot be
+  derived from Git because the artifact directories are ignored.
+  A deleted subtree root needs {"node":"UUID","reason":"Why delete it?"}
+  in deletions. Moved-out survivors are excluded from deletion counts.
+  A work_record stage is {"title":"Unnumbered title","body":"Stage prose."}.
+  The renderer numbers stages as ### 1., ### 2., and so on.
+  Mechanical errors return LEAN reasons without creating a rendered file.
+  This is a review view only: no tree edits, publication, or checker/model calls.
 
 Private drafts
   Edit node.md with ordinary file tools in your private worktree.
