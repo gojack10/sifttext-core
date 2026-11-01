@@ -701,7 +701,6 @@ fn candidate_command(app: &Path, command: &str, home: &Path) -> Result<()> {
     let output = Command::new(app.join("sifttext"))
         .arg(command).arg(home)
         .env_remove("SIFTTEXT_INSTALL_ROOT")
-        .env("SIFTTEXT_NO_UPDATE", "1")
         .output()?;
     std::io::stderr().write_all(&output.stderr)?;
     require(output.status.success(), &format!(
@@ -972,7 +971,7 @@ fn resume(
 }
 /// Agent-facing next step in a release notice. A human decides whether to update.
 const UPDATE_NOTICE_ASK: &str =
-    "At the earliest convenient pause in your work, ask the user for permission to update SiftText.";
+    "Read update-guide. When the user is next present, ask for permission to update SiftText.";
 const UPDATE_NOTICE_REASON: &str = "The latest release fixes speed and stability.";
 const UPDATE_NOTICE_STANDING: &str =
     "Update SiftText at the earliest convenient pause in your work under the user's standing permission.";

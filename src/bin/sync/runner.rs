@@ -144,7 +144,7 @@ pub(super) fn install(home: &Path) -> Result<()> {
     }
     if let Some(timer) = &timer {
         let definition = format!(
-            "[Unit]\nDescription=SiftText knowledge sync\n[Service]\nType=oneshot\nExecStart={} sync tick {}\nEnvironment=SIFTTEXT_NO_UPDATE=1\nStandardOutput=null\nStandardError=null\n",
+            "[Unit]\nDescription=SiftText knowledge sync\n[Service]\nType=oneshot\nExecStart={} sync tick {}\nStandardOutput=null\nStandardError=null\n",
             unit(launcher_text)?,
             unit(home_text)?
         );
@@ -172,7 +172,7 @@ pub(super) fn install(home: &Path) -> Result<()> {
         }
     } else {
         let definition = format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{}</string><string>sync</string><string>tick</string><string>{}</string></array><key>StartInterval</key><integer>15</integer><key>EnvironmentVariables</key><dict><key>SIFTTEXT_NO_UPDATE</key><string>1</string></dict><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{}</string><string>sync</string><string>tick</string><string>{}</string></array><key>StartInterval</key><integer>15</integer><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n",
             xml(launcher_text),
             xml(home_text)
         );
