@@ -132,7 +132,6 @@ impl Snapshot {
     fn read(repo: &Path, revision: &str) -> Result<Self> {
         oid(revision)?;
         let inventory = git(repo, &["ls-tree", "-r", revision])?;
-        let mut files = BTreeMap::new();
         let mut objects = Vec::new();
         for line in inventory.lines() {
             let (meta, path) = line.split_once('\t').ok_or("invalid knowledge tree")?;
@@ -160,39 +159,72 @@ impl Snapshot {
             oid(parts[2])?;
             objects.push((path.to_owned(), parts[0].to_owned(), parts[2].to_owned()));
         }
-        for group in objects.chunks(32) {
-            let input = group
-                .iter()
-                .map(|(_, _, sha)| format!("{sha}\n"))
-                .collect::<String>();
-            let raw = git_input(repo, &["cat-file", "--batch"], input.as_bytes())?;
-            let mut tail = raw.as_slice();
-            for (path, mode, sha) in group {
-                let end = tail
-                    .iter()
-                    .position(|b| *b == b'\n')
-                    .ok_or("truncated Git object")?;
-                let header = std::str::from_utf8(&tail[..end])?;
-                let h: Vec<_> = header.split_whitespace().collect();
-                if h.len() != 3 || h[0] != sha || h[1] != "blob" {
-                    return Err("invalid Git object response".into());
+        use std::io::{BufRead, BufReader};
+        use std::os::unix::process::CommandExt;
+        let mut child = git_command(repo, &["cat-file", "--batch"])
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let mut input = child.stdin.take().ok_or("missing Git stdin")?;
+        let mut output = BufReader::new(child.stdout.take().ok_or("missing Git stdout")?);
+        let (tx, rx) = std::sync::mpsc::channel();
+        // Drain each small request group before writing another, so neither pipe
+        // can fill while waiting for the other. Keep one helper for the snapshot.
+        let reader = thread::spawn(move || {
+            let result = (|| -> Result<BTreeMap<String, File>> {
+                let mut files = BTreeMap::new();
+                for group in objects.chunks(32) {
+                    let request = group.iter().map(|(_, _, sha)| format!("{sha}\n"))
+                        .collect::<String>();
+                    input.write_all(request.as_bytes())?;
+                    input.flush()?;
+                    for (path, mode, sha) in group {
+                        let mut header = Vec::new();
+                        output.by_ref().take(256).read_until(b'\n', &mut header)?;
+                        if header.last() != Some(&b'\n') || header.len() >= 256 {
+                            return Err("oversized/truncated Git object header".into());
+                        }
+                        let header = std::str::from_utf8(&header)?;
+                        let h: Vec<_> = header.split_whitespace().collect();
+                        if h.len() != 3 || h[0] != sha || h[1] != "blob" {
+                            return Err("invalid Git object response".into());
+                        }
+                        let len: usize = h[2].parse()?;
+                        if len > 1024 * 1024 {
+                            return Err("oversized knowledge blob".into());
+                        }
+                        let mut bytes = vec![0; len];
+                        output.read_exact(&mut bytes)?;
+                        let mut end = [0];
+                        output.read_exact(&mut end)?;
+                        if end != [b'\n'] {
+                            return Err("malformed Git object framing".into());
+                        }
+                        files.insert(path.clone(), File { mode: mode.clone(), bytes });
+                    }
                 }
-                let len: usize = h[2].parse()?;
-                if len > 1024 * 1024 || tail.len() < end + len + 2 {
-                    return Err("oversized/truncated knowledge blob".into());
+                drop(input);
+                let mut extra = [0];
+                if output.read(&mut extra)? != 0 {
+                    return Err("unexpected Git object data".into());
                 }
-                files.insert(
-                    path.clone(),
-                    File {
-                        mode: mode.clone(),
-                        bytes: tail[end + 1..end + 1 + len].to_vec(),
-                    },
-                );
-                tail = &tail[end + len + 2..];
-            }
-            if !tail.is_empty() {
-                return Err("unexpected Git object data".into());
-            }
+                Ok(files)
+            })().map_err(|error| error.to_string());
+            let _ = tx.send(result);
+        });
+        let result = rx.recv_timeout(Duration::from_secs(30))
+            .map_err(|_| "Git snapshot reader timeout or interruption".to_owned())
+            .and_then(|result| result);
+        if result.is_err() {
+            unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL); }
+        }
+        let status = child.wait();
+        let joined = reader.join();
+        let files = result?;
+        if joined.is_err() || !status?.success() {
+            return Err("Git snapshot reader failed; histories retained".into());
         }
         let snapshot = Self { files };
         snapshot.parents()?;
