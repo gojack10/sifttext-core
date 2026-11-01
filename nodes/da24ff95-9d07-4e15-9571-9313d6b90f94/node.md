@@ -5,6 +5,7 @@ micro_summary: "Reviews a proposed knowledge change against its sources."
 status: "resolved"
 see_also: []
 scope: "Review the complete knowledge change before saving it."
+position: 2048
 ---
 Read [[Tree Development Examples|f3f63837-0754-4589-9d6b-58a2dd813741]] when reviewing structural changes.
 

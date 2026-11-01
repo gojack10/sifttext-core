@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Top-level concept. What a tree is, when to create one, what makes a good root node."
 warnings: ""
+position: 1024
 ---
 A tree groups knowledge about one subject into a hierarchy of nodes.
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"ab82fdf1-6a71-4e09-bffe-ed6446eadc9a","reason":"Current ownership review distinguishes a rejected approach from the evidential standing of findings it produced."}]
 scope: "Preserve institutional memory for dead ends using supported local nodes, not an unsupported ruled_out field."
 warnings: "Do not author ruled_out metadata; it is rejected by native checks."
+position: 6144
 ---
 Preserve a rejected approach with the conditions and evidence that explain why it was rejected.
 

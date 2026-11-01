@@ -5,6 +5,7 @@ micro_summary: "Uses bounded local views and relevant descent without compulsory
 status: "resolved"
 see_also: []
 scope: "Select a bounded local view and expand relevant branches while preserving access to current work, original grounds and rejected alternatives."
+position: 3072
 ---
 Read the owner's purpose and current disposition before selecting a branch from its immediate children.
 

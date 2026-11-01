@@ -5,6 +5,7 @@ micro_summary: "Reviews source coverage, attribution, structure and the exact pr
 status: "resolved"
 see_also: []
 scope: "Reviews source coverage, attribution, structure and the exact proposed stored text."
+position: 1024
 ---
 ## Compare sources and candidate
 Receive the complete proposed change from [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]] within the permitted source range.

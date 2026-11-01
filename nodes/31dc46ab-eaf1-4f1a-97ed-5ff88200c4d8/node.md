@@ -5,6 +5,7 @@ micro_summary: "Develops consequential missing understanding through a question,
 status: "resolved"
 see_also: [{"target":"c72d552d-3499-445b-a8d5-05d0ff7824f2","reason":"Required procedure when authorized persistence is needed; does not grant writes."}]
 scope: "Provide an experimental agent method for developing consequential missing understanding during work and preserving it faithfully within authorization."
+position: 6144
 ---
 ## Develop missing understanding
 During authorized work, notice whether a consequential choice lacks enough understanding.

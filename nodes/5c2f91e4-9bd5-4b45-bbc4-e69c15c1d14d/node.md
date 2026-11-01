@@ -5,6 +5,7 @@ micro_summary: "Recovers relevant knowledge and makes the current interpretation
 status: "resolved"
 see_also: []
 scope: "Recover relevant current understanding and continue the user's authorized task with enough context to answer or act."
+position: 4096
 ---
 ## Recover relevant understanding
 Start from the user's actual question and the context already available.
@@ -12,6 +13,8 @@ Start from the user's actual question and the context already available.
 Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] to locate relevant nodes, then read their bodies and decisive evidence.
 
 Recover the conditions and corrections that affect an earlier conclusion.
+
+A node's latest crystallization is its current understanding. Earlier sections are history unless a correction says otherwise.
 
 Attribute human statements to their sources.
 

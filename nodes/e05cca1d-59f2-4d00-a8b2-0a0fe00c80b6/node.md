@@ -5,6 +5,7 @@ micro_summary: "Establishes the current agent’s actual access, setup guidance 
 status: "resolved"
 see_also: []
 scope: "What an external agent needs to work with local Core, and how browser-only clients differ."
+position: 4096
 ---
 Give the current agent access to the selected knowledge home within the user's permissions.
 

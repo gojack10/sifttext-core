@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"6da0b35a-955a-4ad2-bdce-2994ba26119c","reason":"Use the diagnosed-problem path to matching source and maintenance guidance."}]
 scope: "Operate local Core within the user's permissions."
 warnings: ""
+position: 5120
 ---
 ## Install and verify
 
@@ -47,7 +48,7 @@ A new home with the complete instruction pipeline receives an AGENTS.md pointer.
 "$BIN" instructions "$home"
 ```
 
-Read the returned entry file and follow its applicable methods.
+Read `onboarding-entry` and follow `agent-instructions` before other work. Use [[Onboarding Output and Help|a8be9278-ca1b-4bf4-9fa7-027105bb6c36]] to interpret the retained transport, finding and update fields. The grouped help index is appended automatically; `sifttext help` lists each command form and guide.
 
 During authorized setup, follow [[Maintain Memory Continuity|221ca2fc-1caf-4c40-92e5-d9f55501ba1e]].
 

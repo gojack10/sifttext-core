@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The foundational framework for why tree thinking works. Human brains evolved for breadth and association. Language models are powerful but one-dimensional. The tree is the translation layer that lets both sides contribute what they are best at."
 warnings: ""
+position: 1024
 ---
 A person brings an understanding of the situation and associations worth investigating.
 

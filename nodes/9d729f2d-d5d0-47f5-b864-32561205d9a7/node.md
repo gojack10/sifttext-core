@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The 90/10 shift. Language models commoditized implementation. The bottleneck is now thinking clearly about the problem: architecture, decisions, direction, taste. SiftText optimizes for the scarce resource."
 warnings: ""
+position: 3072
 ---
 Working with an agent still requires choosing an outcome worth pursuing and judging whether its work serves that outcome.
 

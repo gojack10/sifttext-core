@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6","reason":"Owns local agent access, ordered entry reads, permissions and result return."}]
 scope: "Locate local agent onboarding and distinguish file/command access from remote connectors."
 warnings: ""
+position: 3072
 ---
 Follow [[Using an External Agent|e05cca1d-59f2-4d00-a8b2-0a0fe00c80b6]] to establish the current agent's access and setup.
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Philosophy and best practices for working in trees. Why decomposition works, how humans and LLMs collaborate through structure, when to create children vs links vs new trees. Rewritten from core philosophy for end-user consumption."
 warnings: ""
+position: 5120
 ---
 A tree makes a complex question easier to examine by giving its meaningful parts separate nodes.
 

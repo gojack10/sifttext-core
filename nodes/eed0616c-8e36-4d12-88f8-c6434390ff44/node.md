@@ -5,6 +5,7 @@ micro_summary: "Completes an explicitly requested task with minimum viable effor
 status: "resolved"
 see_also: []
 scope: "Apply the approved content, language, and styling defaults to generated interfaces, documents, spreadsheets, slides, and similar artifacts. Explicit task requirements and supplied style instructions take precedence."
+position: 3072
 ---
 Use only when explicitly invoked.
 

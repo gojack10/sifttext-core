@@ -5,6 +5,7 @@ micro_summary: "Chooses precise names while preserving required identities and q
 status: "resolved"
 see_also: []
 scope: "Chooses precise names while preserving required identities and quoted source wording."
+position: 1024
 ---
 Choose precise professional names that describe the actual responsibility or operation.
 

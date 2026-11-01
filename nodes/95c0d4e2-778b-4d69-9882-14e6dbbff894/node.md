@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Connect ChatGPT to synced knowledge or discuss permitted excerpts when a connector is unavailable."
 warnings: "Sharing a local excerpt with a hosted model requires permission."
+position: 5120
 ---
 Check the current ChatGPT environment's available integrations before assuming it can access local knowledge.
 

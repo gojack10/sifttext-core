@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Status value. The starting state. This node exists but has not been worked on yet."
 warnings: ""
+position: 1024
 ---
 Use not_examined for identified work that has not yet been examined or attempted.
 

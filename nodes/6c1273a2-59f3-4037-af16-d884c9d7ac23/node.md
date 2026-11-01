@@ -5,6 +5,7 @@ micro_summary: "Authors complete instruction routes from meaningful responsibili
 status: "resolved"
 see_also: []
 scope: "Authors complete instruction routes from meaningful responsibilities and explicit reading dependencies."
+position: 1024
 ---
 Recover the actual instruction-authoring request and its approval boundary.
 

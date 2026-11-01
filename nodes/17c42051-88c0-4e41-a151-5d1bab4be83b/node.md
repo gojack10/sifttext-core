@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The status field and its six native lifecycle values, including required reasons and the distinction between a status and evidence."
 warnings: ""
+position: 3072
 ---
 Status records a node's lifecycle disposition.
 

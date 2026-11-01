@@ -5,6 +5,7 @@ micro_summary: "Guides agents through recoverable SiftText problems while contin
 status: "resolved"
 see_also: []
 scope: "Investigate and repair SiftText within the user's existing permission."
+position: 9216
 ---
 ## Continue the task
 

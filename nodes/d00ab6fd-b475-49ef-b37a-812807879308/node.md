@@ -5,6 +5,7 @@ micro_summary: "Forms a reviewable change with the user and preserves the approv
 status: "resolved"
 see_also: []
 scope: "Prepare the knowledge change for the user's review."
+position: 1024
 ---
 Use [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]] to form a source-grounded candidate for the user's intended change.
 

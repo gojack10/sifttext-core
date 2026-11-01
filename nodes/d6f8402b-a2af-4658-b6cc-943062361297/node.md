@@ -5,6 +5,7 @@ micro_summary: "Reconciles the branches and consumers actually affected without 
 status: "resolved"
 see_also: []
 scope: "Restore coherent local meaning, current selection and material consumer instructions after the authorized delta is saved."
+position: 1024
 ---
 Read the saved changes and their materially affected consumers.
 

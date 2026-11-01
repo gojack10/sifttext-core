@@ -5,6 +5,7 @@ micro_summary: "Provides approved messages about saving knowledge."
 status: "resolved"
 see_also: []
 scope: "Choose wording that matches whether knowledge is being used or saved."
+position: 1024
 ---
 These synthetic examples retain the approved messages and their triggering situations.
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "The fundamental unit. What a node is, what its fields are. Children of this node explain each field in detail."
 warnings: ""
+position: 2048
 ---
 A node holds one meaningful piece of knowledge under a stable UUID.
 

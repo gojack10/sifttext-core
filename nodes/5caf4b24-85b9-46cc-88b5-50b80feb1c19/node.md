@@ -5,6 +5,7 @@ micro_summary: "Places meaningful knowledge developments beneath the work they e
 status: "resolved"
 see_also: []
 scope: "Choose stable semantic units and parentage that make the development of an undertaking understandable and selectively readable."
+position: 2048
 ---
 ## Choose an owner
 Read the source and nearby possible owners before deciding where new understanding belongs.

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Identify a real question and useful initial structure before authoring a local tree."
 warnings: ""
+position: 2048
 ---
 Start with a real question or outcome you care about.
 

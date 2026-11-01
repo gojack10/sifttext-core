@@ -5,6 +5,7 @@ micro_summary: "Saves reviewed knowledge changes within the user's permission."
 status: "resolved"
 see_also: []
 scope: "Carry an approved knowledge change through publication."
+position: 7168
 ---
 ## Permission and timing
 
@@ -37,6 +38,12 @@ For instruction changes, apply [[Canopy (Prompt Authoring Framework)|957aa569-75
 Use [[Associate External Artifact Directories|de7cea55-c93d-48db-a4f6-58368bf6c36f]] when a node materially uses an external directory.
 
 Use [[Session Evidence|3651b9b0-fc21-4c67-9d79-84ef3af963ce]] when a session materially supports the knowledge.
+
+Before showing the proposal, run `sifttext epistemic-check` on each proposed node, individually or in a packet. Repair findings and re-check until passing. Show only a passing proposal unless something genuinely significant needs the user's decision. Submit-time checking remains the backstop; a passing check does not replace approval.
+
+Follow [[Render a Tree Delta|5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f]] and render the proposal with `sifttext tree-render` so the displayed change is the actual tree delta.
+
+Present the rendered file as made. Do not paraphrase it, re-summarize it, or replace it with your own interpretation. Limit your accompanying words to the check result and the approval request.
 
 Show the change through [[Present the Reviewable Delta|4036d3c5-e596-4a9c-b432-1c4ccc3162b4]] and obtain the required approval.
 

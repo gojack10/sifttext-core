@@ -5,6 +5,7 @@ micro_summary: "Explains when the agent saves or reuses knowledge."
 status: "resolved"
 see_also: [{"target":"c72d552d-3499-445b-a8d5-05d0ff7824f2","reason":"Defines when the agent may save knowledge."}]
 scope: "Help the user understand when their knowledge is saved or reused."
+position: 1024
 ---
 Use when explaining how a contribution will be preserved or how saved knowledge informs current work.
 

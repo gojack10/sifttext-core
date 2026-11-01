@@ -5,6 +5,7 @@ micro_summary: "Drafts source-grounded knowledge changes with meaningful ownersh
 status: "resolved"
 see_also: []
 scope: "Drafts source-grounded knowledge changes with meaningful ownership and exact approval content."
+position: 1024
 ---
 ## Recover the source
 Receive the requested change through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] and follow its source limits.

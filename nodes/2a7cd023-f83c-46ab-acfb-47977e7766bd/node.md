@@ -6,5 +6,6 @@ status: "resolved"
 see_also: []
 scope: "Priority value. Important but not urgent. Normal course of work."
 warnings: ""
+position: 2048
 ---
 Medium priority identifies important work to address in the normal course of the project.

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Reference a discarded local approach and its evidence so future readers do not repeat it unknowingly."
 warnings: "Native metadata rejects ruled_out; use a discarded node and a reasoned see_also edge when a graph reference is needed."
+position: 3072
 ---
 Reference a rejected approach when its evidence helps explain the current choice.
 

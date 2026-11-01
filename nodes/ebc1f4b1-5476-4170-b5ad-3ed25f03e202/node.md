@@ -5,6 +5,7 @@ micro_summary: "Tests the proposed prompt's meaning and required-reading path, i
 status: "resolved"
 see_also: []
 scope: "Review a complete candidate instruction branch set against its source, actual execution route and authority before adoption."
+position: 3072
 ---
 Receive the complete candidate and its authoring contract.
 

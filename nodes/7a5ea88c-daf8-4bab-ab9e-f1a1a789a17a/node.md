@@ -5,6 +5,7 @@ micro_summary: "Shows how observations support an attributed conclusion."
 status: "resolved"
 see_also: []
 scope: "Write knowledge records whose reasoning a new reader can inspect."
+position: 1024
 ---
 Use these synthetic examples when following [[Write Grounded Stable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]].
 

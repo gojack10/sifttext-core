@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"f2d4825e-7e98-4775-b363-c50de7ee62ed","reason":"Describes how people and agents use a knowledge tree together."}]
 scope: "Introduce SiftText using a binder as the example."
 warnings: ""
+position: 9216
 ---
 Think of SiftText as a binder whose sections hold the understanding you want to keep.
 

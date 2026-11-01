@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Evaluate a separately configured client for bounded local Core work."
 warnings: ""
+position: 4096
 ---
 Use the current harness's own guidance to establish how it reads files and receives persistent instructions.
 

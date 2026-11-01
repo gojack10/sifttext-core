@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Continue local knowledge work after a first contribution without assuming a persistent built-in collaborator."
 warnings: ""
+position: 5120
 ---
 A later conversation can continue from the saved nodes and their evidence.
 

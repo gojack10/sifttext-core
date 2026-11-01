@@ -6,6 +6,7 @@ status: "resolved"
 see_also: [{"target":"fbaa3012-2235-49cb-88c0-67fdbc366c36","reason":"Explains the human's control over reading and saving memory."},{"target":"5f146883-03c8-416c-be6b-c52cbcb055f2","reason":"Introduces SiftText using the binder metaphor."}]
 scope: "Answer a user's question and direct them to further guidance when needed."
 warnings: ""
+position: 6144
 ---
 ## Can I delete a node?
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "You do not need to be organized to use SiftText. The language model's superpower is turning messy, chaotic human output into clean structure. Your job is to think. The model's job is to organize."
 warnings: ""
+position: 4096
 ---
 Begin with the material you have, even when your understanding is rough.
 

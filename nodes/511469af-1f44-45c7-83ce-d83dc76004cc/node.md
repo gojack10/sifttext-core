@@ -5,6 +5,7 @@ micro_summary: "Selects the reading needed to perform each part of a procedure."
 status: "resolved"
 see_also: []
 scope: "Define which instruction branches a task requires."
+position: 2048
 ---
 Apply [[Nest Meaningful Developments|5caf4b24-85b9-46cc-88b5-50b80feb1c19]] to the proposed instruction structure.
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Status value. Intentionally set aside for later. Not abandoned, not active."
 warnings: ""
+position: 4096
 ---
 Use deferred when deliberately postponing scoped work.
 

@@ -5,6 +5,7 @@ micro_summary: "Removes prose that does not serve the reader's purpose while pre
 status: "resolved"
 see_also: []
 scope: "Revise agent-authored prose for the intended reader's purpose while preserving material source meaning and explicit constraints."
+position: 6144
 ---
 Identify the reader and what the text must help them understand or do.
 

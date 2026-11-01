@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "How to express relative urgency in local knowledge without assuming automatic prioritization or a dedicated indexed field."
 warnings: ""
+position: 4096
 ---
 Priority expresses a node's urgency relative to its siblings and the tree's current goal.
 

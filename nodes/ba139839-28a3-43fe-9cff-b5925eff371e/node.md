@@ -5,6 +5,7 @@ micro_summary: "Routes final readback and accurate reporting of complete or part
 status: "resolved"
 see_also: []
 scope: "Phase 5 of SiftText Commit. Compare saved fields, structure, references and effective statuses with the authorized delta, verify affected continuation, and report complete or partial results with actual evidence."
+position: 6144
 ---
 Use [[Verify Saved Branches|325a011f-191e-427d-8eae-ac0097a005f1]] to compare saved knowledge with the approved change.
 

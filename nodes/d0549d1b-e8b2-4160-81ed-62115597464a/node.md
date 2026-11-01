@@ -5,6 +5,7 @@ micro_summary: "Connects a conclusion to its source evidence."
 status: "resolved"
 see_also: [{"target":"5a7e7c35-ac0c-4590-8e1b-a208fa71febe","reason":"Defines the name and micro-summary contract used when authoring a node."}]
 scope: "Write knowledge a new reader can understand and evaluate."
+position: 4096
 ---
 ## Represent knowledge
 

@@ -6,6 +6,7 @@ status: "resolved"
 see_also: []
 scope: "Connect a remote client to the synced knowledge workspace."
 warnings: "Obtain permission for uploads and proposed writes."
+position: 1024
 ---
 ## Choose local or hosted access
 
