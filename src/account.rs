@@ -270,12 +270,22 @@ fn http_method_idempotent(
         config.push_str(&format!("header = {}\n",
             config_string(&format!("Idempotency-Key: {key}"))?));
     }
+    let mut request_body = None;
     if let Some((content_type, data)) = body {
-        config.push_str(&format!(
-            "header = {}\ndata = {}\n",
-            config_string(&format!("Content-Type: {content_type}"))?,
-            config_string(data)?
-        ));
+        config.push_str(&format!("header = {}\n",
+            config_string(&format!("Content-Type: {content_type}"))?));
+        if data.len() > CHECK_REQUEST_LIMIT {
+            // curl limits a physical config line to 10 MiB. Selected sync
+            // bodies can be larger; keep them in an owner-only temporary file
+            // for this request, while authorization stays off argv and disk.
+            let mut file = tempfile::Builder::new().prefix("sifttext-http-").tempfile()?;
+            file.write_all(data.as_bytes())?;
+            config.push_str(&format!("data-binary = {}\n",
+                config_string(&format!("@{}", file.path().to_str().ok_or("invalid HTTP body path")?))?));
+            request_body = Some(file);
+        } else {
+            config.push_str(&format!("data = {}\n", config_string(data)?));
+        }
     }
     let mut child = Command::new("curl")
         .args([
@@ -306,6 +316,7 @@ fn http_method_idempotent(
         .ok_or("missing HTTP input")?
         .write_all(config.as_bytes());
     let output = child.wait_with_output()?;
+    drop(request_body);
     sent?;
     if !output.status.success() {
         return Err("Platform request failed; check your connection and try again".into());
