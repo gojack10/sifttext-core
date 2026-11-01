@@ -2264,8 +2264,8 @@ pub fn create(
     let parent_dir = parent.as_ref().map(|id| path.join("nodes").join(id));
     let positioned = match &parent_dir {
         Some(dir) => !dir.join("children.order").try_exists()?,
-        None => fs::read_dir(path.join("nodes"))?.filter_map(|entry| entry.ok())
-            .any(|entry| crate::uuid(&entry.file_name().to_string_lossy()) && !entry.path().join("children.order").exists()),
+        None => !fs::read_dir(path.join("nodes"))?.filter_map(|entry| entry.ok())
+            .any(|entry| crate::uuid(&entry.file_name().to_string_lossy()) && entry.path().join("children.order").exists()),
     };
     let position = if positioned {
         if let Some(parent) = &parent {
