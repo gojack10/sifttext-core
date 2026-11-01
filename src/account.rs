@@ -449,7 +449,10 @@ impl SyncAccess {
         Ok(Self { dir: store.dir.clone(), credentials })
     }
     pub fn token(&self) -> Result<&str> {
-        if Credentials::load(&self.dir)? != self.credentials {
+        let saved = Credentials::load(&self.dir)?;
+        // Rotation can serve another resource without invalidating this access
+        // token. A fresh browser login, unlike rotation, has a new client ID.
+        if saved.origin != self.credentials.origin || saved.client_id != self.credentials.client_id {
             return Err("saved login changed during sync; no further transfer attempted".into());
         }
         Ok(&self.credentials.access_token)
