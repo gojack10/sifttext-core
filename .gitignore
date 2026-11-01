@@ -1,4 +1,8 @@
 /target/
+/nodes/*/outline.lean
+/nodes/*/outline.full.lean
+/nodes/*/outline.lean.meta.json
+/nodes/*/outline.full.lean.meta.json
 /.tools/
 /build/graph-transition
 /build/graph-transition.c
