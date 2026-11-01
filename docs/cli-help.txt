@@ -4,7 +4,7 @@ Setup and reading
   sifttext init HOME [--empty | --bundle BUNDLE]  Create a new knowledge home
   sifttext instructions [STORE]                 Print the entry path and version
   sifttext read STORE UUID [-y]                  Read node.md, preserving its bytes
-  sifttext index STORE [--repair]                Refresh derived retrieval files
+  sifttext index STORE [--repair]                Prepare/upgrade derived data; repair if requested
   sifttext outline STORE UUID [full] [-y]        Read a shallow or full outline
   sifttext tree-render STORE SELECTION.json      Write selected trees/proposals to /tmp
   sifttext search STORE QUERY [UNDER_UUID] [-y]  Search with ancestor context
@@ -72,6 +72,7 @@ Application maintenance
   sifttext update --local-status                 Read recorded state (non-atomic, no network)
   sifttext update --resume | --rollback           Resume a KB repair or restore a release
   sifttext update --rebuild                       Rebuild local source and retain its pin
+  sifttext update --prepare                       Prepare installed data offline, without upgrading
 
 Update settings
   sifttext update --config                        Read update settings

@@ -215,6 +215,26 @@ fn identity(path: &Path) -> Result<Identity> {
     Ok((m.dev(), m.ino(), m.ctime(), m.ctime_nsec()))
 }
 
+/// Prepare a working view during creation, installation or an explicit index operation.
+/// Ordinary reads only refresh Git-detected edits against an already compatible cache.
+pub fn prepare(policy: &Policy, path: &Path, donor: Option<&Path>) -> Result<Value> {
+    let (version, nodes) = current::prepare(policy, path, donor)?;
+    // Publication has its own existing immutable-blob memo. Warm its parser and
+    // token facts here too, rather than leaving an upgrade's cold pass to submit.
+    // An unfinished committed draft may be unparseable even when its working
+    // files are readable; this optional memo must not become an acceptance gate.
+    let facts = || -> Result<()> {
+        let mut reader = crate::git_snapshot::GitReader::new(policy, path)?;
+        let view = reader.view("HEAD")?;
+        for id in view.nodes.keys() { reader.tokens(&view, id)?; }
+        Ok(())
+    };
+    if let Err(error) = facts() {
+        eprintln!("Immutable Git facts not prepared for {}: {error}; authored working files are unchanged", path.display());
+    }
+    Ok(serde_json::json!({"status":"current", "version":version, "nodes":nodes}))
+}
+
 /// Explicitly repair generated outputs after loss or damage; authored knowledge is unchanged.
 pub fn repair(policy: &Policy, path: &Path) -> Result<Value> {
     let (version, nodes) = current::repair(policy, path)?;

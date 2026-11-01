@@ -218,19 +218,9 @@ pub fn operation_lock() -> Result<Option<fs::File>> {
         return Ok(None);
     };
     let root = PathBuf::from(root);
-    let mut file = lock(&root, true)?;
-    if recovery_needed(&root)? {
-        drop(file);
-        let recovery = update(&root, "--recover");
-        file = lock(&root, true)?;
-        if let Err(error) = recovery {
-            // Pending knowledge recovery must not intercept the very submit
-            // retry that can finish it. An activation marker still requires
-            // recovery before any operation can use the installation.
-            require(!root.join("activation.json").exists(), &error.to_string())?;
-            eprintln!("update recovery pending. Preserve its journal and run update --resume: {error}");
-        }
-    }
+    let file = lock(&root, true)?;
+    require(!recovery_needed(&root)?,
+        "update preparation is unfinished. Keep the update journal and run `sifttext update --resume`; ordinary commands do not finish updates")?;
     require(
         fs::canonicalize(root.join("current"))? == local::runtime()?,
         "release changed before operation; retry the command",
@@ -575,6 +565,7 @@ fn rebuild_active(root: &Path, state: &mut State) -> Result<Value> {
             "pinned":pinned,
         }),
     )?;
+    ready_home(&candidate, &state.home, None)?;
     set_update_config(&state.home, "pinned", &pinned)?;
     activate(root, &candidate)?;
     state.application = relative;
@@ -651,6 +642,7 @@ pub fn initialize(policy: &Policy, root: &Path, home: &Path) -> Result<Value> {
         "invalid packaged release metadata",
     )?;
     let initialized = crate::native_kb::init(policy, home)?;
+    prepare_views(&app, home)?;
     let baseline = if initialized["created"] == true {
         Some(git(home, &["rev-parse", "HEAD"])?)
     } else {
@@ -702,18 +694,52 @@ fn accepted_submission(receipt: &Value, home: &Path) -> Result<String> {
         .ok_or_else(|| "missing accepted knowledge commit; retain update journal".into())
 }
 
-fn ready_home(policy: &Policy, home: &Path, accepted: Option<&str>) -> Result<()> {
-    // This is clean, ff-only reader recovery, not another graph acceptance gate.
-    let ready = local::advance(policy, home)?;
-    require(
-        matches!(ready["status"].as_str(), Some("current" | "advanced"))
-            && ready["accepted"].as_str() == Some(git(home, &["rev-parse", "HEAD"])?.as_str())
-            && ready["accepted"].as_str() == Some(git(home, &["rev-parse", "refs/heads/main"])?.as_str()),
-        "knowledge home is not ready; retain the update journal and retry",
-    )?;
+// Run maintenance in the target executable, not this updater's linked library:
+// a Policy loaded from the new package does not change the running code's stamps.
+fn candidate_command(app: &Path, command: &str, home: &Path) -> Result<()> {
+    eprintln!("Preparing {}: {command}", home.display());
+    let output = Command::new(app.join("sifttext"))
+        .arg(command).arg(home)
+        .env_remove("SIFTTEXT_INSTALL_ROOT")
+        .env("SIFTTEXT_NO_UPDATE", "1")
+        .output()?;
+    std::io::stderr().write_all(&output.stderr)?;
+    require(output.status.success(), &format!(
+        "target release preparation failed for {} ({command}); keep the update journal and run `sifttext update --resume`: {}",
+        home.display(), String::from_utf8_lossy(&output.stdout)))
+}
+
+fn prepare_views(app: &Path, home: &Path) -> Result<usize> {
+    candidate_command(app, "index", home)?;
+    Ok(1 + prepare_worktrees(app, home)?)
+}
+
+fn prepare_worktrees(app: &Path, home: &Path) -> Result<usize> {
+    let listing = git(home, &["worktree", "list", "--porcelain", "-z"])?;
+    let mut count = 0;
+    for record in listing.split("\0\0") {
+        let fields: Vec<_> = record.split('\0').collect();
+        if fields.iter().any(|f| f.starts_with("prunable") || *f == "bare") { continue }
+        let Some(path) = fields.iter().find_map(|f| f.strip_prefix("worktree ")) else { continue };
+        let path = Path::new(path);
+        if path == home { continue }
+        crate::real_dir(path)?;
+        candidate_command(app, "index", path)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn ready_home(app: &Path, home: &Path, accepted: Option<&str>) -> Result<()> {
+    candidate_command(app, "index", home)?;
+    // Clean, ff-only reader recovery, not another graph acceptance gate.
+    candidate_command(app, "advance", home)?;
+    require(git(home, &["rev-parse", "HEAD"])? == git(home, &["rev-parse", "refs/heads/main"])?,
+        "knowledge home is not ready; retain the update journal and retry")?;
     if let Some(accepted) = accepted {
         git(home, &["merge-base", "--is-ancestor", accepted, "refs/heads/main"])?;
     }
+    prepare_worktrees(app, home)?;
     Ok(())
 }
 
@@ -726,8 +752,7 @@ fn finish(
     update_base: Option<String>,
     baseline: Option<String>,
 ) -> Result<Value> {
-    let policy = checked_runtime(&root.join(app))?;
-    ready_home(&policy, &state.home, commit.as_deref())?;
+    checked_runtime(&root.join(app))?;
     let previous = Recovery {
         application: state.application.clone(),
         application_sha256: state.application_sha256.clone(),
@@ -748,6 +773,7 @@ fn finish(
         &root.join("activation.json"),
         &json!({"application":app,"application_sha256":application_sha256,"knowledge":manifest.knowledge.revision,"baseline":baseline,"previous":previous}),
     )?;
+    ready_home(&root.join(app), &state.home, commit.as_deref())?;
     activate(root, &root.join(app))?;
     if let Some(base) = &baseline {
         git(&state.home, &["update-ref", "refs/sifttext/upstream", base])?;
@@ -1023,6 +1049,7 @@ fn apply(
     }
     let kb_changed = state.knowledge != manifest.knowledge.revision;
     if !app_changed && !kb_changed {
+        prepare_views(&root.join(&state.application), &state.home)?;
         return Ok(json!({"status":"current","application":current.version}));
     }
     // A pinned update does not prepare anything and need not select identity.
@@ -1409,6 +1436,12 @@ pub fn update_with_submission_receipt(
     if mode == "--config" {
         return update_config(&state.home);
     }
+    if mode == "--prepare" {
+        require(!root.join("activation.json").exists() && state.pending.is_none(),
+            "finish the pending update with `sifttext update --resume` before preparing")?;
+        let views = prepare_views(&root.join(&state.application), &state.home)?;
+        return Ok(json!({"status":"prepared", "application":state.application, "views":views}));
+    }
     if let Some(value) = mode.strip_prefix("--grant=") {
         return set_update_config(&state.home, "permission", value);
     }
@@ -1479,9 +1512,9 @@ pub fn update_with_submission_receipt(
             let receipt = local::submit(&policy, &request)?;
             *submission = Some(receipt.clone());
             let accepted = accepted_submission(&receipt, &state.home)?;
-            ready_home(&policy, &state.home, Some(&accepted))?;
+            ready_home(&root.join(&app), &state.home, Some(&accepted))?;
         } else {
-            ready_home(&policy, &state.home, None)?;
+            ready_home(&root.join(&app), &state.home, None)?;
         }
         activate(root, &root.join(&app))?;
         if let Some(pinned) = activation.get("pinned").and_then(Value::as_str) {
@@ -1728,9 +1761,10 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery, submissio
         let receipt = local::submit(&policy, &request)?;
         *submission = Some(receipt.clone());
         let accepted = accepted_submission(&receipt, &state.home)?;
-        ready_home(&policy, &state.home, Some(&accepted))?;
+        ready_home(&root.join(&previous.application), &state.home, Some(&accepted))?;
     } else {
-        ready_home(&policy, &state.home, None)?;
+        persist(&root.join("activation.json"), &activation)?;
+        ready_home(&root.join(&previous.application), &state.home, None)?;
     }
     persist(&root.join("activation.json"), &activation)?;
     activate(root, &root.join(&previous.application))?;

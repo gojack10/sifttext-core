@@ -16,6 +16,10 @@ Ask the agent to run `sifttext instructions` and follow the returned entry file.
 
 Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
 
+Update prepares derived SQLite records and outlines with the incoming executable before activating it. It includes the managed knowledge home and its existing live Git worktrees. Installation and new-worktree creation prepare their own data too. Ordinary reads refresh authored edits through Git, but never perform a processor/schema upgrade or finish an interrupted application update.
+
+For the one-time transition from v0.3.14 or earlier, the old updater cannot run this new preparation step. After that upgrade, run `sifttext update --prepare` once before using indexed commands. This offline operation also prepares a restored or separately managed view; source builders can run `sifttext index /absolute/path/to/store` with their new executable. Neither operation changes authored knowledge. A missing or incompatible cache produces an explicit preparation request rather than hiding a rebuild inside a read.
+
 ## Establish permission and destinations
 
 For an information request, limit work to inspection until the user authorizes installation.
@@ -268,8 +272,8 @@ If recovery cannot establish the original publication delta needed for rollback,
 
 | Recovery state | Available operations |
 | --- | --- |
-| Knowledge repair pending | Ordinary commands and the original submit retry remain available. |
-| Application activation interrupted | Complete activation recovery before other operations. |
+| Knowledge repair pending, not yet accepted | Ordinary commands and the original submit retry remain available. |
+| Accepted update or application preparation/activation interrupted | Run `sifttext update --resume` explicitly before other operations; reads do not perform recovery. |
 
 The updater retains exclusive access throughout installation and recovery.
 

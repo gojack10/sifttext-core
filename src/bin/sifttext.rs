@@ -133,6 +133,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                     "--config",
                     "--unpin",
                     "--rebuild",
+                    "--prepare",
                     "--opportunistic", // Detached release check; not a public update operation.
                 ]
                 .contains(&mode.as_str()) =>

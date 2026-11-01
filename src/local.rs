@@ -533,6 +533,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
         "initial commit identity differs from the selected name/email; preserve the home",
     )?;
     git(path, &["checkout", "--detach", "--quiet"])?;
+    index::prepare(policy, path, None)?;
     Ok(
         json!({"home": fs::canonicalize(path)?, "created": true, "starter_nodes": seed.as_ref().map_or(0, |s| s.nodes.len()), "pointer": pointer.then_some(POINTER), "commit": git(path, &["rev-parse", "HEAD"])?}),
     )
@@ -864,7 +865,7 @@ pub fn worktree(policy: &Policy, home: &Path) -> Result<Value> {
 }
 
 fn worktree_inner(
-    _policy: &Policy,
+    policy: &Policy,
     home: &Path,
     after_create: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Value> {
@@ -909,6 +910,7 @@ fn worktree_inner(
                 fs::create_dir(path.join(name))?;
             }
         }
+        index::prepare(policy, &path, Some(&home))?;
         Ok(())
     })();
     setup.map_err(|error| {
@@ -2447,10 +2449,7 @@ pub fn read(_policy: &Policy, path: &Path, prefix: &str) -> Result<String> {
 }
 
 pub fn refresh(policy: &Policy, path: &Path) -> Result<Value> {
-    let (version, nodes) = index::with_current(policy, path, |tx, _| {
-        Ok(tx.query_row("SELECT count(*) FROM nodes", [], |r| r.get::<_, i64>(0))?)
-    })?;
-    Ok(json!({"status":"current", "version":version, "nodes":nodes}))
+    index::prepare(policy, path, None)
 }
 
 struct SqlResult {

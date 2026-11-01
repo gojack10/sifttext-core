@@ -10,48 +10,8 @@ use std::{
     fs::{self, File, OpenOptions},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
-    sync::OnceLock,
     time::{Duration, Instant},
 };
-
-// Cache bytes are rebuildable across reboot; never invent a stable fallback epoch.
-fn current_boot_id() -> Result<&'static str> {
-    static BOOT: OnceLock<std::result::Result<String, String>> = OnceLock::new();
-    BOOT.get_or_init(|| native_boot_id().map_err(|e| e.to_string()))
-        .as_deref()
-        .map_err(|e| format!("cannot establish derived-cache boot epoch: {e}").into())
-}
-#[cfg(target_os = "linux")]
-fn native_boot_id() -> Result<String> {
-    use std::io::Read;
-    let mut file = OpenOptions::new().read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open("/proc/sys/kernel/random/boot_id")?;
-    require(file.metadata()?.is_file(), "unsafe boot ID file")?;
-    let mut bytes = Vec::new();
-    file.by_ref().take(65).read_to_end(&mut bytes)?;
-    let id = std::str::from_utf8(&bytes)?.trim();
-    require(bytes.len() <= 64 && crate::uuid(id), "invalid native boot ID")?;
-    Ok(format!("linux:{id}"))
-}
-#[cfg(target_os = "macos")]
-fn native_boot_id() -> Result<String> {
-    let mut time: libc::timeval = unsafe { std::mem::zeroed() };
-    let mut length = std::mem::size_of_val(&time);
-    let status = unsafe {
-        libc::sysctlbyname(c"kern.boottime".as_ptr(),
-            (&mut time as *mut libc::timeval).cast(), &mut length,
-            std::ptr::null_mut(), 0)
-    };
-    if status != 0 { return Err(std::io::Error::last_os_error().into()); }
-    require(length == std::mem::size_of_val(&time) && time.tv_sec > 0
-        && (0..1_000_000).contains(&time.tv_usec), "invalid native boot time")?;
-    Ok(format!("macos:{}:{}", time.tv_sec, time.tv_usec))
-}
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn native_boot_id() -> Result<String> {
-    Err("unsupported native boot epoch platform".into())
-}
 
 const SCHEMA: &str = "sifttext-index/5";
 #[derive(Default)]
@@ -251,8 +211,7 @@ fn compatible(connection: &Connection) -> Result<bool> {
 }
 
 fn current(connection: &Connection, snapshot: &Snapshot) -> Result<Option<(String, String)>> {
-    if !compatible(connection)? || meta(connection, "artifacts_ready")?.as_deref() != Some("1")
-        || meta(connection, "artifacts_boot")?.as_deref() != Some(current_boot_id()?) {
+    if !compatible(connection)? || meta(connection, "artifacts_ready")?.as_deref() != Some("1") {
         return Ok(None);
     }
     let (Some(version), Some(generation)) = (meta(connection, "version")?, meta(connection, "generation")?) else {
@@ -491,11 +450,9 @@ fn refresh(
 ) -> Result<bool> {
     work.refreshed = true;
     let force = !compatible(connection)?;
-    let boot = current_boot_id()?;
-    // The completion marker is committed with every required generated result;
-    // do not inventory all generated files to rediscover that fact on each read.
-    let force_artifact_verification = meta(connection, "artifacts_boot")?.as_deref() != Some(boot)
-        || meta(connection, "artifacts_ready")?.as_deref() != Some("1")
+    // Completed derived data survives reboot. Explicit preparation/repair owns
+    // global work; ordinary reads do not re-audit the forest on a new boot.
+    let force_artifact_verification = meta(connection, "artifacts_ready")?.as_deref() != Some("1")
         || !crate::outlines::indexed_current(connection)?;
     setup(connection)?;
     let version = version(connection, snapshot, !force, snapshot.accepted_version(accepted), work)?;
@@ -588,7 +545,6 @@ fn refresh(
         put(&tx, "processing", processing_identity())?;
         put(&tx, "version", &version)?;
         put(&tx, "git_working", &snapshot.identity)?;
-        put(&tx, "artifacts_boot", boot)?;
         put(&tx, "artifacts_ready", "1")?;
         tx.commit()?;
         Ok(true)
@@ -610,7 +566,15 @@ pub(crate) fn repair(policy: &Policy, path: &Path) -> Result<(String, i64)> {
         tx.execute("DELETE FROM metadata WHERE key IN ('schema','git_tree')", [])?;
         tx.commit()?;
     }
-    with_current(policy, &root, |tx, _| {
+    prepare(policy, &root, None)
+}
+
+/// Explicit creation/update boundary. Reuse unchanged data when compatible;
+/// processor/schema changes and lost caches may only rebuild at this boundary.
+pub(crate) fn prepare(
+    _policy: &Policy, path: &Path, donor: Option<&Path>,
+) -> Result<(String, i64)> {
+    with_source(path, donor, None, true, false, |tx, _| {
         Ok(tx.query_row("SELECT count(*) FROM nodes", [], |row| row.get(0))?)
     })
 }
@@ -631,7 +595,7 @@ pub(crate) fn with_current_from<T>(
     prepared: Option<&Path>,
     query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
-    with_source(path, prepared, None, true, query)
+    with_source(path, prepared, None, false, true, query)
 }
 
 /// Reader advance needs completed derived state, not a query over mutable rows.
@@ -641,12 +605,12 @@ pub(crate) fn with_current_from<T>(
 pub(crate) fn refresh_current(
     path: &Path, prepared: Option<&Path>, accepted: Option<(&str, &str)>,
 ) -> Result<String> {
-    Ok(with_source(path, prepared, accepted, false, |_, _| Ok(()))?.0)
+    Ok(with_source(path, prepared, accepted, false, false, |_, _| Ok(()))?.0)
 }
 
 fn with_source<T>(
     path: &Path, prepared: Option<&Path>,
-    accepted: Option<(&str, &str)>, verify_query: bool,
+    accepted: Option<(&str, &str)>, prepare: bool, verify_query: bool,
     mut query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
     let mut work = Work::default();
@@ -665,6 +629,8 @@ fn with_source<T>(
         };
         let mut refresh_lock = None;
         let tx = connection.transaction()?;
+        require(prepare || (compatible(&tx)? && crate::outlines::indexed_current(&tx)?),
+            &format!("derived data requires update preparation, not a read-time rebuild. Run `sifttext index {}` (managed installation: `sifttext update --prepare`), then retry", root.display()))?;
         let tx = if current(&tx, &snapshot)?.is_none() {
             drop(tx);
             let waiting = Instant::now();

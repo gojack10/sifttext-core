@@ -1514,8 +1514,8 @@ fn execute(
             if !path.try_exists()? { fs::create_dir(&path)?; }
             crate::real_dir(&path)?;
         }
-        let (version, ()) = index::with_current(policy, view, |_, _| Ok(()))?;
-        require(Some(version) == r.version, "derived candidate mismatch")?;
+        let prepared = index::prepare(policy, view, None)?;
+        require(prepared["version"].as_str() == r.version.as_deref(), "derived candidate mismatch")?;
     }
     if let Some(barrier) = &q.pause_before_publish {
         barrier.wait(&[&repo, &common], view)?;
