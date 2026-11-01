@@ -30,11 +30,10 @@ For remote-client OAuth setup and the hosted instruction bootstrap, follow [Conn
 
 ## Inside a hosted MCP workspace
 
-When the host supplies account access, `sifttext login` uses the existing MCP
-login instead of opening another browser authorization. `sifttext account` and
-the checker/credit commands use that same account. No personal login token is
-stored in the guest. `sifttext logout` is unavailable there; disconnect the MCP
-client instead.
+When the host supplies account access, `sifttext account` and the checker/credit
+commands use the verified MCP account. No personal login token is stored in the
+guest. Both `login` and `logout` are unavailable there: manage the session through
+the MCP client. Normal Mac/Linux login and logout remain unchanged.
 
 The MCP gateway already handles this workspace's knowledge synchronization.
 The native sync enrollment and scheduling instructions below are for your own

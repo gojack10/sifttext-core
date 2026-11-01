@@ -794,8 +794,8 @@ pub fn managed() -> bool {
 
 pub fn run(command: &str) -> Result<()> {
     if managed() {
-        if command == "logout" {
-            return Err("This workspace uses your MCP login. Logout is unavailable inside the hosted workspace; disconnect the MCP client instead.".into());
+        if matches!(command, "login" | "logout") {
+            return Err("The server manages this hosted workspace's session. Use sifttext account to inspect it; sign in or disconnect through your MCP client.".into());
         }
         let (status, account) = http(&origin()?, "/oauth/account", None, None)?;
         crate::require(status == 200 && account["paid"].is_boolean(),
@@ -803,9 +803,6 @@ pub fn run(command: &str) -> Result<()> {
                 account["error"].as_str().unwrap_or("invalid_account_response"),
                 account["detail"].as_str().unwrap_or("The host did not confirm this workspace's account.")))?;
         show_account(&account)?;
-        if command == "login" {
-            writeln!(std::io::stdout(), "Already signed in through SiftText MCP.")?;
-        }
         return Ok(());
     }
     let store = Store::open()?;
