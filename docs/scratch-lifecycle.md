@@ -22,9 +22,13 @@ Before ordinary knowledge and sync commands, Core attempts startup cleanup at
 most once per hour. Help, account operations and application-update commands do
 not run this cleanup; `update --local-status` remains read-only.
 
-The cleanup considers only Core's new temporary namespace. A candidate must have
-no file or directory modifications within the preceding 48 hours. The scan does
-not follow symlinks. A future timestamp postpones removal.
+Startup cleanup considers Core's temporary namespace. Publication also expires
+recorded legacy views beneath that repository's `.git/sifttext-publications`,
+at most once per hour per repository, using the same expiry procedure. No
+whole-home discovery scan or migration is needed.
+
+A candidate must have no file or directory modifications within the preceding
+48 hours. The scan does not follow symlinks. A future timestamp postpones removal.
 
 - Binary operation directories require an available operation lease.
 - Private drafts require the expected Core-created branch name, available
@@ -44,6 +48,9 @@ Keep worktrees short-lived. Read SiftText, do the work, save through SiftText
 Commit, and start the next chat from SiftText. Reads alone do not renew the
 inactivity period.
 
-Earlier drafts beside the knowledge home and publication views beneath its Git
-metadata are not swept by age. Existing native recovery still handles their
-recorded disposable views; startup expiry does not migrate or delete them.
+Earlier private drafts beside the knowledge home are not swept by age. Legacy
+publication views with matching recorded ownership are transient working copies,
+including those marked `retained`; that label is not an indefinite retention
+exemption. Their expiry uses the same lifecycle and Git-registration checks as
+new views, without requiring a clean checkout or an ancestry audit. Existing
+native recovery still handles recorded disposable views.

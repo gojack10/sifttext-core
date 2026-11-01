@@ -498,7 +498,11 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
             require(bytes.len() <= 4096, "oversized ownership record")?;
             let identity: Record = serde_json::from_slice(&bytes)?;
             let repo = &identity.common;
-            require(root == crate::scratch::publications(repo)?, "foreign scratch root")?;
+            require(
+                root == repo.join("sifttext-publications")
+                    || root == crate::scratch::publications(repo)?,
+                "foreign scratch root",
+            )?;
             let view = parent.join("view");
             let gate = crate::local::publication_gate(&view)?;
             let _custody = Custody::new(&[&gate])?;

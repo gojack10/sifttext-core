@@ -104,6 +104,39 @@ pub(crate) fn inactive(path: &Path, now: SystemTime) -> Result<bool> {
     Ok(true)
 }
 
+fn cleanup_gate(path: &Path, now: SystemTime) -> Result<Option<fs::File>> {
+    let gate = open_gate(path)?;
+    if gate.try_lock().is_err()
+        || (gate.metadata()?.len() != 0
+            && now.duration_since(gate.metadata()?.modified()?).unwrap_or_default()
+                < Duration::from_secs(3600))
+    {
+        return Ok(None);
+    }
+    Ok(Some(gate))
+}
+
+/// Repository discovery already belongs to publication. Reuse it rather than
+/// scanning homes or adding a second command-line dispatcher for old views.
+pub(crate) fn cleanup_legacy_publications(common: &Path) {
+    let result = (|| -> Result<()> {
+        let legacy = common.join("sifttext-publications");
+        if !legacy.try_exists()? { return Ok(()); }
+        crate::real_dir(&legacy)?;
+        let now = SystemTime::now();
+        let Some(gate) = cleanup_gate(&publications(common)?.join("legacy-cleanup"), now)? else {
+            return Ok(());
+        };
+        crate::checked_publication::expire_scratch_views(&legacy, now)?;
+        gate.set_len(1)?;
+        gate.set_modified(now)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("legacy publication cleanup deferred: {error}");
+    }
+}
+
 /// Opportunistic startup maintenance, not a daemon or a publication preflight.
 /// One fixed bookkeeping file throttles scans to hourly; no per-run ledger grows.
 /// Failures retain the affected directory and are reported without blocking use.
@@ -114,14 +147,10 @@ pub fn cleanup() {
 }
 fn cleanup_inner() -> Result<()> {
     let root = root()?;
-    let gate = open_gate(&root.join("cleanup"))?;
-    if gate.try_lock().is_err() { return Ok(()); }
     let now = SystemTime::now();
-    if gate.metadata()?.len() != 0
-        && now.duration_since(gate.metadata()?.modified()?).unwrap_or_default() < Duration::from_secs(3600)
-    {
+    let Some(gate) = cleanup_gate(&root.join("cleanup"), now)? else {
         return Ok(());
-    }
+    };
     for entry in fs::read_dir(&root)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() { continue; }
