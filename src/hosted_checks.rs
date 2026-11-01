@@ -388,17 +388,11 @@ fn publication_with_access(
         for (id, node) in &after.nodes {
             if before
                 .and_then(|view| view.nodes.get(id))
-                .is_some_and(|old| old.raw_hash == node.raw_hash)
+                .is_some_and(|old| old.text_hash == node.text_hash)
             {
                 continue;
             }
             let text = String::from_utf8(reader.bytes(after, id)?)?;
-            if let Some(previous) = before.filter(|view| view.nodes.contains_key(id)) {
-                let old = String::from_utf8(reader.bytes(previous, id)?)?;
-                if crate::ordering::without_position(&old) == crate::ordering::without_position(&text) {
-                    continue;
-                }
-            }
             let value = response(
                 access,
                 "POST",

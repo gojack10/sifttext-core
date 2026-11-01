@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-const FACT_PROCESSOR: &str = "git-node-facts-v2;authored-merkle-v2;native-markdown-v1";
+const FACT_PROCESSOR: &str = "git-node-facts-v3;authored-merkle-v2;native-markdown-v1";
 const TOKEN_PROCESSOR: &str = "tiktoken-rs/0.6.0;ordinary;content/v1";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,6 +31,7 @@ pub(crate) struct NodeFacts {
     pub(crate) state: State,
     pub(crate) body_nonblank: bool,
     pub(crate) raw_hash: [u8; 32],
+    pub(crate) text_hash: [u8; 32],
     pub(crate) body_hash: [u8; 32],
     pub(crate) reference_targets: Vec<String>,
     pub(crate) blob: String,
@@ -821,6 +822,7 @@ impl GitReader {
                     state,
                     body_nonblank: !parsed.authored.content.trim().is_empty(),
                     raw_hash: Sha256::digest(&bytes).into(),
+                    text_hash: Sha256::digest(crate::ordering::without_position(std::str::from_utf8(&bytes)?).as_bytes()).into(),
                     body_hash: Sha256::digest(parsed.authored.content.as_bytes()).into(),
                     reference_targets: parsed
                         .authored
