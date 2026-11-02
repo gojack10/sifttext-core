@@ -113,6 +113,7 @@ const GROUPS: &[Group] = &[
             command("update --rollback", "Restore a previous release"),
             command("update --rebuild", "Rebuild pinned local source"),
             command("update --prepare", "Prepare installed data offline without upgrading"),
+            command("update --harness-instructions-applied", "Record applied persistent instructions").guide(sifttext_file_graph::updates::HARNESS_GUIDE),
             command("update --config", "Read update settings"),
             command("update --grant standing|ask", "Set update permission"),
             command("update --attach-node UUID", "Attach a repair undertaking"),

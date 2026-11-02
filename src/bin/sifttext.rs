@@ -136,6 +136,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                     "--unpin",
                     "--rebuild",
                     "--prepare",
+                    "--harness-instructions-applied",
                     "--opportunistic", // Detached release check; not a public update operation.
                 ]
                 .contains(&mode.as_str()) =>
@@ -311,7 +312,11 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             }
             return Ok(());
         }
-        [cmd, home] if cmd == "advance" => local::advance(&policy, Path::new(home))?,
+        [cmd, home] if cmd == "advance" => {
+            let receipt = local::advance(&policy, Path::new(home))?;
+            sifttext_file_graph::updates::prepare_incoming(Path::new(home))?;
+            receipt
+        },
         [cmd, home] if cmd == "worktree" => local::worktree(&policy, Path::new(home))?,
         [cmd, source, descriptor, archive] if cmd == "session-capture" => {
             let descriptor_path = absolute(descriptor)?;

@@ -213,11 +213,11 @@ Managed installations fetch release notices in a detached process so ordinary co
 | Success | At least four hours later. |
 | Failure | After a cooldown of at least five minutes. |
 
-Applying an update requires the user's permission. When they grant routine update permission, record it with `sifttext update --grant standing` and inspect it with `sifttext update --config`.
+Automatic agent-managed updates are enabled by default. The agent handles them at a convenient pause and keeps the user informed. Inspect the policy with `sifttext update --config`. Use `sifttext update --grant ask` to request approval before each update, or `sifttext update --grant standing` to enable automatic updates again.
 
-Saved grants change the `updates` object in the knowledge home's `.sifttext/config.json`.
+These choices are kept in the knowledge home's `.sifttext/config.json`, preserving unrelated settings. Existing installations migrate once to the automatic policy. New installations start with that migration recorded, so a later `ask` choice is preserved. Follow an older binary's installed help and permission policy when installing the release that introduces the change.
 
-On older installations without saved grants, obtain permission for each update and follow the installed help.
+After an update, run `sifttext instructions`. If it returns `harness-instructions-refresh: required`, follow its guide to apply the current startup block and record completion with `sifttext update --harness-instructions-applied`.
 
 ### Inspect update state
 

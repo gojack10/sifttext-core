@@ -17,7 +17,11 @@ Own-device sync retains findings without refusing transport on that ground. Inte
 
 Resolve assigned repairs within the user's grant while keeping independent work moving. Ask the user only when a genuinely significant choice remains, such as changing supported meaning or sharing permission.
 
-For `update-available`, follow `update-guide`. Under ask permission: “Read update-guide. When the user is next present, ask for permission to update SiftText.” Under standing permission: “Read update-guide. At a convenient pause, update SiftText. The user has already given standing permission.” An update notice is not a compatibility guarantee for a converted home.
+For `update-available`, follow `update-guide`. Under ask permission: “Read update-guide. When the user is next present, ask for permission to update SiftText.” Under standing permission, automatic updates are enabled. Handle the update at a convenient pause and keep the user informed. An update notice is not a compatibility guarantee for a converted home.
+
+`harness-instructions-refresh: required` means the current startup block has not been acknowledged for this installation. Read `harness-instructions-guide` and ensure that block is first in the harness's user-controlled persistent instructions, using the same procedure for setup and refresh. The guide explains how to record completion with `sifttext update --harness-instructions-applied` after applying the block or receiving the user's confirmation. The receipt reads retained update state, it does not scan harness files.
+
+Follow [[Keeping the Human in the Loop|6e9f23b3-3fbe-4dbd-9b58-6842438d2d01]] during extended work and routine maintenance. Its synthetic examples illustrate how to stay informative without making every receipt a user interruption.
 
 Knowledge lives at `nodes/<id>/node.md`. Generated `nodes/<id>/outline.lean` shows the node and its direct children; `nodes/<id>/outline.full.lean` shows the whole subtree. Prefer ordinary file tools on these views when present. The outline command generates or selects its view and prepends `outline-file` with the full absolute path.
 

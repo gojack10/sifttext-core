@@ -20,6 +20,82 @@ const MANIFEST: &str =
 const RELEASES: &str = "https://github.com/gojack10/sifttext-core/releases/download/";
 const INTERVAL: u64 = 4 * 60 * 60;
 const RETRY: u64 = 5 * 60;
+pub const HARNESS_GUIDE: &str = "98892306-f87b-4361-9d91-fac2e0023a11";
+const HARNESS_STATE: &str = "harness-instructions.json";
+
+#[derive(Default, Serialize, Deserialize)]
+struct HarnessInstructions {
+    current: String,
+    applied: Option<String>,
+}
+
+fn bootstrap_hash(text: &str) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let pattern = regex::Regex::new(r"(?ms)^## Bootstrap\r?\n\s*````markdown\r?\n(.*?)^````\s*$")?;
+    let mut blocks = pattern.captures_iter(text);
+    let block = blocks.next().ok_or("missing harness Bootstrap block")?;
+    require(blocks.next().is_none(), "ambiguous harness Bootstrap block")?;
+    Ok(format!("{:x}", Sha256::digest(block[1].as_bytes())))
+}
+
+fn harness_state(root: &Path) -> Result<HarnessInstructions> {
+    let path = root.join(HARNESS_STATE);
+    match fs::symlink_metadata(&path) {
+        Ok(_) => load(&path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(HarnessInstructions::default()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+// Update preparation owns extraction. Onboarding only reads the retained result.
+fn prepare_harness(root: &Path, home: &Path, before: Option<&str>, after: Option<&str>) -> Result<()> {
+    let path = format!("nodes/{HARNESS_GUIDE}/node.md");
+    let mut saved = harness_state(root)?;
+    if !saved.current.is_empty() {
+        if before == after { return Ok(()) }
+        if let (Some(before), Some(after)) = (before, after) {
+            let changed = git(home, &["diff", "--name-only", before, after, "--", &path])?;
+            if changed.is_empty() { return Ok(()) }
+            let previous = git(home, &["show", &format!("{before}:{path}")])?;
+            let incoming = git(home, &["show", &format!("{after}:{path}")])?;
+            if bootstrap_hash(&previous)? == bootstrap_hash(&incoming)? { return Ok(()) }
+        }
+    }
+    let text = String::from_utf8(crate::read_regular(&home.join(path))?)?;
+    saved.current = bootstrap_hash(&text)?;
+    persist(&root.join(HARNESS_STATE), &saved)
+}
+
+fn prepare_activation(root: &Path, state: &State, baseline: Option<&str>) -> Result<()> {
+    prepare_harness(root, &state.home, state.baseline.as_deref(), baseline)?;
+    migrate_update_policy(&state.home)
+}
+
+/// The incoming executable is also prepared by older updaters. Keep their strict
+/// journal/config schemas readable and finish new settings at that existing boundary.
+pub fn prepare_incoming(home: &Path) -> Result<()> {
+    let app = local::runtime()?;
+    let Some(root) = app.parent().and_then(Path::parent) else { return Ok(()) };
+    if !root.join("activation.json").is_file() { return Ok(()) }
+    let activation: Value = load(&root.join("activation.json"))?;
+    let target = activation["application"].as_str().ok_or("missing activation application")?;
+    if fs::canonicalize(root.join(target))? != app { return Ok(()) }
+    let state: State = load(&root.join("state.json"))?;
+    if fs::canonicalize(home)? != fs::canonicalize(&state.home)? { return Ok(()) }
+    prepare_activation(root, &state, activation["baseline"].as_str())
+}
+
+pub fn harness_instruction_notice(home: &Path) -> Result<Value> {
+    let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") else { return Ok(Value::Null) };
+    let root = Path::new(&root);
+    let state: State = load(&root.join("state.json"))?;
+    if state.home != fs::canonicalize(home)? || state.pending.is_some() || root.join("activation.json").exists() {
+        return Ok(Value::Null);
+    }
+    let saved = harness_state(root)?;
+    if saved.current.is_empty() || saved.applied.as_ref() == Some(&saved.current) { return Ok(Value::Null) }
+    Ok(json!({"required":true,"guide":state.home.join("nodes").join(HARNESS_GUIDE).join("node.md")}))
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -674,6 +750,8 @@ pub fn initialize(policy: &Policy, root: &Path, home: &Path) -> Result<Value> {
         pending: None,
         previous: None,
     };
+    prepare_harness(root, home, None, state.baseline.as_deref())?;
+    migrate_update_policy(home)?;
     persist(&state_path, &state)?;
     Ok(initialized)
 }
@@ -773,6 +851,7 @@ fn finish(
         &json!({"application":app,"application_sha256":application_sha256,"knowledge":manifest.knowledge.revision,"baseline":baseline,"previous":previous}),
     )?;
     ready_home(&root.join(app), &state.home, commit.as_deref())?;
+    prepare_activation(root, state, baseline.as_deref())?;
     activate(root, &root.join(app))?;
     if let Some(base) = &baseline {
         git(&state.home, &["update-ref", "refs/sifttext/upstream", base])?;
@@ -969,12 +1048,12 @@ fn resume(
         Some(pending.upstream.clone()),
     )
 }
-/// Agent-facing next step in a release notice. A human decides whether to update.
+/// Agent-facing next step, respecting the configured automatic/ask policy.
 const UPDATE_NOTICE_ASK: &str =
     "Read update-guide. When the user is next present, ask for permission to update SiftText.";
 const UPDATE_NOTICE_REASON: &str = "The latest release fixes speed and stability.";
 const UPDATE_NOTICE_STANDING: &str =
-    "Update SiftText at the earliest convenient pause in your work under the user's standing permission.";
+    "Read update-guide. Automatic updates are enabled. Update SiftText at a convenient pause and keep the user informed.";
 const STANDING_GRANT_COMMAND: &str = "sifttext update --grant standing";
 
 fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
@@ -1245,14 +1324,13 @@ const CONFIG_FILE: &str = ".sifttext/config.json";
 /// User-owned update intent, kept in the knowledge home's own configuration file and never in
 /// `state.json`, which holds only machine observations. The knowledge home's Git index ignores
 /// `.sifttext/` directory, so an official knowledge package cannot add or rewrite this file.
-/// Defaults preserve shipped behavior: release checks still notify, and no standing grant is
-/// recorded until the user records one.
+/// Automatic updates are the default. A versioned explicit ask choice is preserved.
 fn update_config(home: &Path) -> Result<Value> {
     let path = home.join(CONFIG_FILE);
     let file: Value = match fs::symlink_metadata(&path) {
         Ok(_) => serde_json::from_slice(&crate::read_regular(&path)?)?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(json!({"permission":"ask","source":"default","path":path}));
+            return Ok(json!({"permission":"standing","source":"default","path":path}));
         }
         Err(error) => return Err(error.into()),
     };
@@ -1288,12 +1366,25 @@ fn update_config(home: &Path) -> Result<Value> {
         require(allowed.contains(&text), &message)?;
         Ok(text.to_owned())
     };
+    let permission = choice("permission", &["standing", "ask"], "standing")?;
+    let version = file.get("update_policy_version").map(|value|
+        value.as_u64().ok_or("update_policy_version must be an integer")
+    ).transpose()?.unwrap_or(0);
     Ok(json!({
-        "permission": choice("permission", &["standing", "ask"], "ask")?,
+        "permission": if version >= 1 { permission } else { "standing".to_owned() },
         "pinned": pinned,
         "source": "file",
         "path": path,
     }))
+}
+
+fn migrate_update_policy(home: &Path) -> Result<()> {
+    let path = home.join(CONFIG_FILE);
+    update_config(home)?;
+    let file: Value = if path.exists() { load(&path)? } else { json!({}) };
+    if file["update_policy_version"].as_u64().unwrap_or(0) >= 1 { return Ok(()) }
+    set_update_config(home, "permission", "standing")?;
+    Ok(())
 }
 
 /// Record one user-owned update choice without touching any other setting in the shared local
@@ -1340,6 +1431,10 @@ fn set_update_config(home: &Path, name: &str, value: &str) -> Result<Value> {
         updates.remove(name);
     } else {
         updates.insert(name.to_owned(), value.into());
+    }
+    if file["update_policy_version"].as_u64().unwrap_or(0) < 1 {
+        if name != "permission" { file["updates"]["permission"] = json!("standing"); }
+        file["update_policy_version"] = json!(1);
     }
     fs::create_dir_all(path.parent().ok_or("missing configuration parent")?)?;
     persist(&path, &file)?;
@@ -1435,10 +1530,24 @@ pub fn update_with_submission_receipt(
     if mode == "--config" {
         return update_config(&state.home);
     }
+    if mode == "--harness-instructions-applied" {
+        require(state.pending.is_none() && !root.join("activation.json").exists(),
+            "finish the pending update before recording harness instructions")?;
+        let mut saved = harness_state(root)?;
+        require(!saved.current.is_empty(), "no harness instructions are recorded; run sifttext update --prepare")?;
+        let path = state.home.join("nodes").join(HARNESS_GUIDE).join("node.md");
+        require(bootstrap_hash(&String::from_utf8(crate::read_regular(&path)?)?)? == saved.current,
+            "the harness guide changed; run sifttext update --prepare and apply its current block")?;
+        saved.applied = Some(saved.current.clone());
+        persist(&root.join(HARNESS_STATE), &saved)?;
+        return Ok(json!({"status":"harness_instructions_applied","block_sha256":saved.current}));
+    }
     if mode == "--prepare" {
         require(!root.join("activation.json").exists() && state.pending.is_none(),
             "finish the pending update with `sifttext update --resume` before preparing")?;
         let views = prepare_views(&root.join(&state.application), &state.home)?;
+        prepare_harness(root, &state.home, None, state.baseline.as_deref())?;
+        migrate_update_policy(&state.home)?;
         return Ok(json!({"status":"prepared", "application":state.application, "views":views}));
     }
     if let Some(value) = mode.strip_prefix("--grant=") {
@@ -1515,6 +1624,7 @@ pub fn update_with_submission_receipt(
         } else {
             ready_home(&root.join(&app), &state.home, None)?;
         }
+        prepare_activation(root, &state, activation["baseline"].as_str())?;
         activate(root, &root.join(&app))?;
         if let Some(pinned) = activation.get("pinned").and_then(Value::as_str) {
             set_update_config(&state.home, "pinned", pinned)?;
@@ -1585,6 +1695,7 @@ pub fn update_with_submission_receipt(
     }
     state.attempt = Some(now());
     persist(&root.join("state.json"), &state)?;
+    migrate_update_policy(&state.home)?;
     let manifest = fetch_manifest(root)?;
     let result = apply(root, &mut state, &manifest, &mut preflight, submission)?;
     state.success = now();
@@ -1766,6 +1877,7 @@ fn resume_rollback(root: &Path, state: &mut State, previous: Recovery, submissio
         ready_home(&root.join(&previous.application), &state.home, None)?;
     }
     persist(&root.join("activation.json"), &activation)?;
+    prepare_activation(root, state, previous.baseline.as_deref())?;
     activate(root, &root.join(&previous.application))?;
     state.application = previous.application;
     state.application_sha256 = previous.application_sha256;

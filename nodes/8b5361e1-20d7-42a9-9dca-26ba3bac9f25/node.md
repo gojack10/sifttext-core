@@ -40,20 +40,25 @@ An `update_available` notice records an available release, not proof that it can
 
 Under ask permission, follow: “Read update-guide. When the user is next present, ask for permission to update SiftText.” Keep other work moving while the user is absent.
 
-Under standing permission, follow: “Read update-guide. At a convenient pause, update SiftText. The user has already given standing permission.” The agent follows this permission; terminal detection does not create or revoke it.
+Automatic updates are enabled by default. Under standing permission, handle the update at a convenient pause and keep the user informed through [[Keeping the Human in the Loop|6e9f23b3-3fbe-4dbd-9b58-6842438d2d01]]. The configured default is not a claim that the user explicitly granted permission. Terminal detection does not change the policy.
 
-Record routine permission only after the user's approval:
+Inspect or change the policy:
 
 ```sh
-"$BIN" update --grant standing
 "$BIN" update --config
+"$BIN" update --grant ask
+"$BIN" update --grant standing
 ```
 
-The grant command updates the `updates` object in `.sifttext/config.json` while preserving the user's other settings.
+The grant command preserves unrelated settings in `.sifttext/config.json`. Use `ask` when the user prefers approval before updates. Once recorded under the current policy, that choice survives future updates.
 
-Revoke a grant with `"$BIN" update --grant ask`. Never grant permission for yourself or copy it from another machine.
+Existing installations move to automatic updates once when the new policy arrives. New installations start with the policy already recorded. Older release binaries still govern installation of the release that introduces the change. Follow the installed receipt rather than assuming an old binary already supports the new policy.
 
-On releases that lack saved update permissions, obtain permission for the current update.
+Bad example, automatic updates enabled:
+“An update is available. Please tell me whether I should proceed.”
+
+Better example:
+“Looks like there’s a SiftText update. I’ll take care of it once I finish this pass.”
 
 ## Inspect and apply
 
@@ -87,7 +92,15 @@ An existing project node can be associated with the repair using `"$BIN" update 
 "$BIN" update --resume
 ```
 
-Read the updated files listed in `refresh_instruction_paths` before continuing the original task.
+Read the updated files listed in `refresh_instruction_paths`. Run `sifttext instructions` after the update and follow any `harness-instructions-refresh` request through its actual guide. Installing new KB nodes does not itself update the harness's persistent instructions.
+
+Keep the user informed even when the update or instructions refresh is automatic, then continue their task. These examples are synthetic, to adapt rather than recite.
+
+Bad example:
+“Update operation successful. Application and instruction synchronization completed.”
+
+Better example, both operations succeeded:
+“The SiftText update is done, and my instructions just refreshed. Continuing with [current task] now.”
 
 ## Recover missing instruction history
 
