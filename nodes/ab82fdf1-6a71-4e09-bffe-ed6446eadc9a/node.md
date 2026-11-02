@@ -10,7 +10,7 @@ position: 1024
 ## Compare sources and candidate
 Receive the complete proposed change from [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]] within the permitted source range.
 
-Use [[Write Grounded Stable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]] and its examples to review each knowledge claim.
+Use [[Write Grounded Durable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]] and its examples to review each knowledge claim.
 
 Check each candidate claim against its actual source and version.
 

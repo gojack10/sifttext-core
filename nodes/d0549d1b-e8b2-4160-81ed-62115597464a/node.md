@@ -1,6 +1,6 @@
 ---
 id: "d0549d1b-e8b2-4160-81ed-62115597464a"
-name: "Write Grounded Stable Nodes"
+name: "Write Grounded Durable Nodes"
 micro_summary: "Connects a conclusion to its source evidence."
 status: "resolved"
 see_also: [{"target":"5a7e7c35-ac0c-4590-8e1b-a208fa71febe","reason":"Defines the name and micro-summary contract used when authoring a node."}]

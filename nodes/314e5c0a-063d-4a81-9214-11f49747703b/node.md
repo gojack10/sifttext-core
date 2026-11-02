@@ -19,7 +19,7 @@ Use [[Nest Meaningful Developments|5caf4b24-85b9-46cc-88b5-50b80feb1c19]] when c
 
 Use [[Read One Meaningful Level|b7a734be-af2e-41d6-8415-9078c69ae5ab]] when choosing what to read.
 
-Use [[Write Grounded Stable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]] when recording or relying on a claim.
+Use [[Write Grounded Durable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]] when recording or relying on a claim.
 
 Use [[Reconsider Preserved Understanding|5c1ba531-81c9-49ea-935d-7919772483b0]] when new evidence challenges earlier understanding.
 
