@@ -14,7 +14,7 @@ Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] to loca
 
 Recover the conditions and corrections that affect an earlier conclusion.
 
-A node's latest crystallization is its current understanding. Earlier sections are history unless a correction says otherwise.
+A node's content records its current understanding. Earlier sections are history unless a correction says otherwise.
 
 Attribute human statements to their sources.
 
