@@ -18,11 +18,9 @@ const POINTER: &str = "AGENTS.md";
 const POINTER_RULE: &str = "/AGENTS.md";
 const CHAT_ARTIFACTS_RULE: &str = "/nodes/*/artifacts/chats/";
 const ARTIFACTS_RULE: &str = "/nodes/*/artifacts/";
-/// The entrypoint's six direct children in authored order. Same identities
-/// `instructions` resolves; they are not a second hierarchy.
-
-
-const PIPELINE: [&str; 7] = [
+/// The entrypoint's direct children in authored order, not a second hierarchy.
+const PIPELINE: [&str; 8] = [
+    "6e9f23b3-3fbe-4dbd-9b58-6842438d2d01",
     "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
     "b6107909-a33b-4c63-ab0d-351ba1a1b672",
     "4cc0b396-4b55-415e-bb26-b51c97e6ca78",
@@ -53,11 +51,11 @@ fn pointer_text() -> String {
          1. `nodes/{ENTRY}/node.md` - the Local Core Agent Entrypoint for this home.\n\
             It names the SiftText Read procedure to use before interpreting stored\n\
             knowledge and the SiftText Commit procedure to use before an authorized\n\
-            knowledge write, and selects the other direct children under\n\
-            `nodes/{ENTRY}/children/` only when the task needs them. This pointer\n\
+            knowledge write, and distinguishes required onboarding reads from\n\
+            conditional guides under `nodes/{ENTRY}/children/`. This pointer\n\
             adds no instruction of its own and replaces no authored node.\n\
          \n\
-         Follow only task-relevant instructions from the entry file above. `sifttext instructions .` prints the checked entry path\n\
+         Follow the required reads and applicable conditional guides from the entry file above. `sifttext instructions .` prints the checked entry path\n\
          and `sifttext -h` lists the local commands. Edit authored knowledge only in a private worktree from\n\
          `sifttext worktree <home>`, then publish with `sifttext submit`. If the entry file\n\
          above is missing or unreadable, stop and report that exact path; do not substitute\n\
