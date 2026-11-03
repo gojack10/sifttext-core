@@ -801,8 +801,10 @@ fn prepare_worktrees(app: &Path, home: &Path) -> Result<usize> {
         let path = Path::new(path);
         if path == home { continue }
         crate::real_dir(path)?;
-        candidate_command(app, "index", path)?;
-        count += 1;
+        match candidate_command(app, "index", path) {
+            Ok(()) => count += 1,
+            Err(error) => eprintln!("Retained draft not prepared; its owner must reconcile it before use: {}: {error}", path.display()),
+        }
     }
     Ok(count)
 }
