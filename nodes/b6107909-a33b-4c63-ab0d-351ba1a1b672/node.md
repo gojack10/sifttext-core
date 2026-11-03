@@ -31,7 +31,7 @@ trees/ROOT_UUID
 
 The UUID identifies a node.
 
-Parentage comes from child symlinks. Display order comes from each child node's `position` in its front matter. Legacy homes may still use `children.order` until explicitly migrated; upgrade every writer before converting one.
+Parentage comes from child symlinks. Display order comes from each child node's `position` in its front matter. Legacy homes may still use `children.order` until explicitly migrated; upgrade every writer before converting one. For ordering edits or conversion, read [[Child Positions and Migration|80a9fe5d-8b48-412e-9ab1-15e6a67ad072]].
 
 Generated views live at `nodes/<id>/outline.lean` (the node and its direct children) and `nodes/<id>/outline.full.lean` (the whole subtree). Prefer ordinary file tools on them. The outline command fast-tracks the same files and prepends `outline-file` with the selected file's full absolute path. These rebuildable views may need generation before they exist.
 

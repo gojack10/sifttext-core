@@ -1,3 +1,12 @@
+---
+id: "80a9fe5d-8b48-412e-9ab1-15e6a67ad072"
+name: "Child Positions and Migration"
+micro_summary: "Explains position-based child order and conversion between supported ordering formats."
+status: "resolved"
+see_also: [{"target":"fb1e0c9f-8c04-4baf-91e6-4688856a14af","reason":"Publish an authorized ordering conversion through a private draft."}]
+scope: "Maintain deterministic child order and convert legacy lists with a compatible Core writer."
+position: 1024
+---
 # Child positions and migration
 
 Relationships remain symlinks at `nodes/PARENT/children/CHILD`. Converted nodes
@@ -21,15 +30,15 @@ convert unrelated legacy trees or downgrade another device.
 ## Authorized conversion
 
 Upgrade all participating local, hosted and guest Core readers/writers first.
-Older Core cannot read converted homes; keep the managed candidate pinned until
-the official release supports this format. Finish retained legacy contributions
-before conversion so they do not modify a list the migration deletes.
+Older Core cannot read converted homes; select a release that supports positions
+before converting. Finish retained legacy contributions before conversion so
+they do not modify a list the migration deletes.
 
 Allocate a normal private worktree, then run `sifttext migrate-order WORKTREE`.
 The deterministic converter gives every child its existing ordinal times 1024,
 gives roots position zero, and removes the shared lists. It preserves bodies,
 other metadata, relationships, statuses, references and the displayed sequence.
-Commit and submit through normal native publication using the original base.
+Commit and submit through [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]] using the original base.
 The converter itself never advances accepted main or rewrites history.
 
 Position-only edits do not buy a new semantic check. Native graph/status and

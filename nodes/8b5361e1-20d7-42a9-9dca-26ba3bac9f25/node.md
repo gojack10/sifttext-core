@@ -131,7 +131,7 @@ While pinned, knowledge-only releases can apply with the active executable.
 "$BIN" update --config
 ```
 
-Treat the pin as a local user choice. Position-based homes require a position-aware writer. Before deliberately selecting an older binary, follow `docs/child-order.md` from the matching source to restore legacy order in a private draft with the newer binary, then commit and submit it. Do not reset the home or re-enable an older full-history sync runner.
+Treat the pin as a local user choice. Position-based homes require a position-aware writer. Before deliberately selecting an older binary, follow [[Child Positions and Migration|80a9fe5d-8b48-412e-9ab1-15e6a67ad072]] to restore legacy order in a private draft with the newer binary, then commit and submit it. Do not reset the home or re-enable an older full-history sync runner.
 
 ## Rollback
 

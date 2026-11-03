@@ -1,3 +1,12 @@
+---
+id: "12e1e893-b0ab-4f82-b0db-37de70b95034"
+name: "Account and Synced Knowledge"
+micro_summary: "Guides account access, upload consent, selective knowledge sync and retained-transfer recovery."
+status: "resolved"
+see_also: [{"target":"c5dd1192-f75f-4369-bd9e-852f86b55121","reason":"Connect a remote client and bootstrap its hosted workspace."},{"target":"1b668703-b591-4790-ae6b-5c4202413de5","reason":"Interpret checker credits, retained findings and submission outcomes."}]
+scope: "Configure paid access and knowledge synchronization within the user's consent."
+position: 3072
+---
 # Account and synced knowledge
 
 Use this guide when setting up paid services or responding to the guide path returned by `sifttext login` or `sifttext account`. Set `HOME` in the commands below to the knowledge-home path returned by setup.

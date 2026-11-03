@@ -776,7 +776,7 @@ fn login(store: &Store) -> Result<()> {
 }
 
 pub fn guide_path() -> Result<PathBuf> {
-    let path = crate::local::runtime()?.join("docs/account-sync.md");
+    let path = crate::local::runtime()?.join("nodes/12e1e893-b0ab-4f82-b0db-37de70b95034/node.md");
     if !path.is_file() {
         return Err("installed account/sync guide missing; preserve local knowledge and repair the package".into());
     }

@@ -30,6 +30,8 @@ Active operations and drafts with submitted-save journals are retained. Expiry d
 
 Cleanup failures retain the affected workspace and do not prevent the requested command.
 
+When investigating expiry or retained operation storage, read [[Temporary Operation Storage|e28be119-f267-4487-8601-9fecfd1e61f1]] for the ownership, lock and inactivity conditions.
+
 ## Authority and private draft
 
 Follow SiftText Commit and its required reads before knowledge edits.

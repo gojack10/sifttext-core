@@ -68,6 +68,10 @@ Preserve the original file as an exact suffix and verify that the path resolves.
 
 Use [[Session Evidence|3651b9b0-fc21-4c67-9d79-84ef3af963ce]] during Commit when a session materially supports the knowledge.
 
+## Account and sync
+
+For account access, upload consent, sharing selection and sync recovery, read [[Account and Synced Knowledge|12e1e893-b0ab-4f82-b0db-37de70b95034]]. The `login` and `account` receipts return this guide's path in the installed runtime.
+
 ## Hosted checks
 
 Use [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] before submit or for `sifttext epistemic-check FILE` and staged packet review.

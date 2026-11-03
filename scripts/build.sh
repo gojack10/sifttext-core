@@ -29,7 +29,7 @@ case "${1:-}" in
   *) echo 'usage: sh scripts/build.sh [--release]' >&2; exit 1 ;;
 esac
 { printf '%s\n' Cargo.toml Cargo.lock README.md .gitignore rust-toolchain.toml;
-  for dir in src laws scripts tests fixtures docs; do
+  for dir in src laws scripts tests fixtures; do
     if [ -d "$dir" ]; then find "$dir" -type f | LC_ALL=C sort; fi
   done
 } |

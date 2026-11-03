@@ -1,3 +1,12 @@
+---
+id: "e28be119-f267-4487-8601-9fecfd1e61f1"
+name: "Temporary Operation Storage"
+micro_summary: "Explains private draft and publication-view storage, completion cleanup and inactivity expiry."
+status: "resolved"
+see_also: []
+scope: "Keep durable artifacts outside disposable drafts and understand which operation workspaces Core may expire."
+position: 1024
+---
 # Temporary operation storage
 
 Core places newly allocated private drafts, internal publication views and large
