@@ -982,7 +982,7 @@ pub fn advance(policy: &Policy, home: &Path) -> Result<Value> {
 
 #[path = "local_submission.rs"]
 mod submission;
-pub use submission::{submit, submit_received};
+pub use submission::{submit, submit_received, submit_with_options};
 pub(crate) use submission::{expire_draft, retained_submission};
 
 fn reader_repository(home: &Path) -> Result<()> {

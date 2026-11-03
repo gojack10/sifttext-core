@@ -935,7 +935,7 @@ fn authored_tree_refuses_force_tracked_artifacts_including_chat_links() {
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None, false)
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None, false, false)
 }
 
 /// Check and accept the combination in the submitted worktree. The caller owns
@@ -952,7 +952,7 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record, None, None, false)
+    submit_inner(policy, request, true, previous_heads, &mut record, None, None, false, false)
 }
 
 pub(crate) fn save_prepared_leased(
@@ -960,12 +960,14 @@ pub(crate) fn save_prepared_leased(
     request: &Request,
     lease: &crate::local::DraftLease,
     received: bool,
+    accept_despite_findings: bool,
     reader: Option<&mut crate::git_snapshot::GitReader>,
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
     submit_inner(
         policy, request, true, previous_heads, &mut record, Some(lease), reader, received,
+        accept_despite_findings,
     )
 }
 
@@ -978,6 +980,7 @@ fn submit_inner(
     lease: Option<&crate::local::DraftLease>,
     reader: Option<&mut crate::git_snapshot::GitReader>,
     received: bool,
+    accept_despite_findings: bool,
 ) -> Receipt {
     let start = Instant::now();
     let mut receipt = Receipt {
@@ -1032,6 +1035,7 @@ fn submit_inner(
             &notes,
             reader,
             received,
+            accept_despite_findings,
         )
     })();
     receipt.lifecycle = notes.take();
@@ -1111,6 +1115,7 @@ fn execute(
     notes: &owned::Notes,
     reader: Option<&mut crate::git_snapshot::GitReader>,
     received: bool,
+    accept_despite_findings: bool,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
     crate::real_dir(&q.repo)?;
@@ -1463,6 +1468,9 @@ fn execute(
             let mut result = crate::hosted_checks::publication(&mut reader,
                 if draft.is_some() { Some(&before) } else { None }, &final_view);
             if replication { result["replication"] = serde_json::json!(true); }
+            if accept_despite_findings && result["status"] == "findings" {
+                result["accepted_despite_findings"] = serde_json::json!(true);
+            }
             crate::hosted_checks::retain_results(&repo, &result)?;
             let mut file = tempfile::NamedTempFile::new_in(&records)?;
             serde_json::to_writer(&mut file, &crate::hosted_checks::publication_record(&result))?;
@@ -1476,13 +1484,16 @@ fn execute(
                 _ => "unchecked",
             };
             r.hosted_check = Some(result);
-            if r.semantic_check == "findings" && !replication {
+            if r.semantic_check == "findings" && !replication && !accept_despite_findings {
                 r.check = "hosted_epistemic_findings";
-                return Err("hosted epistemic findings; draft preserved".into());
+                return Err("hosted epistemic findings; draft preserved. To waive only this refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into());
             }
         } else if path.try_exists()? {
             let mut result: serde_json::Value = serde_json::from_slice(&crate::read_regular(&path)?)?;
             if replication { result["replication"] = serde_json::json!(true); }
+            if accept_despite_findings && result["status"] == "findings" {
+                result["accepted_despite_findings"] = serde_json::json!(true);
+            }
             // Historical diagnostics only: never use this file to authorize a new candidate.
             r.semantic_check = match result["status"].as_str() {
                 Some("passed") => "passed",
@@ -1491,9 +1502,9 @@ fn execute(
                 _ => "unchecked",
             };
             r.hosted_check = Some(result);
-            if r.semantic_check == "findings" && !replication && !already {
+            if r.semantic_check == "findings" && !replication && !already && !accept_despite_findings {
                 r.check = "hosted_epistemic_findings";
-                return Err("hosted epistemic findings; draft preserved".into());
+                return Err("hosted epistemic findings; draft preserved. To waive only this refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into());
             }
         }
     }

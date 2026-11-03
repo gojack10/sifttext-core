@@ -240,13 +240,13 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             if force {
                 explicit.pop();
             }
-            let submit = if explicit == ["--received-statuses"] {
+            let accept_despite_findings = explicit.iter().any(|arg| arg == "--accept-despite-findings");
+            explicit.retain(|arg| arg != "--accept-despite-findings");
+            let received = explicit == ["--received-statuses"];
+            if received {
                 explicit.clear();
-                local::submit_received
-            } else {
-                local::submit
-            };
-            let receipt = submit(
+            }
+            let receipt = local::submit_with_options(
                 &policy,
                 &sifttext_file_graph::checked_publication::Request {
                     repo: repo.into(),
@@ -258,6 +258,8 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                     pause_before_publish: None,
                     pause_after_publish: None,
                 },
+                received,
+                accept_despite_findings,
             )?;
             print_large_return(
                 &format!(

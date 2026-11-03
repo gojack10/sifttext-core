@@ -68,7 +68,7 @@ const GROUPS: &[Group] = &[
             command("worktree HOME", "Allocate a private draft"),
             command("create WORKTREE NAME SUMMARY [PARENT_UUID]", "Create a root or child"),
             command("normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]", "Apply draft status changes"),
-            command("submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses] [-y]", "Publish a checked draft"),
+            command("submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses] [--accept-despite-findings] [-y]", "Publish a checked draft; --accept-despite-findings waives only findings refusal, never checking or structural/integrity/consent gates. Agents must never pass it without the user's explicit OK."),
             command("accepted REPO [-y]", "Open the checked accepted view"),
             command("advance HOME", "Fast-forward a clean home"),
             command("migrate-order WORKTREE [--legacy]", "Convert draft child ordering").full_help_only(),

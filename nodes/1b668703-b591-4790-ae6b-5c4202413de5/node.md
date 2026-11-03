@@ -13,16 +13,28 @@ Read this procedure from [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]
 
 Review the proposed text against its sources. Distinguish observations from interpretations and preserve the context of consequential quotations, including rejected historical claims.
 
-For a logged-in paid account with credits, Core's binary checks changed node Markdown in the immutable combined candidate before accepting submit. The binary sends those changes itself. An agent's claim that a check passed cannot satisfy this gate.
+During authenticated paid submission, Core requests hosted review of changed node Markdown from the immutable combined candidate. Read the binary's actual receipt to establish whether review completed. An agent's claim that a check passed cannot satisfy this gate.
 
 | Result | Submit behavior |
 | --- | --- |
 | Passing check | Continue the checked publication procedure. |
-| Findings | Refuse acceptance and preserve the draft for repair. |
+| Findings | Refuse acceptance and preserve the draft for repair unless the user explicitly approves accepting despite findings for this submission. |
 | Credit shortage or technical failure | Save marked unchecked and explain the missing check. |
 | Logged-out or free offline use | Keep the existing local save path. |
 
 Hosted authored submissions use native Core checking too. Own-account replication of already accepted history retains findings as repair work without refusing transport on that ground; integrity, topology, account binding and consent checks still apply. This does not approve sharing a flagged node with another person. Resolve its findings before such sharing, and preserve the human approval boundary.
+
+## Accept despite findings only with explicit approval
+
+When `sifttext submit --help` lists `--accept-despite-findings`, the user may approve waiving the findings refusal for one submission:
+
+```sh
+sifttext submit HOME WORKTREE COMMIT BASE --accept-despite-findings
+```
+
+Agents must never pass `--accept-despite-findings` without the user's explicit OK. Approval to save knowledge alone is not approval to waive findings. If the flag is unavailable in the installed version, preserve the draft rather than bypassing publication.
+
+The checker still runs. Findings stay recorded as `semantic_check: findings`; the check record marks `accepted_despite_findings` without relabeling the verdict as passed or unchecked. Structural, integrity and consent checks still refuse invalid publication. The flag waives only the findings refusal for this invocation, not a later submission or permission to share a flagged node with another person. `-y` controls large output only and does not waive findings.
 
 ## Check supplied text on demand
 

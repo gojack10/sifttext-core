@@ -543,8 +543,9 @@ pub fn render_publication(check: &Value) -> String {
     let mut lines = Vec::new();
     match check["status"].as_str() {
         Some("passed") => (),
+        Some("findings") if check["accepted_despite_findings"] == true => lines.push("Epistemic findings retained; findings refusal waived for this submission.".into()),
         Some("findings") if check["replication"] == true => lines.push("Epistemic findings retained for repair; own-account replication is not blocked.".into()),
-        Some("findings") => lines.push("Not accepted. Draft preserved.".into()),
+        Some("findings") => lines.push("Not accepted. Draft preserved. To waive only the findings refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into()),
         Some("not_required") if check["reason"] == "no_changed_node_text" => lines.push("Epistemic submit check: no changed node text.".into()),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),
         _ => lines.push("Epistemic submit check: unchecked (no credits or service unavailable). To check these nodes later, run epistemic-check explicitly.".into()),

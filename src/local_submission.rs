@@ -308,8 +308,22 @@ pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result
 /// changes are explicit; the combined candidate still passes the ordinary gate.
 /// A retained native request always keeps its original, frozen intents.
 pub fn submit_received(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
-    submit_with_status(policy, request, true, || Ok(())).map_err(|error| {
+    submit_with_status(policy, request, true, false, || Ok(())).map_err(|error| {
         format!("received submission completion unknown; retain files and original arguments for retry: {error}").into()
+    })
+}
+
+/// Submission-scoped options, never persisted as authority for a later request.
+/// Findings may be accepted only with the user's explicit approval; checking and
+/// structural, integrity and consent gates remain mandatory.
+pub fn submit_with_options(
+    policy: &Policy,
+    request: &checked_publication::Request,
+    received: bool,
+    accept_despite_findings: bool,
+) -> Result<Value> {
+    submit_with_status(policy, request, received, accept_despite_findings, || Ok(())).map_err(|error| {
+        format!("submission completion unknown unless reported below; retain files and original submit arguments for retry: {error}").into()
     })
 }
 
@@ -318,13 +332,14 @@ fn submit_inner(
     request: &checked_publication::Request,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
-    submit_with_status(policy, request, false, before_return)
+    submit_with_status(policy, request, false, false, before_return)
 }
 
 fn submit_with_status(
     policy: &Policy,
     request: &checked_publication::Request,
     received: bool,
+    accept_despite_findings: bool,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
     let mut request = request.clone();
@@ -520,6 +535,7 @@ fn submit_with_status(
             &request,
             &draft_lease,
             received,
+            accept_despite_findings,
             received_reader.as_mut(),
             previous_heads
                 .as_ref()
