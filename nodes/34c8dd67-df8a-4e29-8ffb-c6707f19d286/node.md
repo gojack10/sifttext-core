@@ -12,6 +12,6 @@ Use resolved when the node's own completion condition is satisfied and its body 
 
 A captured report can satisfy that condition even when its explanation stays uncertain.
 
-An active direct child prevents parent resolution under the native rules in [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]].
+An active direct child prevents parent resolution under the native rules in [Knowledge Layout](../b6107909-a33b-4c63-ab0d-351ba1a1b672/node.md).
 
 New evidence can reopen the question, so preserve the earlier result and its grounds.

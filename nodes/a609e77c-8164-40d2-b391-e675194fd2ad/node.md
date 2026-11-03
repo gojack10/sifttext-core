@@ -8,11 +8,11 @@ scope: "Saves the approved delta and restores coherent continuation through reco
 position: 1024
 ---
 ## Apply the approved change
-Receive the reviewed candidate and actual saving authority from [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]].
+Receive the reviewed candidate and actual saving authority from [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md).
 
 Refresh an affected source that changed after the proposal and reconcile intervening work before editing.
 
-Use [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]] to allocate or reuse an owned private draft.
+Use [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) to allocate or reuse an owned private draft.
 
 Use the installed native commands and ordinary file tools.
 
@@ -26,7 +26,7 @@ Apply terminal statuses after their supporting content is saved.
 
 Perform separately approved deletions last.
 
-Use [[Associate External Artifact Directories|de7cea55-c93d-48db-a4f6-58368bf6c36f]] for durable directory associations.
+Use [Associate External Artifact Directories](../de7cea55-c93d-48db-a4f6-58368bf6c36f/node.md) for durable directory associations.
 
 ## Maintain instructions
 
@@ -41,8 +41,8 @@ On a failed operation, suspend its dependent changes and preserve successful ind
 
 Read current state before retrying an uncertain operation.
 
-Follow [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]]'s actual recovery path without forcing past a refusal.
+Follow [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md)'s actual recovery path without forcing past a refusal.
 
-Use [[Verify Saved Branches|325a011f-191e-427d-8eae-ac0097a005f1]] to compare the saved result with the approved candidate.
+Use [Verify Saved Branches](../325a011f-191e-427d-8eae-ac0097a005f1/node.md) to compare the saved result with the approved candidate.
 
 Return the accepted result and any exact incomplete condition.

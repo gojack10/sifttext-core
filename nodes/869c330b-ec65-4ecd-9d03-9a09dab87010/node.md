@@ -35,15 +35,15 @@ Revise in the user's voice.
 
 If the user asked for a revision, repair meaningful findings within that grant and check the revised text when authorized. Do not weaken an accurate statement merely to obtain a pass. A clean result is a checker judgment, not human approval or a guarantee of good writing.
 
-For knowledge prose, revise with [[Write for the Reader|10f2d4ab-3318-45d8-9486-f26a817c829e]].
+For knowledge prose, revise with [Write for the Reader](../10f2d4ab-3318-45d8-9486-f26a817c829e/node.md).
 
-Before submitting revised knowledge, read [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] to handle Core's epistemic review.
+Before submitting revised knowledge, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle Core's epistemic review.
 
 ## Credits and saved results
 
 Both paid plans include this checker, with the last 25% of included monthly credits reserved for epistemic checking. Explain a reserve refusal as a credit limit that can stop slop use before the total balance reaches zero.
 
-Read the credit and recovery sections of [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] before explaining billing.
+Read the credit and recovery sections of [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) before explaining billing.
 
 Retrieve a saved response without another run or charge:
 
@@ -55,4 +55,4 @@ Before checking sensitive writing, explain that the submitted text and results a
 
 Return the actual findings or authorized revision to the user's writing task.
 
-For a knowledge change, follow [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]]'s approval and publication procedure.
+For a knowledge change, follow [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s approval and publication procedure.

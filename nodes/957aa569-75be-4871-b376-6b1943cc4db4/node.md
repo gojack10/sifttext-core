@@ -7,8 +7,8 @@ see_also: []
 scope: "Guides the design and review of complete, navigable agent instructions."
 position: 2048
 ---
-Read [[Author Navigable Procedures|6c1273a2-59f3-4037-af16-d884c9d7ac23]] and its required responsibility branches.
+Read [Author Navigable Procedures](../6c1273a2-59f3-4037-af16-d884c9d7ac23/node.md) and its required responsibility branches.
 
 Make the current procedure executable without reconstructing earlier amendments.
 
-Save approved instruction changes through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]].
+Save approved instruction changes through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md).

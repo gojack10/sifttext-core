@@ -15,6 +15,6 @@ Repair an affected instruction that remains contradictory or depends on missing 
 
 Report the exact unfinished condition when a required source or decision is unavailable.
 
-Use [[Explain SiftText Persistence|05b51896-9363-4838-b1c5-33d6f7e50b92]] when explaining saved knowledge or its later reuse.
+Use [Explain SiftText Persistence](../05b51896-9363-4838-b1c5-33d6f7e50b92/node.md) when explaining saved knowledge or its later reuse.
 
 Return the actual accepted result to the user.

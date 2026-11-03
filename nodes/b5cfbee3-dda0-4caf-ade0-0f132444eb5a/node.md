@@ -10,8 +10,8 @@ position: 3072
 ---
 Use Claude Code's current harness instructions to identify its persistent-instruction location and available tools.
 
-Supply the authorized knowledge-home path and have it read [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]].
+Supply the authorized knowledge-home path and have it read [Local Core Agent Entrypoint](../5e565245-14fe-406c-977c-cf94a9be246b/node.md).
 
-During authorized setup use [[Maintain Memory Continuity|221ca2fc-1caf-4c40-92e5-d9f55501ba1e]] while preserving existing instructions.
+During authorized setup use [Maintain Memory Continuity](../221ca2fc-1caf-4c40-92e5-d9f55501ba1e/node.md) while preserving existing instructions.
 
-Give the agent a bounded task and follow [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] before saving knowledge changes.
+Give the agent a bounded task and follow [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) before saving knowledge changes.

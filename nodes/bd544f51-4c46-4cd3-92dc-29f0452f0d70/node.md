@@ -10,11 +10,11 @@ position: 3072
 ---
 Agree what the first tree should help you understand or accomplish.
 
-Follow [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] to propose its contents and obtain approval.
+Follow [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) to propose its contents and obtain approval.
 
-Use [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]] to allocate a private draft and retain its base commit.
+Use [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) to allocate a private draft and retain its base commit.
 
-Create a root for the problem and children for independently meaningful questions, using [[CLI Operations|a472e05c-9bbf-48f2-89d7-6c6092c339ed]] and the native layout.
+Create a root for the problem and children for independently meaningful questions, using [CLI Operations](../a472e05c-9bbf-48f2-89d7-6c6092c339ed/node.md) and the native layout.
 
 Read the new files and inspect the actual hierarchy before saving.
 

@@ -18,4 +18,4 @@ Use the reason to explain whether the target supplies a required dependency or o
 
 Read both endpoints and confirm that the target exists before proposing the edge.
 
-Publish approved edits through [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]].
+Publish approved edits through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md).

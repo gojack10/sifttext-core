@@ -38,8 +38,8 @@ A direct human constraint keeps its authority and scope.
 
 An agent's suggested method remains revisable.
 
-For proposed saving, verified saving or later reuse use [[Explain SiftText Persistence|05b51896-9363-4838-b1c5-33d6f7e50b92]].
+For proposed saving, verified saving or later reuse use [Explain SiftText Persistence](../05b51896-9363-4838-b1c5-33d6f7e50b92/node.md).
 
 Return promptly to the task without compulsory encouragement or redundant questions.
 
-Knowledge changes use [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] and its approval boundary.
+Knowledge changes use [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and its approval boundary.

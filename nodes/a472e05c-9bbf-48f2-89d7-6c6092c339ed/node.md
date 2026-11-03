@@ -48,9 +48,9 @@ A new home with the complete instruction pipeline receives an AGENTS.md pointer.
 "$BIN" instructions "$home"
 ```
 
-Read `onboarding-entry` and follow `agent-instructions` before other work. Use [[Onboarding Output and Help|a8be9278-ca1b-4bf4-9fa7-027105bb6c36]] to interpret the retained transport, finding and update fields. The grouped help index is appended automatically; `sifttext help` lists each command form and guide.
+Read `onboarding-entry` and follow `agent-instructions` before other work. Use [Onboarding Output and Help](../a8be9278-ca1b-4bf4-9fa7-027105bb6c36/node.md) to interpret the retained transport, finding and update fields. The grouped help index is appended automatically; `sifttext help` lists each command form and guide.
 
-During authorized setup, follow [[Maintain Memory Continuity|221ca2fc-1caf-4c40-92e5-d9f55501ba1e]].
+During authorized setup, follow [Maintain Memory Continuity](../221ca2fc-1caf-4c40-92e5-d9f55501ba1e/node.md).
 
 Read Worktree Publication before changing knowledge.
 
@@ -66,17 +66,17 @@ Preserve the original file as an exact suffix and verify that the path resolves.
 
 ## Session evidence
 
-Use [[Session Evidence|3651b9b0-fc21-4c67-9d79-84ef3af963ce]] during Commit when a session materially supports the knowledge.
+Use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) during Commit when a session materially supports the knowledge.
 
 ## Account and sync
 
-For account access, upload consent, sharing selection and sync recovery, read [[Account and Synced Knowledge|12e1e893-b0ab-4f82-b0db-37de70b95034]]. The `login` and `account` receipts return this guide's path in the installed runtime.
+For account access, upload consent, sharing selection and sync recovery, read [Account and Synced Knowledge](../12e1e893-b0ab-4f82-b0db-37de70b95034/node.md). The `login` and `account` receipts return this guide's path in the installed runtime.
 
 ## Hosted checks
 
-Use [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] before submit or for `sifttext epistemic-check FILE` and staged packet review.
+Use [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) before submit or for `sifttext epistemic-check FILE` and staged packet review.
 
-For on-demand writing review with `sifttext slop-check FILE`, follow [[AI Slop Writing Check|869c330b-ec65-4ecd-9d03-9a09dab87010]].
+For on-demand writing review with `sifttext slop-check FILE`, follow [AI Slop Writing Check](../869c330b-ec65-4ecd-9d03-9a09dab87010/node.md).
 
 Use `sifttext check-result REQUEST_ID` to retrieve a saved check without rerunning or charging again. Read the checker guidance before explaining credits, retention or unchecked saves.
 

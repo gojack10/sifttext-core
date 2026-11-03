@@ -42,7 +42,7 @@ sifttext sql "$store" 'SELECT p.id AS parent_id,c.value AS child_id FROM nodes p
 sifttext sql "$store" "SELECT n.id,n.name FROM nodes p,json_each(p.children) c JOIN nodes n ON n.id=c.value WHERE p.id='5e565245-14fe-406c-977c-cf94a9be246b' ORDER BY CAST(c.key AS INTEGER)"
 ```
 
-Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] for subtree navigation.
+Use [Retrieve SiftText Knowledge](../526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8/node.md) for subtree navigation.
 
 ## Output
 

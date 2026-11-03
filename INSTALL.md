@@ -16,9 +16,9 @@ Ask the agent to run `sifttext instructions` and follow the returned entry file.
 
 Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
 
-Update prepares derived SQLite records and outlines with the incoming executable before activating it. It includes the managed knowledge home and its existing live Git worktrees. Installation and new-worktree creation prepare their own data too. Ordinary reads refresh authored edits through Git, but never perform a processor/schema upgrade or finish an interrupted application update.
+Update prepares the managed knowledge home with the incoming executable before activating it. Older homes are converted automatically in a temporary native draft: legacy child lists become per-child positions, and UUID-targeted wiki body references become relative Markdown links. Completion is recorded in the home's `.sifttext/config.json` after publication and cleanup, preserving other settings. Existing live Git worktrees are prepared where parseable; another owner's unfinished draft is retained for reconciliation. Installation and new-worktree creation prepare their own data too. Ordinary reads refresh authored edits through Git, but never perform a processor/schema upgrade or finish an interrupted application update.
 
-For the one-time transition from v0.3.14 or earlier, the old updater cannot run this new preparation step. After that upgrade, run `sifttext update --prepare` once before using indexed commands. This offline operation also prepares a restored or separately managed view; source builders can run `sifttext index /absolute/path/to/store` with their new executable. Neither operation changes authored knowledge. A missing or incompatible cache produces an explicit preparation request rather than hiding a rebuild inside a read.
+For the one-time transition from v0.3.14 or earlier, the old updater cannot run this new preparation step. After that upgrade, run `sifttext update --prepare` once before using indexed commands. This offline operation also prepares a restored or separately managed view; source builders can run `sifttext index /absolute/path/to/store` with their new executable. Except for the one-time automatic format conversion, these operations do not change authored knowledge. A missing or incompatible cache produces an explicit preparation request rather than hiding a rebuild inside a read.
 
 ## Establish permission and destinations
 
@@ -213,7 +213,7 @@ Managed installations fetch release notices in a detached process so ordinary co
 | Success | At least four hours later. |
 | Failure | After a cooldown of at least five minutes. |
 
-Automatic agent-managed updates are enabled by default. The agent handles them at a convenient pause and keeps the user informed. Inspect the policy with `sifttext update --config`. Use `sifttext update --grant ask` to request approval before each update, or `sifttext update --grant standing` to enable automatic updates again.
+Automatic updates are enabled by default. Session-start `sifttext instructions` can activate an already cached available release under standing permission before reading the home. Ask permission, pins and retained repairs prevent that automatic step. Background release discovery remains command-driven; a newly discovered release can wait for the next session start or an explicit update. The agent handles any remaining update at a convenient pause and keeps the user informed. Inspect the policy with `sifttext update --config`. Use `sifttext update --grant ask` to request approval before each update, or `sifttext update --grant standing` to enable automatic updates again.
 
 These choices are kept in the knowledge home's `.sifttext/config.json`, preserving unrelated settings. Existing installations migrate once to the automatic policy. New installations start with that migration recorded, so a later `ask` choice is preserved. Follow an older binary's installed help and permission policy when installing the release that introduces the change.
 
@@ -299,7 +299,7 @@ sifttext instructions
 
 | Installation | Instruction command |
 | --- | --- |
-| Default | `sifttext instructions` uses `~/sifttext`. |
+| Default | `sifttext instructions` uses `SIFTTEXT_HOME` when set, otherwise `~/sifttext`. |
 | Custom | Supply the actual launcher and absolute knowledge-home path. |
 
 Read the returned entry and follow its task-specific links.
@@ -324,7 +324,7 @@ For later authorized knowledge changes, follow the installed worktree procedure 
 | --- | --- |
 | Normalization | Applied to the submitted changes. |
 | Deterministic checks | Applied to the combined graph. |
-| Semantic review | Reported as deferred. |
+| Semantic review | Official bundled documentation is exempt; non-exempt knowledge reports the actual hosted review result. |
 
 Read the accepted result before reporting completion. If recovery is unfinished, retain its actual status.
 

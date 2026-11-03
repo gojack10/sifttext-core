@@ -16,9 +16,9 @@ position: 4096
 
 Reusable instructions state their purpose and procedure directly, while their development records belong outside the user-instruction tree.
 
-Read [[Grounded Node Examples|7a5ea88c-daf8-4bab-ab9e-f1a1a789a17a]] when authoring or reviewing knowledge records.
+Read [Grounded Node Examples](../7a5ea88c-daf8-4bab-ab9e-f1a1a789a17a/node.md) when authoring or reviewing knowledge records.
 
-Use [[Stable Navigation Fields|5a7e7c35-ac0c-4590-8e1b-a208fa71febe]] when authoring the name and micro-summary, keeping navigation separate from current results and disposition.
+Use [Stable Navigation Fields](../5a7e7c35-ac0c-4590-8e1b-a208fa71febe/node.md) when authoring the name and micro-summary, keeping navigation separate from current results and disposition.
 
 ## Observed conditions
 Identify what was supplied or examined with enough context for a first-time reader.
@@ -52,7 +52,7 @@ Repeated summaries of one observation retain one evidence lineage.
 
 ## Develop and complete
 
-Use [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]] for native status semantics and required reasons.
+Use [Knowledge Layout](../b6107909-a33b-4c63-ab0d-351ba1a1b672/node.md) for native status semantics and required reasons.
 
 Choose status from the node's own completion condition.
 
@@ -65,6 +65,6 @@ Keep required unfinished work open.
 ## Save
 Return the grounded candidate to its invoking author or reviewer.
 
-Save through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] within the actual approval.
+Save through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) within the actual approval.
 
 A formatting edit must retain evidence needed to understand the claim.

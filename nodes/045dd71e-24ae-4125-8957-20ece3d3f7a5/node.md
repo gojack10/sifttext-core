@@ -16,4 +16,4 @@ Create a child node when its subject is a meaningful part of an existing tree.
 
 The root UUID identifies a tree across its local files and Git history.
 
-Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] to locate a tree or search within one.
+Use [Retrieve SiftText Knowledge](../526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8/node.md) to locate a tree or search within one.

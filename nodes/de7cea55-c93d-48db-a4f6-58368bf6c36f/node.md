@@ -35,8 +35,8 @@ Record the artifact entrance and actual target in the owning node.
 
 Keep artifact contents out of knowledge Git.
 
-Use [[Session Evidence|3651b9b0-fc21-4c67-9d79-84ef3af963ce]] for conversation JSONL rather than treating an active harness file as disposable scratch.
+Use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) for conversation JSONL rather than treating an active harness file as disposable scratch.
 
 Arrange backup separately when requested.
 
-Return verified associations and exact gaps to [[Save and Restore Continuation|a609e77c-8164-40d2-b391-e675194fd2ad]].
+Return verified associations and exact gaps to [Save and Restore Continuation](../a609e77c-8164-40d2-b391-e675194fd2ad/node.md).

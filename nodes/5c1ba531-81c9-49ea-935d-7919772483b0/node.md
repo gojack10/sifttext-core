@@ -23,4 +23,4 @@ Keep useful findings reachable even when their original approach was rejected.
 
 For published user instructions, maintain the current procedure at its stable ID and retain earlier editions in Git.
 
-Save through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]].
+Save through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md).

@@ -16,8 +16,8 @@ Cite a node in prose with its actual UUID in the native form.
 
 Open the cited file to read the target.
 
-For an indexed relationship, add a reasoned see_also edge using [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]].
+For an indexed relationship, add a reasoned see_also edge using [Knowledge Layout](../b6107909-a33b-4c63-ab0d-351ba1a1b672/node.md).
 
 Read both endpoints before adding the relationship.
 
-Publish approved changes through [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]].
+Publish approved changes through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md).

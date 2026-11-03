@@ -49,4 +49,4 @@ Approved response: “That gives us a new angle to explore. Save your observatio
 
 Use an approval request when the current grant requires one.
 
-Return to [[Explain SiftText Persistence|05b51896-9363-4838-b1c5-33d6f7e50b92]].
+Return to [Explain SiftText Persistence](../05b51896-9363-4838-b1c5-33d6f7e50b92/node.md).

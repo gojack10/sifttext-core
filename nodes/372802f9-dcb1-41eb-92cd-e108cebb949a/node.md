@@ -42,7 +42,7 @@ Initialization validates the supplied bundle and creates an independent Git repo
 
 For an existing destination, obtain a reviewed merge plan that accounts for UUID collisions and local edits.
 
-Follow [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]] to apply only the authorized converted files.
+Follow [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) to apply only the authorized converted files.
 
 ## Verify
 

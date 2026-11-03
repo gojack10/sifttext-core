@@ -34,13 +34,13 @@ Local knowledge work and official release updates need no payment or cloud login
 
 Ordinary commands may start a background release check when one is due. In Core's `src/updates.rs`, `opportunistic_with_notice` uses `due`: four hours since a successful check and at least five minutes since the last attempt. This is command-driven scheduling, not a timer that guarantees a check every four hours.
 
-Ordinary commands do not prompt, wait for a release download, or apply updates. Offline work uses the local build. No update-suppression environment variable is needed.
+At session start, `instructions` can apply an already cached available release under the configured standing policy before reading the home. Ask permission, pins and retained update repairs prevent this automatic activation. Other ordinary commands only report or schedule release checks. Offline work keeps the current build when acquisition fails; an interrupted accepted update still requires recovery.
 
 An `update_available` notice records an available release, not proof that it can read every local format. Inspect the release's compatibility and the current pin before changing a converted home. A pin may preserve a newer private format even when an official release is advertised.
 
 Under ask permission, follow: “Read update-guide. When the user is next present, ask for permission to update SiftText.” Keep other work moving while the user is absent.
 
-Automatic updates are enabled by default. Under standing permission, handle the update at a convenient pause and keep the user informed through [[Keeping the Human in the Loop|6e9f23b3-3fbe-4dbd-9b58-6842438d2d01]]. The configured default is not a claim that the user explicitly granted permission. Terminal detection does not change the policy.
+The configured default is automatic updates (`standing`), not evidence of a person's explicit consent. If an available update was not activated at session start, handle it at a convenient pause under that configured policy. Keep the user informed through [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md). Terminal detection does not change the policy.
 
 Inspect or change the policy:
 
@@ -72,13 +72,15 @@ A coupled application/knowledge release stays pending until the candidate applic
 
 Continue independent local work with the active build during a blocked merge. If a command reports that derived data needs preparation, follow that receipt rather than assuming reads can proceed.
 
-The updater runs preparation with the incoming executable before activation, including retained worktrees. For a retained installation whose derived views need preparation, use `"$BIN" update --prepare` within maintenance permission. This prepares local data without selecting a new release; ordinary reads do not rebuild the whole home to cross a processing-version boundary.
+The updater runs preparation with the incoming executable before activation, including retained worktrees that the new reader can parse. Older home formats are converted automatically in a temporary native draft; [Child Positions and Migration](../80a9fe5d-8b48-412e-9ab1-15e6a67ad072/node.md) owns completion markers and recovery. Other owners' old-format drafts remain theirs to reconcile.
+
+For a retained installation whose derived views need preparation, use `"$BIN" update --prepare` within maintenance permission. This can complete the one-time home conversion and prepares local data without selecting a new release. After migration, ordinary reads do not rebuild the whole home to cross a processing-version boundary.
 
 ## Reconcile a blocked knowledge update
 
 A conflict returns a retained worktree and the affected paths.
 
-Use [[Core Maintenance|6da0b35a-955a-4ad2-bdce-2994ba26119c]] to investigate and complete the repair within the user's permission.
+Use [Core Maintenance](../6da0b35a-955a-4ad2-bdce-2994ba26119c/node.md) to investigate and complete the repair within the user's permission.
 
 Read the accepted knowledge and retained candidate before editing the updater's worktree.
 
@@ -131,7 +133,7 @@ While pinned, knowledge-only releases can apply with the active executable.
 "$BIN" update --config
 ```
 
-Treat the pin as a local user choice. Position-based homes require a position-aware writer. Before deliberately selecting an older binary, follow [[Child Positions and Migration|80a9fe5d-8b48-412e-9ab1-15e6a67ad072]] to restore legacy order in a private draft with the newer binary, then commit and submit it. Do not reset the home or re-enable an older full-history sync runner.
+Treat the pin as a local user choice. Select only a position-aware release for a converted home. Core no longer regenerates legacy order lists. Do not reset the home or re-enable an older full-history sync runner.
 
 ## Rollback
 
@@ -143,7 +145,7 @@ The updater reverses the exact accepted update delta while preserving later unre
 
 For interrupted activation, inspect "$BIN" update --status and the refusal diagnostic before resuming.
 
-Investigate persistent refusals through [[Core Maintenance|6da0b35a-955a-4ad2-bdce-2994ba26119c]] while preserving the journal.
+Investigate persistent refusals through [Core Maintenance](../6da0b35a-955a-4ad2-bdce-2994ba26119c/node.md) while preserving the journal.
 
 Never reset accepted history or delete caches to bypass checks.
 

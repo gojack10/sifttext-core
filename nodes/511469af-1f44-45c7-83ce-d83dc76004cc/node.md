@@ -7,7 +7,7 @@ see_also: []
 scope: "Define which instruction branches a task requires."
 position: 2048
 ---
-Apply [[Nest Meaningful Developments|5caf4b24-85b9-46cc-88b5-50b80feb1c19]] to the proposed instruction structure.
+Apply [Nest Meaningful Developments](../5caf4b24-85b9-46cc-88b5-50b80feb1c19/node.md) to the proposed instruction structure.
 
 Give each branch a meaningful responsibility with enough current instructions to perform it.
 
@@ -23,6 +23,6 @@ Ensure a required branch asks for the reading its task needs.
 
 Reuse unchanged reads and batch independent inputs when supported.
 
-Read [[Tree Development Examples|f3f63837-0754-4589-9d6b-58a2dd813741]] when composing structural changes.
+Read [Tree Development Examples](../f3f63837-0754-4589-9d6b-58a2dd813741/node.md) when composing structural changes.
 
-Return the complete candidate to [[Review Instruction Route|ebc1f4b1-5476-4170-b5ad-3ed25f03e202]].
+Return the complete candidate to [Review Instruction Route](../ebc1f4b1-5476-4170-b5ad-3ed25f03e202/node.md).

@@ -21,10 +21,10 @@ Preserve direct human constraints.
 
 Allow delegated methods to change within their grant.
 
-Use [[Nest Meaningful Developments|5caf4b24-85b9-46cc-88b5-50b80feb1c19]] to assess meaningful parentage.
+Use [Nest Meaningful Developments](../5caf4b24-85b9-46cc-88b5-50b80feb1c19/node.md) to assess meaningful parentage.
 
 Check that required children do not import unrelated historical reading.
 
-Use [[Write for the Reader|10f2d4ab-3318-45d8-9486-f26a817c829e]] for understandable expression.
+Use [Write for the Reader](../10f2d4ab-3318-45d8-9486-f26a817c829e/node.md) for understandable expression.
 
-Present the exact reviewed change through [[Present the Reviewable Delta|4036d3c5-e596-4a9c-b432-1c4ccc3162b4]].
+Present the exact reviewed change through [Present the Reviewable Delta](../4036d3c5-e596-4a9c-b432-1c4ccc3162b4/node.md).

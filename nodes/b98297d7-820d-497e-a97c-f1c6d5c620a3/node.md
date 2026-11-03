@@ -19,6 +19,6 @@ Specify what the procedure returns and where work continues.
 
 State how missing inputs or a user override affect the dependent action.
 
-Use [[Write Grounded Durable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]] for claim distinctions and [[Reconsider Preserved Understanding|5c1ba531-81c9-49ea-935d-7919772483b0]] for changed prior guidance.
+Use [Write Grounded Durable Nodes](../d0549d1b-e8b2-4160-81ed-62115597464a/node.md) for claim distinctions and [Reconsider Preserved Understanding](../5c1ba531-81c9-49ea-935d-7919772483b0/node.md) for changed prior guidance.
 
-Return the proposed contract to [[Compose Applicable Reading|511469af-1f44-45c7-83ce-d83dc76004cc]].
+Return the proposed contract to [Compose Applicable Reading](../511469af-1f44-45c7-83ce-d83dc76004cc/node.md).

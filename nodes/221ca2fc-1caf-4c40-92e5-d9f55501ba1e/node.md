@@ -7,7 +7,7 @@ see_also: []
 scope: "Guide authorized setup and subsequent chats through a persistent harness entrance and preserved memory migration without creating a competing memory system."
 position: 7168
 ---
-During authorized setup, use [[Harness Bootstrap and Migration|98892306-f87b-4361-9d91-fac2e0023a11]] to make future conversations read the SiftText entrypoint.
+During authorized setup, use [Harness Bootstrap and Migration](../98892306-f87b-4361-9d91-fac2e0023a11/node.md) to make future conversations read the SiftText entrypoint.
 
 Reuse a correct persistent pointer in later conversations.
 

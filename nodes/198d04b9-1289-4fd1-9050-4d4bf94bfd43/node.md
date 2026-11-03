@@ -7,7 +7,7 @@ see_also: []
 scope: "Present a knowledge-tree change for review."
 position: 2048
 ---
-These synthetic examples illustrate the notation used by [[Present the Reviewable Delta|4036d3c5-e596-4a9c-b432-1c4ccc3162b4]].
+These synthetic examples illustrate the notation used by [Present the Reviewable Delta](../4036d3c5-e596-4a9c-b432-1c4ccc3162b4/node.md).
 
 In a real proposal, use the affected nodes' IDs and source evidence.
 
@@ -87,4 +87,4 @@ The reasons identify what would allow each branch to continue.
 
 The correction preserves the employee's reported experience.
 
-Return to [[Present the Reviewable Delta|4036d3c5-e596-4a9c-b432-1c4ccc3162b4]].
+Return to [Present the Reviewable Delta](../4036d3c5-e596-4a9c-b432-1c4ccc3162b4/node.md).

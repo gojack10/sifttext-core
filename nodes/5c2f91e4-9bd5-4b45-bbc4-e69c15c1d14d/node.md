@@ -10,7 +10,7 @@ position: 4096
 ## Recover relevant understanding
 Start from the user's actual question and the context already available.
 
-Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] to locate relevant nodes, then read their bodies and decisive evidence.
+Use [Retrieve SiftText Knowledge](../526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8/node.md) to locate relevant nodes, then read their bodies and decisive evidence.
 
 Recover the conditions and corrections that affect an earlier conclusion.
 
@@ -29,4 +29,4 @@ Give the context they need to assess the result without assuming they read the n
 
 Continue the task when existing context is sufficient.
 
-Save knowledge changes through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]]'s approval boundary.
+Save knowledge changes through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s approval boundary.

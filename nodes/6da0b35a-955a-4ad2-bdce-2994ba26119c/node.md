@@ -21,7 +21,7 @@ Preserve the user's knowledge and recovery files throughout repair.
 
 Read its agent and build instructions before changing code.
 
-Use [[Managed Releases and Updates|8b5361e1-20d7-42a9-9dca-26ba3bac9f25]] for supported update recovery.
+Use [Managed Releases and Updates](../8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md) for supported update recovery.
 
 The current assignment determines whether code changes and upstream contributions are authorized.
 

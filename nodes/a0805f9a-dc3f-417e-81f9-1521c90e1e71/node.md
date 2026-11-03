@@ -20,7 +20,7 @@ Your knowledge lives in your local Git repository.
 
 Enabling cloud sync creates a server copy of the selected knowledge that SiftText then keeps updated through scheduled transfers.
 
-SiftText's cloud MCP tools access the server copy. Follow [[Connect Hosted MCP|c5dd1192-f75f-4369-bd9e-852f86b55121]] to connect a remote client.
+SiftText's cloud MCP tools access the server copy. Follow [Connect Hosted MCP](../c5dd1192-f75f-4369-bd9e-852f86b55121/node.md) to connect a remote client.
 
 By default, sync includes every node in that knowledge home once you approve uploading it. You do not need to select trees individually to share the whole home.
 
@@ -64,4 +64,4 @@ Core does not inject memory into a conversation automatically.
 
 The current agent maintains the knowledge under your approval.
 
-See [[The Binder|5f146883-03c8-416c-be6b-c52cbcb055f2]] for the intended interaction metaphor.
+See [The Binder](../5f146883-03c8-416c-be6b-c52cbcb055f2/node.md) for the intended interaction metaphor.

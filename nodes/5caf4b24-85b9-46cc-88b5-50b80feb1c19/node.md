@@ -49,4 +49,4 @@ User-instruction trees contain current procedures and useful teaching examples.
 
 Maintain current user instructions at stable IDs and recover earlier editions through Git.
 
-Return the proposed hierarchy through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] for authorized saving.
+Return the proposed hierarchy through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) for authorized saving.

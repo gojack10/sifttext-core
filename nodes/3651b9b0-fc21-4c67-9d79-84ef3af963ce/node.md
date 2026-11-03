@@ -29,7 +29,7 @@ Core's session commands are listed in its installed help.
 
 Keep private transcripts and archive credentials outside knowledge Git.
 
-Review tracked associations in the private knowledge draft and publish them through [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]].
+Review tracked associations in the private knowledge draft and publish them through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md).
 
 Verify the link, retained copy or remote backup separately according to what was requested.
 

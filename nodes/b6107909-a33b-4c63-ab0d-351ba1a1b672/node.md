@@ -31,7 +31,9 @@ trees/ROOT_UUID
 
 The UUID identifies a node.
 
-Parentage comes from child symlinks. Display order comes from each child node's `position` in its front matter. Legacy homes may still use `children.order` until explicitly migrated; upgrade every writer before converting one. For ordering edits or conversion, read [[Child Positions and Migration|80a9fe5d-8b48-412e-9ab1-15e6a67ad072]].
+Parentage comes from child symlinks. Display order comes from each child node's `position` in its front matter. Older homes are converted automatically during update preparation or first use. For ordering edits or migration recovery, read [Child Positions and Migration](../80a9fe5d-8b48-412e-9ab1-15e6a67ad072/node.md).
+
+Write body references as normal Markdown links. Resolve a relative target from the containing file: from `nodes/SOURCE/node.md`, link a sibling with `[Name](../TARGET/node.md)`. Preserve the target UUID and meaningful label. Structured front-matter `see_also` records remain data, not Markdown links.
 
 Generated views live at `nodes/<id>/outline.lean` (the node and its direct children) and `nodes/<id>/outline.full.lean` (the whole subtree). Prefer ordinary file tools on them. The outline command fast-tracks the same files and prepends `outline-file` with the selected file's full absolute path. These rebuildable views may need generation before they exist.
 
@@ -59,7 +61,7 @@ Optional scope and warnings are strings.
 
 Each `see_also` entry names another node in this knowledge home and explains its relevance.
 
-Use [[Status|17c42051-88c0-4e41-a151-5d1bab4be83b]] to choose a status and supply its required fields.
+Use [Status](../17c42051-88c0-4e41-a151-5d1bab4be83b/node.md) to choose a status and supply its required fields.
 
 ## Local state
 
@@ -77,6 +79,6 @@ Keep the native guards intact and decompose evidence rather than truncating it.
 
 ## Return
 
-Use [[Retrieve SiftText Knowledge|526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8]] for a read task.
+Use [Retrieve SiftText Knowledge](../526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8/node.md) for a read task.
 
-Use [[Worktree Publication|fb1e0c9f-8c04-4baf-91e6-4688856a14af]] before changing knowledge.
+Use [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) before changing knowledge.

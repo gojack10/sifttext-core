@@ -7,7 +7,7 @@ see_also: []
 scope: "Present the complete proposed knowledge change for review."
 position: 2048
 ---
-Receive the complete reviewed candidate from [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]].
+Receive the complete reviewed candidate from [Draft From Originating Conditions](../d96c84a8-ce99-4474-94ef-7ae1d1db4a1b/node.md).
 
 Explain each change briefly and put its exact fenced diff immediately after the explanation.
 
@@ -21,9 +21,9 @@ Show changed parentage and exact reference targets without implying that a link 
 
 Mark omitted ancestry explicitly.
 
-Read [[Unix Delta Examples|198d04b9-1289-4fd1-9050-4d4bf94bfd43]] for operation notation.
+Read [Unix Delta Examples](../198d04b9-1289-4fd1-9050-4d4bf94bfd43/node.md) for operation notation.
 
-Read [[Tree Development Examples|f3f63837-0754-4589-9d6b-58a2dd813741]] for structural proposals.
+Read [Tree Development Examples](../f3f63837-0754-4589-9d6b-58a2dd813741/node.md) for structural proposals.
 
 Group large changes into coherent reviewable parts in chat unless the user selects another review surface.
 
@@ -33,6 +33,6 @@ Compare the outgoing presentation with the candidate before asking approval.
 
 Ask approval for the specific changes shown unless the user explicitly preapproves them or the setting is autonomous with no user interaction.
 
-Send approved changes to [[Save and Restore Continuation|a609e77c-8164-40d2-b391-e675194fd2ad]].
+Send approved changes to [Save and Restore Continuation](../a609e77c-8164-40d2-b391-e675194fd2ad/node.md).
 
 Return a substantive later change beyond that approval to the user.

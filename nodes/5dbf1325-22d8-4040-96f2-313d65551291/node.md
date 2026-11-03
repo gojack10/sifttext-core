@@ -8,6 +8,6 @@ scope: "Mechanical reference for the platform. Structured around the anatomy of 
 warnings: ""
 position: 2048
 ---
-Read [[What is a Tree|045dd71e-24ae-4125-8957-20ece3d3f7a5]] for the boundary of a knowledge domain.
+Read [What is a Tree](../045dd71e-24ae-4125-8957-20ece3d3f7a5/node.md) for the boundary of a knowledge domain.
 
-Read [[What is a Node|da56a037-af73-469c-a941-a2b7c5f290b7]] for the fields and relationships used to record it.
+Read [What is a Node](../da56a037-af73-469c-a941-a2b7c5f290b7/node.md) for the fields and relationships used to record it.

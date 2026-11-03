@@ -11,7 +11,7 @@ position: 1024
 
 Read the onboarding entry before interpreting knowledge.
 
-Read [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] before changing knowledge.
+Read [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) before changing knowledge.
 
 ## Ensure harness instructions
 
@@ -19,7 +19,7 @@ Use the same procedure for first installation and later refreshes.
 
 Use the entrypoint returned by `sifttext instructions` and locate Retrieve SiftText Knowledge in that home. Reuse these paths if already established.
 
-Follow [[Keeping the Human in the Loop|6e9f23b3-3fbe-4dbd-9b58-6842438d2d01]] while handling the work. Adapt any user-facing message to whether you are installing a missing block, replacing an older one or confirming an already-current block.
+Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md) while handling the work. Adapt any user-facing message to whether you are installing a missing block, replacing an older one or confirming an already-current block.
 
 ### Find the persistent-instruction location
 
@@ -99,9 +99,9 @@ Preserve recoverable originals, paths and provenance.
 
 Exclude credentials from a maintained import.
 
-Use [[SiftText Read|5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d]] to find existing knowledge owners.
+Use [SiftText Read](../5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d/node.md) to find existing knowledge owners.
 
-Save through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] and verify the maintained result.
+Save through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and verify the maintained result.
 
 Replace migrated memory with pointers after verification, within source-edit authority.
 

@@ -14,4 +14,4 @@ For example, a hiring plan can reference regulatory requirements when those requ
 
 Explain the connection so a later reader can decide when the linked source matters.
 
-Add references through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] after reading both endpoints.
+Add references through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) after reading both endpoints.

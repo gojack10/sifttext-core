@@ -14,4 +14,4 @@ The current agent can help identify a useful question and propose a structure yo
 
 Preserve uncertainty and the words that matter rather than inventing a polished explanation.
 
-Save the agreed understanding through [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]].
+Save the agreed understanding through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md).

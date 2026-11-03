@@ -8,4 +8,4 @@ scope: "Introduce manual or external-agent local knowledge work without requirin
 warnings: ""
 position: 1024
 ---
-Follow [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] for executable setup and applicable instruction reads.
+Follow [Local Core Agent Entrypoint](../5e565245-14fe-406c-977c-cf94a9be246b/node.md) for executable setup and applicable instruction reads.

@@ -30,7 +30,7 @@ Active operations and drafts with submitted-save journals are retained. Expiry d
 
 Cleanup failures retain the affected workspace and do not prevent the requested command.
 
-When investigating expiry or retained operation storage, read [[Temporary Operation Storage|e28be119-f267-4487-8601-9fecfd1e61f1]] for the ownership, lock and inactivity conditions.
+When investigating expiry or retained operation storage, read [Temporary Operation Storage](../e28be119-f267-4487-8601-9fecfd1e61f1/node.md) for the ownership, lock and inactivity conditions.
 
 ## Authority and private draft
 
@@ -79,7 +79,7 @@ Drafts may be incomplete while editing.
 
 Never overwrite another contributor's paths or replace a full child list with a partial one.
 
-Before staging/committing, read [[Git Commit Skill|dcdd97b3-9557-41e3-b7cb-1f6f9744267d]].
+Before staging/committing, read [Git Commit Skill](../dcdd97b3-9557-41e3-b7cb-1f6f9744267d/node.md).
 
 ```sh
 git -C "$wt" status --short
@@ -127,7 +127,7 @@ Use the optional hosted `epistemic-check` and `slop-check` commands when a separ
 
 Inspect actual writes and any partial failure before retrying.
 
-Before submitting knowledge, read [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] to handle Core's epistemic review.
+Before submitting knowledge, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle Core's epistemic review.
 
 Read the actual receipt to establish whether checking completed. Agents remain responsible for interpreting the evidence within the user's authority.
 

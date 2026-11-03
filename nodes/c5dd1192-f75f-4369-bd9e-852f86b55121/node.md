@@ -139,11 +139,11 @@ Keep that request ID with the returned operation ID so status and result calls c
 
 After a lost response, preserve the same request ID and arguments. Never rerun an uncertain command with a new ID. For a retained Bash result whose delivery is pending, use `workspace_finish` to resume delivery without rerunning the command.
 
-Read the returned [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] file using ordinary file commands through hosted Bash.
+Read the returned [Local Core Agent Entrypoint](../5e565245-14fe-406c-977c-cf94a9be246b/node.md) file using ordinary file commands through hosted Bash.
 
-Before interpreting knowledge, read [[SiftText Read|5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d]] through the same hosted files.
+Before interpreting knowledge, read [SiftText Read](../5c2f91e4-9bd5-4b45-bbc4-e69c15c1d14d/node.md) through the same hosted files.
 
-Before an authorized save, read [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] and its required procedures there.
+Before an authorized save, read [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and its required procedures there.
 
 ## Approval before writes
 
@@ -153,7 +153,7 @@ Before an authorized save, read [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff
 | Submitted-knowledge checks | Core binary |
 | Human approval of each conversational proposal | Agent, with no per-proposal approval gate in hosted Bash |
 
-Because hosted Bash has no per-proposal approval gate, the agent is responsible for following [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]]'s approval rules. Show the proposed change and obtain the required approval before writing.
+Because hosted Bash has no per-proposal approval gate, the agent is responsible for following [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s approval rules. Show the proposed change and obtain the required approval before writing.
 
 After approval, save through Core's private worktree and checked submit procedure so Core can validate the candidate before accepting it.
 

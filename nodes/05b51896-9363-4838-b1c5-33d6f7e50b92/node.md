@@ -9,7 +9,7 @@ position: 1024
 ---
 Use when explaining how a contribution will be preserved or how saved knowledge informs current work.
 
-Read [[Approved SiftText Messages|c098aea0-6e45-4d3b-a389-94a36ccf8e86]] for contextual examples.
+Read [Approved SiftText Messages](../c098aea0-6e45-4d3b-a389-94a36ccf8e86/node.md) for contextual examples.
 
 During a conversation, use useful new understanding immediately and describe an ordinary pending save as planned for wrap-up.
 
@@ -21,4 +21,4 @@ If an earlier node actually informs a later decision, identify that contribution
 
 Use SiftText's name at the relevant preservation or retrieval relationship without repeating product copy after every turn.
 
-Return promptly to the task under [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]]'s existing approval boundary.
+Return promptly to the task under [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s existing approval boundary.

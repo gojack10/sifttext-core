@@ -56,7 +56,7 @@ Read a shallow outline first and expand only the branches the question needs.
 
 State the displayed depth and any omitted pages.
 
-Use [[SQLite Queries|4cc0b396-4b55-415e-bb26-b51c97e6ca78]] for a direct-child listing when an outline returns too much.
+Use [SQLite Queries](../4cc0b396-4b55-415e-bb26-b51c97e6ca78/node.md) for a direct-child listing when an outline returns too much.
 
 ## Stop and return
 

@@ -18,4 +18,4 @@ Status records the lifecycle disposition.
 
 Warnings identify cautions needed before acting.
 
-Read [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]] for the exact native field and relationship formats.
+Read [Knowledge Layout](../b6107909-a33b-4c63-ab0d-351ba1a1b672/node.md) for the exact native field and relationship formats.

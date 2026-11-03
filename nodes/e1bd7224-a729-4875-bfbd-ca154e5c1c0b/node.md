@@ -16,4 +16,4 @@ Initialization copies the bundled instructions into your own Git repository, nor
 
 Keep that knowledge home separate from the software installation.
 
-Begin with [[Local Core Agent Entrypoint|5e565245-14fe-406c-977c-cf94a9be246b]] for the current agent's reading and writing procedures.
+Begin with [Local Core Agent Entrypoint](../5e565245-14fe-406c-977c-cf94a9be246b/node.md) for the current agent's reading and writing procedures.

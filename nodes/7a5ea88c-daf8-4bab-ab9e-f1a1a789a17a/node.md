@@ -7,7 +7,7 @@ see_also: []
 scope: "Write knowledge records whose reasoning a new reader can inspect."
 position: 1024
 ---
-Use these synthetic examples when following [[Write Grounded Durable Nodes|d0549d1b-e8b2-4160-81ed-62115597464a]].
+Use these synthetic examples when following [Write Grounded Durable Nodes](../d0549d1b-e8b2-4160-81ed-62115597464a/node.md).
 
 ## 1. Derive a requirement from the actual statement
 

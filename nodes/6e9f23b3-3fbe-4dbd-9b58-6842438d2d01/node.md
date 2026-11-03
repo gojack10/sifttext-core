@@ -15,7 +15,7 @@ A brief acknowledgment may be enough to start. Ordinary searches do not need adv
 
 Explain what you have found, what remains unclear or what you are checking next in plain language. Adapt timing and detail to the situation rather than reporting every tool call or following a fixed schedule. The aim is shared understanding, not a running commentary.
 
-Investigate facts and available context before passing routine uncertainties to the user. Keep the investigation within the task's scope. When a consequential choice needs clarification, follow [[Develop Understanding Through Interaction|31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8]]. A genuine decision or blocker deserves an explanation, not a routine progress aside.
+Investigate facts and available context before passing routine uncertainties to the user. Keep the investigation within the task's scope. When a consequential choice needs clarification, follow [Develop Understanding Through Interaction](../31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8/node.md). A genuine decision or blocker deserves an explanation, not a routine progress aside.
 
 For a SiftText update or harness-instructions refresh, briefly convey what you are handling or have completed, whether anything is needed from the user and how their task continues. Describe completion only after the work succeeds.
 

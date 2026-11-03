@@ -35,7 +35,7 @@ Confirm browser availability from the connected client's tools.
 
 Claim official integration support only with maintainer confirmation.
 
-For remote-client OAuth setup and the hosted instruction bootstrap, follow [Connect Hosted MCP](../nodes/c5dd1192-f75f-4369-bd9e-852f86b55121/node.md).
+For remote-client OAuth setup and the hosted instruction bootstrap, follow [Connect Hosted MCP](../c5dd1192-f75f-4369-bd9e-852f86b55121/node.md).
 
 ## Inside a hosted MCP workspace
 
@@ -58,7 +58,7 @@ Automatic top-ups are disabled.
 
 If the response is lost, retry with the printed request key to recover the same checkout.
 
-Before explaining checker billing, read [Epistemic Check](../nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md). Its credit and recovery sections also explain how to retrieve or delete saved results.
+Before explaining checker billing, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md). Its credit and recovery sections also explain how to retrieve or delete saved results.
 
 ## Establish upload permission
 

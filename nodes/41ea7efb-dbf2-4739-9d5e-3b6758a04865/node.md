@@ -18,4 +18,4 @@ Use low for useful work that can wait without blocking the current goal.
 
 Record priority in the node's scope or body when it helps choose work.
 
-The native metadata grammar is defined in [[Knowledge Layout|b6107909-a33b-4c63-ab0d-351ba1a1b672]].
+The native metadata grammar is defined in [Knowledge Layout](../b6107909-a33b-4c63-ab0d-351ba1a1b672/node.md).
