@@ -388,9 +388,9 @@ fn submit_with_status(
     };
     let mut received_reader = None;
     if let Some(baseline) = migration_baseline {
-        let main = reader_git(home, &["rev-parse", "refs/heads/main"])?;
-        require(main == *base || reader_git(home, &["merge-base", "--is-ancestor", commit, &main]).is_ok(),
-            "accepted knowledge changed during format migration; retain the migration draft for reconciliation")?;
+        // Only the historical base needs the imported ordering view. Let the
+        // normal publisher reconcile a concurrently accepted current-format
+        // head; its immutable reader still rejects an unconverted head.
         let mut reader = crate::git_snapshot::GitReader::new(policy, home)?;
         reader.imported_baseline = Some((base.clone(), baseline.to_owned()));
         received_reader = Some(reader);
