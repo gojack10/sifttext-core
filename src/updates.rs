@@ -1944,6 +1944,39 @@ pub fn instruction_notice() -> Result<Value> {
     cached_notice(root, &state)
 }
 
+/// Session-start admission uses an already advertised release under standing
+/// permission. Background manifest acquisition remains separate from activation.
+/// Ask, pins and retained repairs never become implicit installation authority.
+pub fn admit_update() {
+    let Some(root) = std::env::var_os("SIFTTEXT_INSTALL_ROOT") else { return };
+    let root = Path::new(&root);
+    let result = (|| -> Result<()> {
+        let state: State = load(&root.join("state.json"))?;
+        let config = update_config(&state.home)?;
+        if config["permission"] != "standing" || config["pinned"].is_string()
+            || state.pending.is_some() || root.join("activation.json").exists()
+            || cached_notice(root, &state)?["status"] != "update_available"
+        { return Ok(()) }
+        eprintln!("SiftText is applying the available release under the configured automatic-update policy.");
+        let before = fs::canonicalize(root.join("current"))?;
+        let mut submission = None;
+        let result = update_with_submission_receipt(root, "", |_| Ok(()), &mut submission);
+        if let Some(receipt) = submission {
+            eprintln!("{}", crate::checked_publication::cli_json(&receipt)?);
+            if let Some(check) = receipt.get("hosted_check") {
+                eprintln!("{}", crate::hosted_checks::render_publication(check));
+            }
+        }
+        eprintln!("{}", crate::lean_render::render(&result?)?);
+        if fs::canonicalize(root.join("current"))? != before {
+            return Err(Command::new(root.join("current/sifttext"))
+                .args(std::env::args_os().skip(1)).exec().into());
+        }
+        Ok(())
+    })();
+    if let Err(error) = result { eprintln!("SiftText automatic update remains unfinished: {error}"); }
+}
+
 pub fn opportunistic() {
     opportunistic_with_notice(true);
 }
