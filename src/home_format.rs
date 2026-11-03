@@ -171,6 +171,18 @@ pub fn ensure(policy: &Policy, home: &Path) -> Result<()> {
         persist(&journal, &pending)?;
     }
     if pending.draft.join(".git").is_file() {
+        let original = pending.commit.as_deref().ok_or("missing migration candidate")?;
+        // Finish accepted requests unchanged. For a rejected candidate, use the
+        // same committed-descendant repair route as the managed updater.
+        if local::reader_git(&home, &["merge-base", "--is-ancestor", original, "refs/heads/main"]).is_err() {
+            let head = local::reader_git(&pending.draft, &["rev-parse", "HEAD"])?;
+            if head != original {
+                local::reader_git(&home, &["merge-base", "--is-ancestor", original, &head])?;
+                crate::checked_publication::clean(&pending.draft, &head)?;
+                pending.commit = Some(head);
+                persist(&journal, &pending)?;
+            }
+        }
         crate::index::prepare(policy, &pending.draft, None)?;
     }
     let request = crate::checked_publication::Request {
