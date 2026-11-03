@@ -112,7 +112,7 @@ fn classify(error: &(dyn Error + 'static)) -> (&'static str, &'static str, &'sta
         "missing required metadata" => "missing required metadata",
         "duplicate metadata key" => "duplicate metadata key",
         "second authored hierarchy source" => {
-            "hierarchy must use children.order and relationship links, not metadata"
+            "hierarchy must use relationship links, not metadata"
         }
         "blank node name/micro-summary" => "blank node name or micro_summary",
         "blank relationship reason" => "blank relationship reason",

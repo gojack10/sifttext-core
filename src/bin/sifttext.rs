@@ -185,6 +185,10 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     sifttext_file_graph::scratch::cleanup();
     let runtime = local::runtime()?;
     if args.first().is_some_and(|arg| arg == "sync") {
+        if let Some(home) = args.get(2) {
+            let policy = checked_policy(&runtime)?;
+            sifttext_file_graph::home_format::ensure(&policy, Path::new(home))?;
+        }
         let output = sync::run(&runtime, &args)?;
         if !output.is_null() {
             println!("{}", render_cli_receipt(&output)?);
@@ -201,18 +205,19 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             },
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
+        sifttext_file_graph::home_format::ensure(&policy, &path)?;
         let instructions = local::instructions(&policy, &path)?;
         println!("{}", onboarding::render(&path, &instructions)?);
         return Ok(());
     }
+    if args.first().is_some_and(|command| matches!(command.as_str(),
+        "read" | "outline" | "search" | "sql" | "index" | "worktree" | "advance" | "accepted" | "submit" | "prepare-home"))
+        && let Some(home) = args.get(1)
+    {
+        sifttext_file_graph::home_format::ensure(&policy, Path::new(home))?;
+    }
     let output = match args.as_slice() {
-        [cmd, draft, flag] if cmd == "migrate-order" && flag == "--legacy" => {
-            sifttext_file_graph::ordering::restore_legacy_draft(&absolute(draft)?)?
-        }
-        [cmd, draft] if cmd == "migrate-order" => {
-            let draft = absolute(draft)?;
-            sifttext_file_graph::ordering::migrate_draft(&draft)?
-        }
+        [cmd, _home] if cmd == "prepare-home" => json!({"status":"home_format_current"}),
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
         [cmd] if cmd == "hosted-account-protocol" => json!({"hosted_account":1}),
         [cmd, root, home] if cmd == "install-home" => {

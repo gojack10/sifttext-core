@@ -12,7 +12,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Stdio},
@@ -218,7 +218,7 @@ fn insert_entry(insert: &mut rusqlite::Statement<'_>, path: &str, kind: u8,
     mode: &str, oid: &str, len: u64) -> Result<()> {
     let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
     // Same component ordering as index::current: children/<UUID> precedes
-    // children.order. The source boundary already excludes NUL components.
+    // node metadata. The source boundary already excludes NUL components.
     let ordering = path.replace('/', "\0").into_bytes();
     let len = i64::try_from(len)?;
     insert.execute(rusqlite::params![path, ordering, parent, name, kind, mode, oid, len])?;
@@ -380,6 +380,7 @@ fn fact_checksum(processor: &str, key: &[u8], data: &[u8]) -> [u8; 32] {
 pub(crate) struct GitReader {
     pub(crate) repo: PathBuf,
     pub(crate) policy_identity: String,
+    pub(crate) imported_baseline: Option<(String, String)>,
     batch: Option<Batch>,
     empty_blob: Option<String>,
     cache: Option<FactCache>,
@@ -394,6 +395,7 @@ impl GitReader {
         let identity = policy.validation_identity()?;
         Ok(Self {
             batch: None,
+            imported_baseline: None,
             empty_blob: None,
             cache: FactCache::open(&repo),
             repo,
@@ -513,6 +515,9 @@ impl GitReader {
     }
 
     pub(crate) fn view(&mut self, revision: &str) -> Result<Arc<GitView>> {
+        let imported = self.imported_baseline.as_ref()
+            .filter(|(original, _)| original == revision).map(|(_, imported)| imported.clone());
+        let revision = imported.as_deref().unwrap_or(revision);
         require(
             !revision.is_empty()
                 && !revision.starts_with('-')
@@ -605,24 +610,7 @@ impl GitReader {
                             path,
                             None,
                         )?;
-                        if parts.len() == 3 && parts[0] == "nodes" && parts[2] == "children.order" {
-                            let text = source_error::context(
-                                std::str::from_utf8(&bytes).map_err(Into::into),
-                                path,
-                                None,
-                            )?;
-                            let order: Vec<String> = text.lines().map(str::to_owned).collect();
-                            structural_guard(
-                                order.iter().all(|id| uuid(id)),
-                                Some(parts[1]),
-                                None,
-                                "src/lib.rs:Store.read_view/order_uuid",
-                                "malformed children.order UUID",
-                            )?;
-                            children.insert(parts[1].to_owned(), order);
-                        } else {
-                            require(marker, "unexpected Git authored file")?;
-                        }
+                        require(marker, "unexpected Git authored file")?;
                         Sha256::digest(&bytes).into()
                     };
                     source_version::add(
@@ -708,48 +696,19 @@ impl GitReader {
             return Err(source_error::PublicationProblem {
                 kind: "missing_scaffolding",
                 paths: missing,
-                reason: "Git node containers or children.order files are missing",
-                next_action: "Keep the draft. Each new leaf needs an empty children.order and an empty children/.keep so Git retains its child directory. For a node with children, restore its intended links and full order instead of inventing an order. Commit the repair after the candidate and resubmit with the same home, draft and base. Use sifttext create when creating future nodes.",
+                reason: "Git node containers are missing",
+                next_action: "Keep the draft. Each leaf needs an empty children/.keep so Git retains its child directory. Restore intended relationship links for non-leaves. Commit the repair and resubmit with the same home, draft and base. Use sifttext create for new nodes.",
             }.into());
         }
         let mut members = ledger.connection.prepare(
             "SELECT name FROM entries WHERE parent=?1 AND kind=2 ORDER BY name")?;
         for id in nodes.keys() {
-            if !children.contains_key(id) {
-                require(nodes[id].position.is_some(), "missing Git children.order or per-node position")?;
-                let names = members.query_map([format!("nodes/{id}/children")], |row| row.get::<_, String>(0))?
-                    .collect::<rusqlite::Result<Vec<_>>>()?;
-                let order = crate::ordering::sort(names, |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
-                children.insert(id.clone(), order);
-            }
+            require(nodes[id].position.is_some(), "missing Git display position")?;
+            let names = members.query_map([format!("nodes/{id}/children")], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let order = crate::ordering::sort(names, |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
+            children.insert(id.clone(), order);
             let order = &children[id];
-            // Only one owner's borrowed names are collected, never all links.
-            let ordered: BTreeSet<&str> = order.iter().map(String::as_str).collect();
-            structural_guard(order.len() == ordered.len(), Some(id), None,
-                "src/lib.rs:Store.read_view/order_membership",
-                "missing, duplicate or non-child order member")?;
-            let parent = format!("nodes/{id}/children");
-            let mut rows = members.query([&parent])?;
-            let mut count = 0;
-            while let Some(row) = rows.next()? {
-                let child: String = row.get(0)?;
-                structural_guard(ordered.contains(child.as_str()), Some(id), Some(&child),
-                    "src/lib.rs:Store.read_view/order_membership",
-                    "missing, duplicate or non-child order member")?;
-                count += 1;
-            }
-            let mut offender = None;
-            if count != order.len() {
-                for child in order {
-                    if !ledger.has(&format!("{parent}/{child}"), 2)? {
-                        offender = Some(child);
-                        break;
-                    }
-                }
-            }
-            structural_guard(count == order.len(), Some(id), offender.map(String::as_str),
-                "src/lib.rs:Store.read_view/order_membership",
-                "missing, duplicate or non-child order member")?;
             for child in order {
                 structural_guard(nodes.contains_key(child), Some(id), Some(child),
                     "src/lib.rs:Store.read_view/child_membership", "unknown child UUID")?;

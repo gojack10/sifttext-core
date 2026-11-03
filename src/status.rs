@@ -361,7 +361,6 @@ struct StatusInput {
     hash: [u8; 32],
     text_hash: [u8; 32],
     node: Fingerprint,
-    order: Option<Fingerprint>,
     owner: Directory,
     children: Directory,
     links: Vec<Fingerprint>,
@@ -450,8 +449,6 @@ impl StatusSnapshot {
             let dir = nodes.join(id);
             input.owner.unchanged(&dir)?;
             input.node.unchanged(&dir.join("node.md"))?;
-            if let Some(order) = input.order { order.unchanged(&dir.join("children.order"))?; }
-            else { require(!dir.join("children.order").try_exists()?, "legacy order appeared during normalization")?; }
             let children = dir.join("children");
             input.children.unchanged(&children)?;
             let (members, marker) = status_members(&children)?;
@@ -481,9 +478,6 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
         .map_err(|e| format!("node {id}: {e}"))?;
     drop(parsed);
     drop(bytes);
-    let order = if dir.join("children.order").try_exists()? {
-        Some(status_file(&dir.join("children.order"), None)?.1)
-    } else { None };
     let ordered = crate::ordering::children(nodes.parent().ok_or("missing status home")?, id)?;
     let (members, marker) = status_members(&children_path)?;
     require(ordered.iter().all(|id| uuid(id))
@@ -503,7 +497,7 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
     }
     owner.unchanged(&dir)?;
     children_dir.unchanged(&children_path)?;
-    Ok((state, ordered, StatusInput { hash, text_hash, node, order, owner,
+    Ok((state, ordered, StatusInput { hash, text_hash, node, owner,
         children: children_dir, links, marker }))
 }
 
@@ -575,7 +569,6 @@ impl Baseline {
                     .collect::<Result<Vec<_>>>()?;
                 let input = StatusInput {
                     hash: [0; 32], text_hash: [0; 32], node: Fingerprint::at(&dir.join("node.md"))?,
-                    order: if dir.join("children.order").try_exists()? { Some(Fingerprint::at(&dir.join("children.order"))?) } else { None },
                     owner, children: children_dir, links,
                     marker: if marker { Some(Fingerprint::at(&children.join(".keep"))?) } else { None },
                 };
@@ -585,11 +578,9 @@ impl Baseline {
             digest_directory(&mut hash, b"owner", input.owner);
             digest_directory(&mut hash, b"children", input.children);
             digest_leaf(&mut hash, b"node.md", Some(input.node));
-            digest_leaf(&mut hash, b"children.order", input.order);
             digest_leaf(&mut hash, b"children-marker", input.marker);
             digest_field(&mut hash, b"child-count", &(ordered.len() as u64).to_le_bytes());
-            // children.order bytes are guarded by their exact metadata fingerprint;
-            // namespace traversal itself is canonical, independent of authored order.
+            // Namespace traversal is canonical, independent of display positions.
             let mut links: Vec<_> = ordered.iter().zip(&input.links).collect();
             links.sort_by_key(|(child, _)| *child);
             for (child, fingerprint) in links {

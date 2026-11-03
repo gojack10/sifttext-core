@@ -93,6 +93,7 @@ mod checked_publication_tests;
 mod coherent_capture;
 pub(crate) mod git_snapshot;
 pub mod hosted_checks;
+pub mod home_format;
 pub(crate) mod source_version;
 #[cfg(test)]
 #[path = "../tests/successor/coherent_capture.rs"]

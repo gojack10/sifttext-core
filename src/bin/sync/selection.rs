@@ -244,29 +244,18 @@ impl Snapshot {
         Ok(result)
     }
     fn children(&self, id: &str) -> Result<Vec<String>> {
-        let Some(file) = self.files.get(&format!("nodes/{id}/children.order")) else {
-            // Incoming creations have no parent record in the old full baseline.
-            let Some(own) = self.files.get(&format!("nodes/{id}/node.md")) else { return Ok(Vec::new()); };
-            if sifttext_file_graph::ordering::position(std::str::from_utf8(&own.bytes)?)?.is_none() {
-                return Err("missing children.order or per-node position".into());
-            }
-            let prefix = format!("nodes/{id}/children/");
-            let members = self.files.keys().filter_map(|path| path.strip_prefix(&prefix))
-                .filter(|child| uuid(child)).map(str::to_owned);
-            return sifttext_file_graph::ordering::sort(members, |child| {
-                let file = self.files.get(&format!("nodes/{child}/node.md")).ok_or("missing child")?;
-                sifttext_file_graph::ordering::position(std::str::from_utf8(&file.bytes)?)
-            });
-        };
-        let bytes = file.bytes.as_slice();
-        let children: Vec<_> = std::str::from_utf8(bytes)?
-            .lines()
-            .map(str::to_owned)
-            .collect();
-        if children.iter().any(|id| !uuid(id)) {
-            return Err("invalid child identity".into());
+        // Incoming creations have no parent record in the old full baseline.
+        let Some(own) = self.files.get(&format!("nodes/{id}/node.md")) else { return Ok(Vec::new()); };
+        if sifttext_file_graph::ordering::position(std::str::from_utf8(&own.bytes)?)?.is_none() {
+            return Err("missing display position".into());
         }
-        Ok(children)
+        let prefix = format!("nodes/{id}/children/");
+        let members = self.files.keys().filter_map(|path| path.strip_prefix(&prefix))
+            .filter(|child| uuid(child)).map(str::to_owned);
+        sifttext_file_graph::ordering::sort(members, |child| {
+            let file = self.files.get(&format!("nodes/{child}/node.md")).ok_or("missing child")?;
+            sifttext_file_graph::ordering::position(std::str::from_utf8(&file.bytes)?)
+        })
     }
     fn parents(&self) -> Result<BTreeMap<String, String>> {
         let nodes = self.nodes()?;
@@ -327,13 +316,6 @@ impl Snapshot {
         self.put("trees/.keep".into(), "100644", Vec::new());
         for id in nodes {
             let order = children.get(id).cloned().unwrap_or_default();
-            let node = self.files.get(&format!("nodes/{id}/node.md")).ok_or("missing topology node")?;
-            if sifttext_file_graph::ordering::position(std::str::from_utf8(&node.bytes)?)?.is_none() {
-                self.put(
-                    format!("nodes/{id}/children.order"), "100644",
-                    order.iter().map(|id| format!("{id}\n")).collect::<String>().into_bytes(),
-                );
-            }
             self.put(format!("nodes/{id}/children/.keep"), "100644", Vec::new());
             for child in order {
                 self.put(

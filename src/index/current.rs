@@ -359,18 +359,8 @@ fn project(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Resu
     )
 }
 fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Result<Vec<String>> {
-    let p = PathBuf::from(format!("nodes/{id}/children.order"));
-    let legacy: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM expected_sources WHERE path=?1)", [p.to_str()], |row| row.get(0))?;
-    if legacy {
-        let bytes = bytes(connection, objects, &p)?;
-        let text = std::str::from_utf8(&bytes)?;
-        return text.lines().map(|line| {
-            require(crate::uuid(line), "children.order entry is not a UUID")?;
-            Ok(line.to_owned())
-        }).collect();
-    }
     let own = bytes(connection, objects, &PathBuf::from(format!("nodes/{id}/node.md")))?;
-    require(crate::ordering::position(std::str::from_utf8(&own)?)?.is_some(), "missing children.order or per-node position")?;
+    require(crate::ordering::position(std::str::from_utf8(&own)?)?.is_some(), "missing display position")?;
     let prefix = format!("nodes/{id}/children/");
     let names = connection.prepare("SELECT substr(path,length(?1)+1) FROM expected_sources WHERE path>=?1 AND path<?2 AND substr(signature,1,2)=x'0102'")?
         .query_map(params![prefix, format!("nodes/{id}/children0")], |row| row.get::<_, String>(0))?
@@ -445,7 +435,7 @@ fn relations(tx: &Transaction<'_>, id: &str, row: Option<&Value>) -> Result<()> 
     if ordered != links || order.len() != ordered.len() {
         tx.execute(
             "INSERT INTO relationship_mismatches VALUES (?1,?2)",
-            params![id, "children.order differs from authored children links"],
+            params![id, "indexed children differ from authored relationship links"],
         )?;
     }
     Ok(())

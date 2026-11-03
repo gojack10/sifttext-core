@@ -71,7 +71,6 @@ const GROUPS: &[Group] = &[
             command("submit REPO DRAFT COMMIT BASE [EXPLICIT_UUID ... | --received-statuses] [--accept-despite-findings] [-y]", "Publish a checked draft; --accept-despite-findings waives only findings refusal, never checking or structural/integrity/consent gates. Agents must never pass it without the user's explicit OK."),
             command("accepted REPO [-y]", "Open the checked accepted view"),
             command("advance HOME", "Fast-forward a clean home"),
-            command("migrate-order WORKTREE [--legacy]", "Convert draft child ordering").full_help_only(),
         ],
     },
     Group {

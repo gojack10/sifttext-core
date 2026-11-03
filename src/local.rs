@@ -866,9 +866,22 @@ pub fn worktree(policy: &Policy, home: &Path) -> Result<Value> {
     worktree_inner(policy, home, |_| Ok(()))
 }
 
+pub(crate) fn migration_worktree(policy: &Policy, home: &Path) -> Result<Value> {
+    allocate_worktree(policy, home, false, |_| Ok(()))
+}
+
 fn worktree_inner(
     policy: &Policy,
     home: &Path,
+    after_create: impl FnOnce(&Path) -> Result<()>,
+) -> Result<Value> {
+    allocate_worktree(policy, home, true, after_create)
+}
+
+fn allocate_worktree(
+    policy: &Policy,
+    home: &Path,
+    prepare: bool,
     after_create: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Value> {
     // Allocation reads an immutable commit; it does not certify authored knowledge
@@ -913,7 +926,7 @@ fn worktree_inner(
                 fs::create_dir(path.join(name))?;
             }
         }
-        index::prepare(policy, &path, Some(&home))?;
+        if prepare { index::prepare(policy, &path, Some(&home))?; }
         Ok(())
     })();
     setup.map_err(|error| {
@@ -983,6 +996,7 @@ pub fn advance(policy: &Policy, home: &Path) -> Result<Value> {
 #[path = "local_submission.rs"]
 mod submission;
 pub use submission::{submit, submit_received, submit_with_options};
+pub(crate) use submission::submit_migration;
 pub(crate) use submission::{expire_draft, retained_submission};
 
 fn reader_repository(home: &Path) -> Result<()> {
@@ -2260,13 +2274,7 @@ pub fn create(
     let parent = parent.map(|prefix| resolve_node(&path, prefix)).transpose()?;
     if let Some(parent) = &parent { materialize_nodes(&path, std::slice::from_ref(parent))?; }
     let parent_dir = parent.as_ref().map(|id| path.join("nodes").join(id));
-    let positioned = match &parent_dir {
-        Some(dir) => !dir.join("children.order").try_exists()?,
-        None => !fs::read_dir(path.join("nodes"))?.filter_map(|entry| entry.ok())
-            .any(|entry| crate::uuid(&entry.file_name().to_string_lossy()) && entry.path().join("children.order").exists()),
-    };
-    let position = if positioned {
-        if let Some(parent) = &parent {
+    let position = if let Some(parent) = &parent {
             // The parent cone includes relationship links, not sibling Markdown.
             let members = fs::read_dir(parent_dir.as_ref().unwrap().join("children"))?
                 .filter_map(|entry| entry.ok()).filter_map(|entry| entry.file_name().into_string().ok())
@@ -2276,16 +2284,7 @@ pub fn create(
                 let bytes = read_local_file(&path.join("nodes").join(id).join("node.md"))?.0;
                 Ok(crate::ordering::position(std::str::from_utf8(&bytes)?)?.unwrap_or(0))
             }).collect::<Result<Vec<_>>>()?.into_iter().max().unwrap_or(0).checked_add(1024).ok_or("child position overflow")?
-        } else { 0 }
     } else { 0 };
-    let parent_order = parent.as_ref().filter(|_| !positioned).map(|parent| -> Result<_> {
-        let dir = path.join("nodes").join(parent);
-        crate::real_dir(&dir)?;
-        crate::real_dir(&dir.join("children"))?;
-        let (bytes, identity) = read_local_file(&dir.join("children.order"))?;
-        std::str::from_utf8(&bytes)?;
-        Ok((dir, bytes, identity))
-    }).transpose()?;
     if parent.is_none() {
         if sparse_checkout(&path)? { reader_git(&path, &["sparse-checkout", "add", "trees"])?; }
         crate::real_dir(&path.join("trees"))?;
@@ -2298,7 +2297,7 @@ pub fn create(
         "---\nid: {}\nname: {}\nmicro_summary: {}\nstatus: \"not_examined\"\nsee_also: []\n---\n",
         json!(key), json!(name), json!(summary)
     );
-    let text = if positioned { crate::ordering::with_position(&text, position)? } else { text };
+    let text = crate::ordering::with_position(&text, position)?;
     require(text.len() <= crate::LIMIT, "oversized authored file")?;
     let result = (|| -> Result<()> {
         // Exclusive creation never overwrites an existing node or relationship.
@@ -2306,27 +2305,8 @@ pub fn create(
         fs::create_dir(&node)?;
         fs::create_dir(node.join("children"))?;
         new_file(&node.join("children/.keep"), b"")?;
-        if !positioned { new_file(&node.join("children.order"), b"")?; }
         new_file(&node.join("node.md"), text.as_bytes())?;
-        if let Some((dir, before, identity)) = &parent_order {
-            let order = dir.join("children.order");
-            let mut bytes = before.clone();
-            if !bytes.is_empty() && !bytes.ends_with(b"\n") { bytes.push(b'\n'); }
-            bytes.extend_from_slice(format!("{key}\n").as_bytes());
-            require(bytes.len() <= crate::LIMIT, "oversized children.order")?;
-            let mut temp = tempfile::NamedTempFile::new_in(dir)?;
-            temp.as_file().set_permissions(identity.permissions())?;
-            temp.write_all(&bytes)?;
-            temp.as_file().sync_all()?;
-            let (current, current_identity) = read_local_file(&order)?;
-            require(
-                same_file(identity, &current_identity) && current == *before,
-                "parent children.order changed; retain the new node and retry after inspection",
-            )?;
-            symlink(format!("../../{key}"), dir.join("children").join(&key))?;
-            temp.persist(&order)?;
-            fs::File::open(dir)?.sync_all()?;
-        } else if let Some(dir) = &parent_dir {
+        if let Some(dir) = &parent_dir {
             symlink(format!("../../{key}"), dir.join("children").join(&key))?;
         } else {
             symlink(format!("../nodes/{key}"), path.join("trees").join(&key))?;
@@ -2334,7 +2314,7 @@ pub fn create(
         Ok(())
     })();
     result.map_err(|error| format!(
-        "creation incomplete at {}; parent: {}; preserve this draft and inspect node, relationship link and children.order before retrying: {error}",
+        "creation incomplete at {}; parent: {}; preserve this draft and inspect node and relationship link before retrying: {error}",
         node.display(), parent.as_deref().unwrap_or("tree root")
     ))?;
     // Status propagation and graph acceptance belong to submit, not file creation.

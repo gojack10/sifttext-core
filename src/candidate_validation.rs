@@ -111,14 +111,6 @@ impl StructuralIssue {
                     "metadata id must match the node directory UUID",
                 )
             }
-            "src/lib.rs:Store.read_view/order_uuid"
-            | "src/lib.rs:Store.read_view/order_membership" => {
-                path.push_str("/children.order");
-                (
-                    None,
-                    "children.order must list each child UUID exactly once and match the child links",
-                )
-            }
             _ => {
                 if self.source.is_some() {
                     path.push_str("/children");

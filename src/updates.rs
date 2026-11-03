@@ -1199,6 +1199,9 @@ fn apply(
         state.application.clone()
     };
     let policy = checked_runtime(&root.join(&app))?;
+    // The incoming executable owns format conversion, including skipped releases.
+    // Older updaters reach the same importer through their incoming index command.
+    candidate_command(&root.join(&app), "prepare-home", &state.home)?;
     if !kb_changed {
         return finish(root, state, manifest, &app, None, None, state.baseline.clone());
     }

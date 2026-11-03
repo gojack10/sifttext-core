@@ -215,47 +215,11 @@ pub(crate) fn from_inventory_mode(
             if !authored.content.trim().is_empty() { nonblank.insert(id.clone()); }
             authored.content = String::new();
         }
-        let order_file = PathBuf::from(format!("nodes/{id}/children.order"));
         let position = parsed.fields.get("position").map(|raw| serde_json::from_str::<u64>(raw)).transpose()?;
+        require(position.is_some(), "missing display position")?;
         positions.insert(id.clone(), position);
-        let legacy = inventory.contains_key(&order_file);
-        let order_bytes = if legacy {
-            source_error::context(bytes("children.order"), &order_file, None)?
-        } else {
-            require(position.is_some(), "missing children.order or per-node position")?;
-            positioned.push(id.clone());
-            std::borrow::Cow::Owned(members.get(id).into_iter().flatten()
-                .map(|child| format!("{child}\n")).collect::<String>().into_bytes())
-        };
-        let order: Vec<String> = source_error::context(
-            (|| Ok(std::str::from_utf8(&order_bytes)?))(),
-            &order_file,
-            None,
-        )?
-        .lines()
-        .map(str::to_owned)
-        .collect();
-        structural_guard(
-            order.iter().all(|c| uuid(c)),
-            Some(id),
-            None,
-            "src/lib.rs:Store.read_view/order_uuid",
-            "malformed children.order UUID",
-        )?;
-        let ordered: BTreeSet<_> = order.iter().cloned().collect();
-        let members = members.remove(id).unwrap_or_default();
-        let mut seen = BTreeSet::new();
-        let offender = order
-            .iter()
-            .find(|c| !seen.insert(*c) || !members.contains(*c))
-            .or_else(|| members.difference(&ordered).next());
-        structural_guard(
-            order.len() == ordered.len() && ordered == members,
-            Some(id),
-            offender.map(String::as_str),
-            "src/lib.rs:Store.read_view/order_membership",
-            "missing, duplicate or non-child order member",
-        )?;
+        positioned.push(id.clone());
+        let order = members.remove(id).unwrap_or_default().into_iter().collect();
         metadata.insert(
             id.clone(),
             parsed
@@ -521,10 +485,9 @@ fn node_identities(
             continue;
         }
         out.insert(dir.clone(), (m.dev(), m.ino(), 0, 0));
-        for file in ["node.md", "children.order", "children"] {
+        for file in ["node.md", "children"] {
             let p = dir.join(file);
             let m = match fs::symlink_metadata(&p) {
-                Err(error) if file == "children.order" && error.kind() == std::io::ErrorKind::NotFound => continue,
                 result => source_error::context(result.map_err(Into::into), &relative.join(file), None)?,
             };
             out.insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));

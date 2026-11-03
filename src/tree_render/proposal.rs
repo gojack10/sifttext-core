@@ -118,7 +118,7 @@ fn capture(connection: &Connection, home: &Path, proposal: &Proposal) -> Result<
     }
     ids.extend(proposal.artifacts.iter().map(|a| a.owner.clone()).filter(|id| crate::uuid(id)));
     ids.extend(proposal.deletions.iter().map(|d| d.node.clone()).filter(|id| crate::uuid(id)));
-    let wanted: Vec<_> = ids.iter().flat_map(|id| [format!("nodes/{id}/node.md"), format!("nodes/{id}/children.order"), format!("nodes/{id}/children")]).collect();
+    let wanted: Vec<_> = ids.iter().flat_map(|id| [format!("nodes/{id}/node.md"), format!("nodes/{id}/children")]).collect();
     let mut files = BTreeMap::new();
     let mut batch = Batch::new(home)?;
     for group in wanted.chunks(128) {
@@ -154,16 +154,12 @@ fn capture(connection: &Connection, home: &Path, proposal: &Proposal) -> Result<
     };
     for id in &ids {
         if let Some(bytes) = files.get(&format!("nodes/{id}/node.md")) {
-            let children: Vec<String> = if let Some(order) = files.get(&format!("nodes/{id}/children.order")) {
-                std::str::from_utf8(order)?.lines().map(str::to_owned).collect()
-            } else {
-                let prefix = format!("nodes/{id}/children/");
-                let members = files.keys().filter_map(|path| path.strip_prefix(&prefix)).filter(|child| crate::uuid(child)).map(str::to_owned);
-                crate::ordering::sort(members, |child| {
-                    let text = files.get(&format!("nodes/{child}/node.md")).ok_or("missing historical child")?;
-                    crate::ordering::position(std::str::from_utf8(text)?)
-                })?
-            };
+            let prefix = format!("nodes/{id}/children/");
+            let members = files.keys().filter_map(|path| path.strip_prefix(&prefix)).filter(|child| crate::uuid(child)).map(str::to_owned);
+            let children = crate::ordering::sort(members, |child| {
+                let text = files.get(&format!("nodes/{child}/node.md")).ok_or("missing historical child")?;
+                crate::ordering::position(std::str::from_utf8(text)?)
+            })?;
             require(children.iter().all(|c| crate::uuid(c)), "invalid historical child order")?;
             delta.before.insert(id.clone(), Record::from_markdown(bytes, children)?);
         }

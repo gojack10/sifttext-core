@@ -308,7 +308,7 @@ pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result
 /// changes are explicit; the combined candidate still passes the ordinary gate.
 /// A retained native request always keeps its original, frozen intents.
 pub fn submit_received(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
-    submit_with_status(policy, request, true, false, || Ok(())).map_err(|error| {
+    submit_with_status(policy, request, true, false, None, || Ok(())).map_err(|error| {
         format!("received submission completion unknown; retain files and original arguments for retry: {error}").into()
     })
 }
@@ -322,9 +322,19 @@ pub fn submit_with_options(
     received: bool,
     accept_despite_findings: bool,
 ) -> Result<Value> {
-    submit_with_status(policy, request, received, accept_despite_findings, || Ok(())).map_err(|error| {
+    submit_with_status(policy, request, received, accept_despite_findings, None, || Ok(())).map_err(|error| {
         format!("submission completion unknown unless reported below; retain files and original submit arguments for retry: {error}").into()
     })
+}
+
+/// Only the format importer supplies an order-only view of its original baseline.
+/// Actual ancestry, conditional publication, checks and cleanup stay unchanged.
+pub(crate) fn submit_migration(
+    policy: &Policy,
+    request: &checked_publication::Request,
+    baseline: &str,
+) -> Result<Value> {
+    submit_with_status(policy, request, false, true, Some(baseline), || Ok(()))
 }
 
 fn submit_inner(
@@ -332,7 +342,7 @@ fn submit_inner(
     request: &checked_publication::Request,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
-    submit_with_status(policy, request, false, false, before_return)
+    submit_with_status(policy, request, false, false, None, before_return)
 }
 
 fn submit_with_status(
@@ -340,6 +350,7 @@ fn submit_with_status(
     request: &checked_publication::Request,
     received: bool,
     accept_despite_findings: bool,
+    migration_baseline: Option<&str>,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
     let mut request = request.clone();
@@ -376,6 +387,14 @@ fn submit_with_status(
         None
     };
     let mut received_reader = None;
+    if let Some(baseline) = migration_baseline {
+        let main = reader_git(home, &["rev-parse", "refs/heads/main"])?;
+        require(main == *base || reader_git(home, &["merge-base", "--is-ancestor", commit, &main]).is_ok(),
+            "accepted knowledge changed during format migration; retain the migration draft for reconciliation")?;
+        let mut reader = crate::git_snapshot::GitReader::new(policy, home)?;
+        reader.imported_baseline = Some((base.clone(), baseline.to_owned()));
+        received_reader = Some(reader);
+    }
     if received {
         require(request.explicit.is_empty(), "received status selection cannot include manual intents")?;
         request.explicit = if let Some(saved) = retained.as_ref().filter(|saved| saved.commit == *commit) {

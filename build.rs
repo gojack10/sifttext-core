@@ -103,7 +103,7 @@ fn main() {
     let root = env::var_os("CARGO_MANIFEST_DIR").unwrap();
     let root = Path::new(&root);
     let (mut dirs, mut files, mut links) = (String::new(), String::new(), String::new());
-    for name in ["src", "tests", "laws", "scripts", "docs", "fixtures"] {
+    for name in ["src", "tests", "laws", "scripts", "fixtures"] {
         watch_tree(&root.join(name));
     }
     for name in [
