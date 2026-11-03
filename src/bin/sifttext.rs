@@ -195,9 +195,10 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     if args.first().is_some_and(|arg| arg == "instructions") {
         let path = match args.as_slice() {
             [_, path] => PathBuf::from(path),
-            [_] => {
-                PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?).join("sifttext")
-            }
+            [_] => match std::env::var_os("SIFTTEXT_HOME") {
+                Some(home) => PathBuf::from(home),
+                None => PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?).join("sifttext"),
+            },
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
         let instructions = local::instructions(&policy, &path)?;

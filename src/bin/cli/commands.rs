@@ -39,7 +39,7 @@ const GROUPS: &[Group] = &[
         name: "start",
         guide: sifttext_file_graph::local::ENTRY,
         commands: &[
-            command("instructions [STORE]", "Find onboarding and pending work"),
+            command("instructions [STORE]", "Find onboarding and pending work; home: explicit STORE, then SIFTTEXT_HOME, then $HOME/sifttext"),
             command("init HOME", "Create a bundled knowledge home"),
             command("init HOME --empty", "Create an empty knowledge home"),
             command("init HOME --bundle BUNDLE", "Create a home from a bundle"),
