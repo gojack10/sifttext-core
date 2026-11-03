@@ -553,7 +553,7 @@ fn intrinsic_node_rows(report: &mut Report, id: &str, field_errors: u8,
     if references.map(|target| target.as_ref().to_owned()).any(|target| target == id || !targets.insert(target)) {
         report.reject(Some(id), "self_or_duplicate_reference", FIELD_RULE, None);
     }
-    if state.is_some_and(|state| state.status == Status::Resolved) && !body_nonblank {
+    if !crate::native_kb::documentation(id) && state.is_some_and(|state| state.status == Status::Resolved) && !body_nonblank {
         report.reject(Some(id), "resolved_body_blank", STATUS_RULE, None);
     }
 }
@@ -798,6 +798,11 @@ fn check(
                 continue;
             }
         };
+        if crate::native_kb::documentation(id) {
+            transitions.insert(id.clone(), requested.clone());
+            states.insert(id.clone(), requested);
+            continue;
+        }
         let old = before
             .as_ref()
             .filter(|b| b.store.nodes.contains_key(id))
@@ -827,7 +832,7 @@ fn check(
                     && requested.status == Status::InProgress
                     && store.children[id]
                         .iter()
-                        .any(|child| state(&candidate, child).is_ok_and(|s| s.status.blocks())) =>
+                        .any(|child| state(&candidate, child).is_ok_and(|s| status::blocks(child, &s))) =>
             {
                 let mut prior = requested.clone();
                 prior.status = Status::Resolved;
@@ -844,8 +849,8 @@ fn check(
     if transitions.len() == store.nodes.len() {
         if status::child_gate(&mut transitions, &store.children, &request.explicit).is_err() {
             for (id, state) in &states {
-                if state.status == Status::Resolved
-                    && store.children[id].iter().any(|c| states[c].status.blocks())
+                if !crate::native_kb::documentation(id) && state.status == Status::Resolved
+                    && store.children[id].iter().any(|c| status::blocks(c, &states[c]))
                 {
                     report.reject(
                         Some(id),
@@ -1000,12 +1005,13 @@ fn check_git(
         Err(_) => {
             let start = report.rows.len();
             for (id, state) in &requested {
+                if crate::native_kb::documentation(id) { continue }
                 let changed = edited.contains(id) || before.children.get(id) != candidate.children.get(id);
                 if status::transition(old.get(id), state, changed, explicit.contains(id)).is_err() {
                     report.reject(Some(id), "status_transition_or_reason", STATUS_RULE, None);
                 }
                 if state.status == Status::Resolved && candidate.children[id].iter()
-                    .any(|child| requested[child].status.blocks()) {
+                    .any(|child| status::blocks(child, &requested[child])) {
                     report.reject(Some(id), "active_child_blocks_resolution", STATUS_RULE, None);
                 }
             }

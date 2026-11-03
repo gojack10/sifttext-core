@@ -13,6 +13,7 @@ fn findings(check: &Value, flagged: &mut BTreeMap<(String, String), Value>) {
     for result in check["results"].as_array().into_iter().flatten() {
         if !hosted_checks::has_findings(&result["response"]) { continue }
         if let (Some(node), Some(request)) = (result["node"].as_str(), result["response"]["request_id"].as_str()) {
+            if sifttext_file_graph::native_kb::documentation(node) { continue }
             flagged.insert((node.to_owned(), request.to_owned()), result.clone());
         }
     }

@@ -104,6 +104,11 @@ pub fn transition(
     Ok(result)
 }
 
+/// Maintained documentation is not an unfinished epistemic work item.
+pub(crate) fn blocks(id: &str, state: &State) -> bool {
+    !crate::native_kb::documentation(id) && state.status.blocks()
+}
+
 /// Pure direct-child closure. Reopening propagates upward, never downward.
 /// Explicit resolution is rejected rather than silently changed into activation.
 pub fn child_gate(
@@ -121,8 +126,8 @@ pub fn child_gate(
     let mut blocked: Vec<_> = states
         .iter()
         .filter(|(id, state)| {
-            state.status == Status::Resolved
-                && children[*id].iter().any(|c| states[c].status.blocks())
+            !crate::native_kb::documentation(id) && state.status == Status::Resolved
+                && children[*id].iter().any(|c| blocks(c, &states[c]))
         })
         .map(|(id, _)| id.clone())
         .collect();
@@ -133,7 +138,7 @@ pub fn child_gate(
     // once, rather than scanning the entire store at every ancestor level.
     let mut parents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for (id, kids) in children {
-        if states.get(id).is_some_and(|s| s.status == Status::Resolved) {
+        if !crate::native_kb::documentation(id) && states.get(id).is_some_and(|s| s.status == Status::Resolved) {
             for child in kids {
                 parents.entry(child).or_default().push(id);
             }
@@ -214,7 +219,9 @@ pub(crate) fn normalized_states(
         "explicit request needs a candidate UUID",
     )?;
     for (id, state) in before {
-        state.validate().map_err(|e| format!("node {id}: {e}"))?;
+        if !crate::native_kb::documentation(id) {
+            state.validate().map_err(|e| format!("node {id}: {e}"))?;
+        }
     }
     let mut result = BTreeMap::new();
     for id in requested.keys() {
@@ -238,6 +245,7 @@ fn normalized_state(
     explicit: &BTreeSet<String>,
 ) -> Result<State> {
     let state = &requested[id];
+    if crate::native_kb::documentation(id) { return Ok(state.clone()) }
     match transition(old, state, changed, explicit.contains(id)) {
         Ok(next) => Ok(next),
         // A previously normalized reopening is valid on retry. Restore the
@@ -246,7 +254,7 @@ fn normalized_state(
             if !explicit.contains(id)
                 && old.is_some_and(|s| s.status == Status::Resolved)
                 && state.status == Status::InProgress
-                && children[id].iter().any(|child| requested[child].status.blocks()) =>
+                && children[id].iter().any(|child| blocks(child, &requested[child])) =>
         {
             let mut prior = state.clone();
             prior.status = Status::Resolved;
@@ -800,7 +808,7 @@ pub fn normalize_with_preflight(
     // helper as the immutable Git planner while the baseline streams.
     let mut result = BTreeMap::new();
     let before = Baseline::scan(before, true, |id, old, children, input| {
-        old.validate().map_err(|e| format!("node {id}: {e}"))?;
+        if !crate::native_kb::documentation(id) { old.validate().map_err(|e| format!("node {id}: {e}"))?; }
         if let Some(requested) = candidate.inputs.get(id) {
             let changed = input.text_hash != requested.text_hash || children != candidate.children[id];
             result.insert(id.to_owned(), normalized_state(id, Some(old), &candidate.states,

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Publication policy, not a customer-store validator. Read exact Git objects.
+// Structural publication policy, not an epistemic verdict on maintained docs.
 import { execFileSync } from 'node:child_process';
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
@@ -9,16 +9,22 @@ let count = 0;
 let failed = false;
 for (const entry of entries) {
   const [header, path] = entry.split('\t');
-  if (!/^nodes\/[^/]+\/node\.md$/.test(path)) continue;
+  const match = /^nodes\/([^/]+)\/node\.md$/.exec(path);
+  if (!match) continue;
   count++;
   const [mode, type, oid] = header.split(' ');
   const text = git('cat-file', 'blob', oid);
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
-  const statuses = frontmatter?.split(/\r?\n/).filter(line => /^status\s*:/.test(line)) ?? [];
-  let status;
-  try { status = JSON.parse(statuses[0]?.slice(statuses[0].indexOf(':') + 1)); } catch {}
-  if (mode !== '100644' || type !== 'blob' || statuses.length !== 1 || status !== 'resolved') {
-    console.error(`${path}: published instructions require exactly one status: "resolved"`);
+  const field = key => {
+    const lines = frontmatter?.split(/\r?\n/).filter(line => line.startsWith(`${key}:`)) ?? [];
+    if (lines.length !== 1) return undefined;
+    try { return JSON.parse(lines[0].slice(key.length + 1)); } catch { return undefined; }
+  };
+  if (mode !== '100644' || type !== 'blob' || field('id') !== match[1]
+      || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(match[1])
+      || ['name', 'micro_summary'].some(key => typeof field(key) !== 'string' || !field(key).trim())
+      || !['not_examined', 'in_progress', 'stuck', 'deferred', 'discarded', 'resolved'].includes(field('status'))) {
+    console.error(`${path}: published documentation requires valid native identity and metadata`);
     failed = true;
   }
 }

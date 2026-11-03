@@ -1481,6 +1481,7 @@ fn execute(
                 Some("passed") => "passed",
                 Some("findings") => "findings",
                 Some("not_required") => "not_required",
+                Some("exempt") => "exempt",
                 _ => "unchecked",
             };
             r.hosted_check = Some(result);
@@ -1489,7 +1490,8 @@ fn execute(
                 return Err("hosted epistemic findings; draft preserved. To waive only this refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into());
             }
         } else if path.try_exists()? {
-            let mut result: serde_json::Value = serde_json::from_slice(&crate::read_regular(&path)?)?;
+            let mut result = crate::hosted_checks::documentation_exempt_record(
+                serde_json::from_slice(&crate::read_regular(&path)?)?);
             if replication { result["replication"] = serde_json::json!(true); }
             if accept_despite_findings && result["status"] == "findings" {
                 result["accepted_despite_findings"] = serde_json::json!(true);
@@ -1498,6 +1500,7 @@ fn execute(
             r.semantic_check = match result["status"].as_str() {
                 Some("passed") => "passed",
                 Some("not_required") => "not_required",
+                Some("exempt") => "exempt",
                 Some("findings") => "findings",
                 _ => "unchecked",
             };

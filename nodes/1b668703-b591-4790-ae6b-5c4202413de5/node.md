@@ -9,14 +9,19 @@ position: 3072
 ---
 ## Before submit
 
-Read this procedure from [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] before submitting an approved change.
+Read this procedure from [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) before submitting an approved change.
 
 Review the proposed text against its sources. Distinguish observations from interpretations and preserve the context of consequential quotations, including rejected historical claims.
 
-During authenticated paid submission, Core requests hosted review of changed node Markdown from the immutable combined candidate. Read the binary's actual receipt to establish whether review completed. An agent's claim that a check passed cannot satisfy this gate.
+Official GitHub/bundled user-facing KB nodes are durable documentation, exempt from epistemic-state checks. Core recognizes their reserved identities from its compiled bundled seed, including locally maintained copies, rather than trusting a customer-supplied exemption flag. The exemption does not cover other customer knowledge, founder development evidence or third-party material. It preserves structural, Git and file-integrity checks.
+
+Do not request paid epistemic review of those documentation nodes or treat an old finding on them as repair work. An exempt receipt is not a PASS. Saved historical results remain available; exemption neither rewrites their verdicts nor reverses earlier charges. Mixed submissions still check non-exempt changed nodes.
+
+During authenticated paid submission, Core requests hosted review of non-exempt changed node Markdown from the immutable combined candidate. Read the binary's actual receipt to establish whether review completed. An agent's claim that a check passed cannot satisfy this gate.
 
 | Result | Submit behavior |
 | --- | --- |
+| Official documentation exemption | Continue publication without epistemic review or a new review charge for those nodes; do not report PASS. |
 | Passing check | Continue the checked publication procedure. |
 | Findings | Refuse acceptance and preserve the draft for repair unless the user explicitly approves accepting despite findings for this submission. |
 | Credit shortage or technical failure | Save marked unchecked and explain the missing check. |
@@ -32,7 +37,7 @@ When `sifttext submit --help` lists `--accept-despite-findings`, the user may ap
 sifttext submit HOME WORKTREE COMMIT BASE --accept-despite-findings
 ```
 
-Agents must never pass `--accept-despite-findings` without the user's explicit OK. Approval to save knowledge alone is not approval to waive findings. If the flag is unavailable in the installed version, preserve the draft rather than bypassing publication.
+Documentation exemption is automatic and does not use this flag. For non-exempt work, agents must never pass `--accept-despite-findings` without the user's explicit OK. Approval to save knowledge alone is not approval to waive findings. If the flag is unavailable in the installed version, preserve the draft rather than bypassing publication.
 
 The checker still runs. Findings stay recorded as `semantic_check: findings`; the check record marks `accepted_despite_findings` without relabeling the verdict as passed or unchecked. Structural, integrity and consent checks still refuse invalid publication. The flag waives only the findings refusal for this invocation, not a later submission or permission to share a flagged node with another person. `-y` controls large output only and does not waive findings.
 
@@ -153,4 +158,4 @@ Unchecked means epistemic review remains pending. Report the reason for the miss
 
 Check the backlog only with the user's permission, including after credits or service return.
 
-Return to [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]] with the actual result and unfinished work.
+Return to [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) with the actual result and unfinished work.

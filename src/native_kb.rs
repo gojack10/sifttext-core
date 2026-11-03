@@ -4,6 +4,16 @@ use crate::{Policy, Result, local};
 use serde_json::Value;
 use std::{fs, os::unix::fs::symlink, path::Path};
 
+/// Documentation ownership comes from this executable's bundled, Git-tracked
+/// seed, never a customer-supplied exemption flag or a check receipt. These
+/// reserved identities remain documentation when locally maintained.
+pub fn documentation(id: &str) -> bool {
+    static IDS: std::sync::OnceLock<std::collections::BTreeSet<&'static str>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| FILES.iter().filter_map(|(path, _)|
+        path.strip_prefix("nodes/")?.strip_suffix("/node.md")
+    ).collect()).contains(id)
+}
+
 /// Existing homes are recognized before even materializing the default seed.
 pub fn init(policy: &Policy, home: &Path) -> Result<Value> {
     if fs::symlink_metadata(home).is_ok() {

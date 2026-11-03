@@ -20,40 +20,42 @@ An explicit commit-now request brings the proposal forward with the same approva
 Honor a user stop or reduced scope.
 
 ## Required procedures
-Read [[Dialogue|d00ab6fd-b475-49ef-b37a-812807879308]] before drafting.
+Read [Dialogue](../d00ab6fd-b475-49ef-b37a-812807879308/node.md) before drafting.
 
-Read [[Forcing Pass|da24ff95-9d07-4e15-9571-9313d6b90f94]] before review.
+Read [Forcing Pass](../da24ff95-9d07-4e15-9571-9313d6b90f94/node.md) before review.
 
-Read [[Persistence|af92e983-aa27-4dec-b628-2a4d0bbbd2b6]] before saving.
+Read [Persistence](../af92e983-aa27-4dec-b628-2a4d0bbbd2b6/node.md) before saving.
 
-Apply [[Task-Relevant Project Rules|314e5c0a-063d-4a81-9214-11f49747703b]] when its stated conditions arise, reusing unchanged reads.
+Apply [Task-Relevant Project Rules](../314e5c0a-063d-4a81-9214-11f49747703b/node.md) when its stated conditions arise, reusing unchanged reads.
 
 ## Draft and review
-Use [[Draft From Originating Conditions|d96c84a8-ce99-4474-94ef-7ae1d1db4a1b]] to recover the source-grounded change.
+Use [Draft From Originating Conditions](../d96c84a8-ce99-4474-94ef-7ae1d1db4a1b/node.md) to recover the source-grounded change.
 
-Use [[Review Origin and Response Coverage|ab82fdf1-6a71-4e09-bffe-ed6446eadc9a]] to check its meaning against the sources.
+Use [Review Origin and Response Coverage](../ab82fdf1-6a71-4e09-bffe-ed6446eadc9a/node.md) to check its meaning against the sources.
 
-For instruction changes, apply [[Canopy (Prompt Authoring Framework)|957aa569-75be-4871-b376-6b1943cc4db4]].
+For instruction changes, apply [Canopy (Prompt Authoring Framework)](../957aa569-75be-4871-b376-6b1943cc4db4/node.md).
 
-Use [[Associate External Artifact Directories|de7cea55-c93d-48db-a4f6-58368bf6c36f]] when a node materially uses an external directory.
+Use [Associate External Artifact Directories](../de7cea55-c93d-48db-a4f6-58368bf6c36f/node.md) when a node materially uses an external directory.
 
-Use [[Session Evidence|3651b9b0-fc21-4c67-9d79-84ef3af963ce]] when a session materially supports the knowledge.
+Use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) when a session materially supports the knowledge.
 
-Before showing the proposal, run `sifttext epistemic-check` on each proposed node, individually or in a packet. Repair findings and re-check until passing. Show only a passing proposal unless something genuinely significant needs the user's decision. Submit-time checking remains the backstop; a passing check does not replace approval.
+The official GitHub/bundled user-facing KB is durable documentation, exempt from epistemic-state review. Do not run or require an epistemic check for those maintained instruction identities, bill for their review, or label them passed without a review. Review their source accuracy, instruction route and structural integrity normally. The exemption follows the identities shipped in Core's bundled KB, including locally maintained copies; it does not extend to arbitrary customer knowledge or founder development records.
 
-Follow [[Render a Tree Delta|5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f]] and render the proposal with `sifttext tree-render` so the displayed change is the actual tree delta.
+For non-exempt proposed nodes, run `sifttext epistemic-check` individually or in a packet before showing the proposal. Repair findings and re-check until passing. Show only a passing proposal unless something genuinely significant needs the user's decision. Submit-time checking remains the backstop; neither a passing check nor documentation exemption replaces approval.
+
+Follow [Render a Tree Delta](../5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f/node.md) and render the proposal with `sifttext tree-render` so the displayed change is the actual tree delta.
 
 Present the rendered file as made. Do not paraphrase it, re-summarize it, or replace it with your own interpretation. Limit your accompanying words to the check result and the approval request.
 
-Show the change through [[Present the Reviewable Delta|4036d3c5-e596-4a9c-b432-1c4ccc3162b4]] and obtain the required approval.
+Show the change through [Present the Reviewable Delta](../4036d3c5-e596-4a9c-b432-1c4ccc3162b4/node.md) and obtain the required approval.
 
 A proposal-only assignment ends at review.
 
 ## Save and finish
 
-Before submit, read [[Epistemic Check|1b668703-b591-4790-ae6b-5c4202413de5]] to handle the result of Core's binary-enforced paid submission check.
+Before submit, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle the result of Core's binary-enforced paid submission check.
 
-Use [[Commit Usable Understanding|edaefe20-50b7-4859-8645-e4c23f4e07ac]] to establish what a later reader can conclude or do.
+Use [Commit Usable Understanding](../edaefe20-50b7-4859-8645-e4c23f4e07ac/node.md) to establish what a later reader can conclude or do.
 
 Report the accepted change and any unfinished work.
 

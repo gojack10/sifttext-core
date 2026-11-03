@@ -9,7 +9,7 @@ position: 10240
 ---
 ## Choose the view
 
-During [[SiftText Commit|c72d552d-3499-445b-a8d5-05d0ff7824f2]], check proposed nodes before presenting the proposal. Rendering makes no checker calls and does not approve or publish knowledge.
+During [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md), epistemically check non-exempt proposed nodes before presentation. Official bundled documentation is exempt, not passed. Rendering makes no checker calls and does not approve or publish knowledge.
 
 For a native private draft, derive the selection and allocation base:
 

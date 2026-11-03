@@ -270,16 +270,39 @@ impl std::fmt::Display for ReportedCheckFailure {
 impl std::error::Error for ReportedCheckFailure {}
 
 pub fn run(args: &[String]) -> Result<()> {
+    let mut request = match args {
+        [cmd, file] if cmd == "slop-check" || cmd == "epistemic-check" =>
+            Some(json!({"checker":if cmd == "slop-check" {"slop"} else {"epistemic"}, "text":input(Path::new(file))?})),
+        [cmd, flag, file] if cmd == "epistemic-check" && flag == "--packet" =>
+            Some(json!({"checker":"epistemic", "packet":serde_json::from_str::<Value>(&input(Path::new(file))?)?})),
+        _ => None,
+    };
+    if let Some(request) = &mut request {
+        if request["checker"] == "epistemic" {
+            let documentation = |text: &str| crate::parse_markdown(text)
+                .is_ok_and(|node| crate::native_kb::documentation(&node.id));
+            let mut exempt = 0;
+            let empty = if let Some(text) = request["text"].as_str() {
+                exempt = usize::from(documentation(text));
+                exempt > 0
+            } else if let Some(nodes) = request["packet"]["nodes"].as_array_mut() {
+                nodes.retain(|node| {
+                    let skip = node["markdown"].as_str().is_some_and(documentation);
+                    if skip { exempt += 1; }
+                    !skip
+                });
+                nodes.is_empty() && exempt > 0
+            } else { false };
+            if exempt > 0 {
+                writeln!(std::io::stdout().lock(), "Epistemic check: EXEMPT ({exempt} official documentation nodes; no review or charge for those nodes).")?;
+            }
+            if empty { return Ok(()) }
+        }
+    }
     let mut access = SyncAccess::checks()?;
-    let value = match args {
-        [cmd, file] if cmd == "slop-check" || cmd == "epistemic-check" => {
-            let text = input(Path::new(file))?;
-            response(&mut access, "POST", ROOT, Some(&json!({"checker":if cmd == "slop-check" {"slop"} else {"epistemic"},"text":text})), true)?
-        }
-        [cmd, flag, file] if cmd == "epistemic-check" && flag == "--packet" => {
-            let packet: Value = serde_json::from_str(&input(Path::new(file))?)?;
-            response(&mut access, "POST", ROOT, Some(&json!({"checker":"epistemic", "packet":packet})), true)?
-        }
+    let value = if let Some(request) = request {
+        response(&mut access, "POST", ROOT, Some(&request), true)?
+    } else { match args {
         [cmd, id] if cmd == "check-result" => {
             request_id(&json!({"request_id":id}))?;
             let mut value = response(&mut access, "GET", &format!("{ROOT}/{id}"), None, false)?;
@@ -314,7 +337,7 @@ pub fn run(args: &[String]) -> Result<()> {
             return Ok(());
         }
         _ => return Err("usage:\n  sifttext slop-check FILE|-\n  sifttext epistemic-check FILE|- | --packet FILE\n  sifttext check-result ID [--delete]\n  sifttext credits [--buy-10 [REQUEST_KEY]]".into()),
-    };
+    }};
     let mut out = std::io::stdout().lock();
     if !completed(&value) {
         writeln!(out, "Check did not complete. Retain input and retrieve the request if available.")?;
@@ -331,6 +354,7 @@ pub fn run(args: &[String]) -> Result<()> {
 /// Called only on validated immutable final input, before conditional ref publication.
 /// Changed node markdown is the entire upload allowlist; no artifacts or unrelated nodes.
 pub(crate) fn publication(reader: &mut GitReader, before: Option<&GitView>, after: &GitView) -> Value {
+    if let Some(exemption) = documentation_only(before, after) { return exemption }
     match SyncAccess::saved_login_exists() {
         Ok(false) => return json!({"status":"not_required","reason":"logged_out"}),
         Err(error) => return unavailable(error),
@@ -372,12 +396,24 @@ pub fn sync_publication(
     }
 }
 
+fn documentation_only(before: Option<&GitView>, after: &GitView) -> Option<Value> {
+    let changed: Vec<_> = after.nodes.iter().filter(|(id, node)|
+        before.and_then(|view| view.nodes.get(*id)).is_none_or(|old| old.text_hash != node.text_hash)
+    ).map(|(id, _)| id).collect();
+    if changed.is_empty() {
+        Some(json!({"status":"not_required", "reason":"no_changed_node_text"}))
+    } else if changed.iter().all(|id| crate::native_kb::documentation(id)) {
+        Some(json!({"status":"exempt", "reason":"official_documentation", "exempt_nodes":changed}))
+    } else { None }
+}
+
 fn publication_with_access(
     reader: &mut GitReader,
     before: Option<&GitView>,
     after: &GitView,
     access: &mut SyncAccess,
 ) -> Value {
+    if let Some(exemption) = documentation_only(before, after) { return exemption }
     let mut results = Vec::new();
     let mut attempt = || -> Result<Value> {
         let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
@@ -391,6 +427,7 @@ fn publication_with_access(
             return Ok(json!({"status":"not_required","reason":"free_account"}));
         }
         for (id, node) in &after.nodes {
+            if crate::native_kb::documentation(id) { continue }
             if before
                 .and_then(|view| view.nodes.get(id))
                 .is_some_and(|old| old.text_hash == node.text_hash)
@@ -505,6 +542,7 @@ pub fn retained_findings(home: &Path) -> Result<Vec<Value>> {
         if !has_findings(&item["response"]) { continue }
         let id = item["node"].as_str().ok_or("missing retained node")?;
         require(crate::uuid(id), "invalid retained node")?;
+        if crate::native_kb::documentation(id) { continue }
         let node = home.join("nodes").join(id).join("node.md");
         if !node.try_exists()? { continue }
         let bytes = crate::read_regular(&node)?;
@@ -539,10 +577,36 @@ pub fn retained_publication(home: &Path) -> Result<Option<Value>> {
     latest.map(|(_, path)| Ok(serde_json::from_slice(&crate::read_regular(&path)?)?)).transpose()
 }
 
+/// Apply current documentation policy to a historical display without changing
+/// saved checker responses or pretending their earlier verdict was a pass.
+pub(crate) fn documentation_exempt_record(mut check: Value) -> Value {
+    let mut exempt = Vec::new();
+    if let Some(results) = check["results"].as_array_mut() {
+        results.retain(|item| {
+            if let Some(id) = item["node"].as_str().filter(|id| crate::native_kb::documentation(id)) {
+                exempt.push(id.to_owned());
+                false
+            } else { true }
+        });
+        if !exempt.is_empty() {
+            let empty = results.is_empty();
+            let findings = results.iter().any(|item| has_findings(&item["response"]));
+            let passed = results.iter().all(|item| completed(&item["response"]) && item["response"]["passed"] == true);
+            check["historical_status"] = check["status"].clone();
+            check["exempt_nodes"] = json!(exempt);
+            check["status"] = json!(if empty { "exempt" } else if findings { "findings" } else if passed { "passed" } else { "unchecked" });
+        }
+    }
+    check
+}
+
 pub fn render_publication(check: &Value) -> String {
+    let current = documentation_exempt_record(check.clone());
+    let check = &current;
     let mut lines = Vec::new();
     match check["status"].as_str() {
         Some("passed") => (),
+        Some("exempt") => lines.push("Epistemic submit check: exempt official documentation; no review or charge.".into()),
         Some("findings") if check["accepted_despite_findings"] == true => lines.push("Epistemic findings retained; findings refusal waived for this submission.".into()),
         Some("findings") if check["replication"] == true => lines.push("Epistemic findings retained for repair; own-account replication is not blocked.".into()),
         Some("findings") => lines.push("Not accepted. Draft preserved. To waive only the findings refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into()),
