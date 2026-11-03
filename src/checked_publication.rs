@@ -483,7 +483,14 @@ fn ignored_entry(root: &Path, path: &Path, durable_home: bool) -> Result<()> {
     require(
         crate::token_metadata::derived(path)
             || disposable_outline(path)
-            || (durable_home && path == Path::new(".sifttext/config.json"))
+            // Durable-home operation state survives reader advancement. It is
+            // not disposable draft data: the importer owns journal retirement
+            // and holds its lock through publication and finishing.
+            || (durable_home && [
+                ".sifttext/config.json",
+                ".sifttext/format-migration.json",
+                ".sifttext/format-migration.lock",
+            ].iter().any(|state| path == Path::new(state)))
             || [
                 ".sifttext/index.sqlite",
                 ".sifttext/index.sqlite-journal",
