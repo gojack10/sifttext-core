@@ -111,21 +111,16 @@ Read the available tools' descriptions. The synced workspace uses this catalog:
 
 | Tool | Responsibility |
 | --- | --- |
-| `workspace_prepare` | Start workspace synchronization. |
+| `workspace_prepare` | Optionally prepare the workspace without running a command. |
 | `workspace_prepare_continue` | Continue a failed preparation after its original state has been inspected and corrected. |
 | `workspace_status` | Read operation status. |
-| `workspace_result` | Retrieve the original result and delivery state. |
+| `workspace_result` | Wait briefly for the original result, stage progress and delivery state. |
 | `workspace_finish` | Resume delivery of a retained Bash result. |
-| `bash` | Start an asynchronous command in the hosted workspace. |
+| `bash` | Prepare automatically and run one command, returning its retained output or a pending operation. |
 
 If the client still lists older node-CRUD tools, refresh its tool discovery before continuing.
 
-Prepare the workspace:
-
-1. Call `workspace_prepare` and retain its operation ID.
-2. Read `workspace_status` for that operation. While pending, wait at least three seconds between polls.
-3. Retrieve the original result with `workspace_result`. Continue only after success.
-4. If preparation failed, inspect its failure before using the documented continuation.
+Call Bash directly; it prepares the workspace automatically. Use `workspace_prepare` only when preparation without a command is useful. If that optional preparation fails, inspect its retained failure before using the documented continuation.
 
 Through the hosted `bash` tool, run:
 
@@ -136,6 +131,12 @@ sifttext instructions /workspace/knowledge
 Supply the `request_id` required by the current Bash tool schema.
 
 Keep that request ID with the returned operation ID so status and result calls can recover the command's original outcome.
+
+Bash and `workspace_result` wait up to five seconds by default. When the current tool schema offers `wait_ms`, use `0..10000` to choose a shorter or longer bounded wait. Changing the wait does not start another command or extend its execution deadline.
+
+If the operation is still running, retain its ID and call `workspace_result` for that same operation until it finishes. A pending response is not success. Its progress message and stage elapsed time describe actual work separately from command stdout and final completion. These returned fields do not establish whether a client displays live progress notifications.
+
+`workspace_status` remains available for inspection. Wait at least three seconds only between status polls; other calls need no added delay.
 
 After a lost response, preserve the same request ID and arguments. Never rerun an uncertain command with a new ID. For a retained Bash result whose delivery is pending, use `workspace_finish` to resume delivery without rerunning the command.
 
