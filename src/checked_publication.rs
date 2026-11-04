@@ -1233,6 +1233,8 @@ fn execute(
     require(reader.repo == repo && reader.policy_identity == policy.validation_identity()?,
         "prepared Git reader does not match publication")?;
     let before = reader.view(&main)?;
+    let exact_before = reader.imported_baseline.as_ref()
+        .is_none_or(|(original, _)| original != &main);
     // The lifecycle refreshes the real home's existing derived state after
     // acceptance. Do not hydrate donors or build a second full temporary index.
     let candidate = if in_draft {
@@ -1470,9 +1472,9 @@ fn execute(
     };
     require(Some(&final_view.tree) == r.tree.as_ref(), "final candidate tree identity changed")?;
     r.check = "candidate_validation_rejected";
-    // Execute the full law once on exact Git input. The baseline supplies
-    // history, not a second full proof or a mutable filesystem recapture.
-    let checked = gate::validate_git(policy, &mut reader, &before, &final_view, &q.explicit);
+    // Bind the actual accepted-before and final normalized candidate. The
+    // imported ordering alias cannot qualify as the raw accepted-before tree.
+    let checked = gate::validate_git(policy, &mut reader, &before, &final_view, &q.explicit, exact_before);
     r.graph_checks.push(checked.graph.clone());
     r.version = checked.version.clone();
     let valid = checked.status == "current";

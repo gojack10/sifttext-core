@@ -882,7 +882,9 @@ fn graph_validation_key(graph: &Graph, policy: &str) -> String {
     format!("{:x}", hash.finalize())
 }
 
-// Optional, reconstructible local performance cache, not publication authority.
+// Optional, reconstructible exact graph results in the cooperative workflow.
+// Only native-result records support same-law structural inheritance. Physical,
+// field, status and live publication checks remain independent of these records.
 // Git common metadata shares successful checks across accepted/draft worktrees.
 fn graph_cache_dir(store: &Path) -> Result<PathBuf> {
     let root = fs::canonicalize(store)?;
@@ -921,12 +923,26 @@ fn graph_cache_marker(key: &str) -> String {
     format!("sifttext-valid-graph-v1 {key}\n")
 }
 
-fn graph_cache_hit(directory: &Path, key: &str) -> Result<bool> {
+enum GraphCacheResult {
+    Legacy,
+    Native,
+}
+
+// Cooperative provenance for a native executed full-law or checked delta
+// success. This is not authentication against unmanaged same-user writes.
+// An old or imported same-input marker never bootstraps a different shape.
+fn native_graph_marker(key: &str) -> String {
+    format!("sifttext-native-graph-v2 {key}\n")
+}
+
+fn graph_cache_hit(directory: &Path, key: &str) -> Result<Option<GraphCacheResult>> {
     real_dir(directory)?;
     let path = directory.join(key);
     let meta = fs::symlink_metadata(&path)?;
-    let expected = graph_cache_marker(key);
-    require(meta.is_file() && meta.len() == expected.len() as u64, "unsafe graph cache marker")?;
+    let legacy = graph_cache_marker(key);
+    let native = native_graph_marker(key);
+    let limit = legacy.len().max(native.len());
+    require(meta.is_file() && meta.len() <= limit as u64, "unsafe graph cache marker")?;
     let mut options = fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -938,14 +954,16 @@ fn graph_cache_hit(directory: &Path, key: &str) -> Result<bool> {
     let file = options.open(path)?;
     require(file.metadata()?.is_file(), "unsafe graph cache marker")?;
     let mut bytes = Vec::new();
-    file.take(expected.len() as u64 + 1).read_to_end(&mut bytes)?;
-    Ok(bytes == expected.as_bytes())
+    file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+    Ok(if bytes == native.as_bytes() { Some(GraphCacheResult::Native) }
+        else if bytes == legacy.as_bytes() { Some(GraphCacheResult::Legacy) }
+        else { None })
 }
 
 fn graph_cache_record(directory: &Path, key: &str) -> Result<()> {
     real_dir(directory)?;
     let mut marker = tempfile::NamedTempFile::new_in(directory)?;
-    marker.write_all(graph_cache_marker(key).as_bytes())?;
+    marker.write_all(native_graph_marker(key).as_bytes())?;
     // Atomic no-clobber: concurrent success for this key is harmless. Never
     // overwrite a malformed/symlink entry; it simply remains a cache miss.
     marker.persist_noclobber(directory.join(key))?;
@@ -1061,6 +1079,12 @@ pub const CANDIDATE_CHANGED_PREFIX: &str = "checked candidate changed: ";
 pub struct Policy {
     executable: PathBuf,
     project: PathBuf,
+}
+
+pub(crate) struct GraphEvaluation {
+    pub(crate) valid: bool,
+    pub(crate) mode: &'static str,
+    pub(crate) reason: &'static str,
 }
 impl Policy {
     pub fn checked(project: &Path) -> Result<Self> {
@@ -1191,6 +1215,26 @@ impl Policy {
     pub(crate) fn graph_valid_input(
         &self, graph: &Graph, cache_root: &Path, expected_identity: Option<&str>,
     ) -> Result<bool> {
+        self.graph_evaluation(graph, cache_root, expected_identity, None)
+            .map(|result| result.valid)
+    }
+
+    pub(crate) fn graph_valid_git(
+        &self, before: &git_snapshot::GitView, candidate: &git_snapshot::GitView,
+        cache_root: &Path, expected_identity: &str, exact_before: bool,
+    ) -> Result<GraphEvaluation> {
+        let mut result = self.graph_evaluation(&candidate.graph(), cache_root, Some(expected_identity),
+            exact_before.then_some((before, candidate)))?;
+        if !exact_before && result.mode == "full_law" {
+            result.reason = "imported baseline is not the exact accepted-before tree";
+        }
+        Ok(result)
+    }
+
+    fn graph_evaluation(
+        &self, graph: &Graph, cache_root: &Path, expected_identity: Option<&str>,
+        delta: Option<(&git_snapshot::GitView, &git_snapshot::GitView)>,
+    ) -> Result<GraphEvaluation> {
         let started = Instant::now();
         // A marker never bypasses the checked source/executable stamp guard.
         self.verify_stamp()?;
@@ -1205,13 +1249,48 @@ impl Policy {
         ].concat());
         let key = graph_validation_key(graph, &predicate);
         let directory = graph_cache_dir(cache_root).ok();
-        let hit = directory.as_ref().is_some_and(|directory| {
-            graph_cache_hit(directory, &key).unwrap_or(false)
-        });
+        let hit = directory.as_ref().is_some_and(|directory|
+            graph_cache_hit(directory, &key).ok().flatten().is_some());
+        let mut mode = if hit { "same_input" } else { "full_law" };
+        let mut reason = if hit { "successful exact normalized input under the same law" }
+            else { "no native same-law valid base is available" };
+        let delta_words = if !hit && let (Some(directory), Some((before, candidate))) = (&directory, delta) {
+            let base_key = graph_validation_key(&before.graph(), &predicate);
+            if matches!(graph_cache_hit(directory, &base_key), Ok(Some(GraphCacheResult::Native))) {
+                let frontier = candidate.placement_frontier(before);
+                let mut words = reserved(graph_word_count(graph)?.checked_add(frontier.len())
+                    .and_then(|count| count.checked_add(2)).ok_or("graph size overflow")?)?;
+                words.extend([2, frontier.len()]);
+                words.extend(frontier);
+                let encoded = graph_words(graph)?;
+                // The former four one-digit header words add eight bytes.
+                // A shorter frontier header must not enlarge the input domain.
+                require(wire_byte_count(&encoded)?.checked_add(8)
+                    .is_some_and(|bytes| bytes <= BACKEND_INPUT_BYTES),
+                    "wire exceeds frozen backend input limit")?;
+                words.extend(encoded);
+                match wire_text(&words) {
+                    Ok(wire) => Some(wire),
+                    Err(error) if error.to_string() == "wire exceeds frozen backend input limit" => {
+                        reason = "delta framing exceeds the existing input domain; use the full law";
+                        None
+                    }
+                    Err(error) => return Err(error),
+                }
+            } else { None }
+        } else { None };
         let result = if hit {
             Ok(true)
         } else {
-            self.call(graph)
+            let incremental = delta_words.is_some();
+            let verdict = if let Some(wire) = delta_words {
+                mode = "delta_law";
+                reason = "native same-law base success and complete semantic placement frontier";
+                self.verify_stamp()?;
+                invoke_bounded_with_deadline(&self.executable, wire.as_bytes(),
+                    "STGD1 PRESERVED\n".len(), policy_deadline(graph)?)
+            } else { self.call(graph) };
+            verdict
                 .map_err(|error| {
                     if error.to_string() == "policy process output exceeds limit" {
                         "malformed checked graph verdict".into()
@@ -1219,9 +1298,9 @@ impl Policy {
                         error
                     }
                 })
-                .and_then(|verdict| match verdict.as_str() {
-                    "STG1 VALID\n" => Ok(true),
-                    "STG1 REJECT\n" => Ok(false),
+                .and_then(|verdict| match (incremental, verdict.as_str()) {
+                    (false, "STG1 VALID\n") | (true, "STGD1 PRESERVED\n") => Ok(true),
+                    (false, "STG1 REJECT\n") | (true, "STGD1 REJECT\n") => Ok(false),
                     _ => Err("malformed checked graph verdict".into()),
                 })
         };
@@ -1230,13 +1309,13 @@ impl Policy {
         });
         if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
             eprintln!(
-                "graph-work cache_hit={hit} law_run={} valid={} cache_write={recorded} elapsed_ms={}",
+                "graph-work cache_hit={hit} law_run={} mode={mode} valid={} cache_write={recorded} elapsed_ms={}",
                 !hit,
                 match &result { Ok(true) => "true", Ok(false) => "false", Err(_) => "error" },
                 started.elapsed().as_millis(),
             );
         }
-        result
+        result.map(|valid| GraphEvaluation { valid, mode, reason })
     }
 
     pub fn validate(&self, s: &Store) -> Result<()> {
@@ -1247,14 +1326,18 @@ impl Policy {
     }
 }
 
-fn wire_text(words: &[usize]) -> Result<String> {
-    let bytes = words
+fn wire_byte_count(words: &[usize]) -> Result<usize> {
+    Ok(words
         .iter()
         .try_fold(0usize, |sum, word| {
             sum.checked_add(word.checked_ilog10().unwrap_or(0) as usize + 2)
                 .ok_or("graph size overflow")
         })?
-        .saturating_sub(1);
+        .saturating_sub(1))
+}
+
+fn wire_text(words: &[usize]) -> Result<String> {
+    let bytes = wire_byte_count(words)?;
     require(
         bytes <= BACKEND_INPUT_BYTES,
         "wire exceeds frozen backend input limit",

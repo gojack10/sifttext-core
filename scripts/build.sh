@@ -17,6 +17,7 @@ rm -f build/candidate.sha256 build/graph-policy.sha256 build/order-migration bui
 "$BEND" laws/Runtime.bend --check-only
 "$BEND" laws/successor/validation/Graph.bend --check-only
 "$BEND" laws/successor/validation/Shape.bend --check-only
+"$BEND" laws/successor/validation/Preservation.bend --check-only
 "$BEND" laws/successor/ValidationRuntime.bend --check-only
 "$BEND" laws/successor/ValidationRuntime.bend -o build/graph-policy
 shasum -a 256 build/graph-policy > build/graph-policy.sha256

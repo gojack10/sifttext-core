@@ -927,7 +927,7 @@ fn check(
 pub(crate) fn validate_git(
     policy: &Policy, reader: &mut crate::git_snapshot::GitReader,
     before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
-    explicit: &BTreeSet<String>,
+    explicit: &BTreeSet<String>, exact_before: bool,
 ) -> Report {
     let mut report = Report {
         status: "current", version: Some(candidate.version.clone()),
@@ -937,7 +937,7 @@ pub(crate) fn validate_git(
             reason: "complete structural law on immutable Git shape (same-input cache eligible)",
             base_version: Some(before.version.clone()), candidate_version: Some(candidate.version.clone()) },
     };
-    if let Err(error) = check_git(policy, reader, before, candidate, explicit, &mut report) {
+    if let Err(error) = check_git(policy, reader, before, candidate, explicit, exact_before, &mut report) {
         if let Some(issue) = error.downcast_ref::<StructuralIssue>() {
             report.structural(issue.source.as_deref(), issue.target.as_deref(), issue.law);
             report.problem = Some(issue.problem());
@@ -959,18 +959,19 @@ pub(crate) fn validate_git(
 fn check_git(
     policy: &Policy, reader: &mut crate::git_snapshot::GitReader,
     before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
-    explicit: &BTreeSet<String>, report: &mut Report,
+    explicit: &BTreeSet<String>, exact_before: bool, report: &mut Report,
 ) -> Result<()> {
     let identity = report.observe("policy_identity", policy.validation_identity())?;
     report.observe("policy_identity", require(reader.policy_identity == identity, "validated capture policy changed"))?;
     require(explicit.iter().all(|id| crate::uuid(id) && candidate.nodes.contains_key(id)), "invalid explicit requests")?;
     reader.suspend_objects();
-    // Drop the graph before the first cold BPE allocation. This is the actual
-    // existing checked Bend validator, not a Rust structural acceptance test.
-    let valid = {
-        let graph = candidate.graph();
-        report.observe("graph_policy", policy.graph_valid_input(&graph, &reader.repo, Some(&identity)))?
-    };
+    // Only native full-law/checked-delta success for the exact same-law base
+    // enables the Bend frontier law. Physical Git interpretation remains here.
+    let graph = report.observe("graph_policy", policy.graph_valid_git(before, candidate,
+        &reader.repo, &identity, exact_before))?;
+    report.graph.mode = graph.mode;
+    report.graph.reason = graph.reason;
+    let valid = graph.valid;
     if !valid {
         graph_diagnostics(candidate.nodes.iter().map(|(id, facts)|
             (id.as_str(), facts.reference_targets.iter().map(String::as_str).collect())),

@@ -2,6 +2,7 @@ import Base
 import ../Spec.bend as S
 import ../Runtime.bend as R
 import ./validation/ParentTableGraph.bend as G
+import ./validation/Frontier.bend as F
 
 # Only validation changes computation; parser and mutations keep frozen meaning.
 def dispatch(kind: Nat, x: Nat, y: Nat, g: S.Graph) -> IO(Unit):
@@ -18,10 +19,35 @@ def run_graph(kind: Nat, x: Nat, y: Nat, got: Maybe<&2, S.Graph>) -> IO(Unit):
     case Some{g}:
       dispatch(kind, x, y, g)
 
+def checked_frontier(dense: Bool, g: S.Graph, frontier: List<&2, Nat>) -> IO(Unit):
+  match dense:
+    case False{}:
+      F.verdict(False{})
+    case True{}:
+      F.verdict(F.preserved(g, frontier))
+
+def run_frontier_graph(frontier: List<&2, Nat>, got: Maybe<&2, S.Graph>) -> IO(Unit):
+  match got:
+    case None{}:
+      IO.die(Unit, 1, "bad frontier graph")
+    case Some{S.Graph{+ns, roots, assets}}:
+      # Native UUID encoding is dense; guard raw wire before table allocation.
+      # Version 1 retains its existing sparse-input full-law fallback.
+      checked_frontier(G.eligible(ns, List.length(&2, S.Node, ns)), S.Graph{ns, roots, assets}, frontier)
+
+def run_frontier(got: Maybe<&2, R.IdRead>) -> IO(Unit):
+  match got:
+    case Some{R.IdRead{frontier, tail}}:
+      run_frontier_graph(frontier, R.graph(tail))
+    case None{}:
+      IO.die(Unit, 1, "bad frontier length")
+
 def run_words(got: Maybe<&2, List<&2, Nat>>) -> IO(Unit):
   match got:
     case Some{1n <> kind <> x <> y <> t}:
       run_graph(kind, x, y, R.graph(t))
+    case Some{2n <> count <> t}:
+      run_frontier(R.take_ids(count, t))
     case other:
       IO.die(Unit, 1, "bad wire")
 

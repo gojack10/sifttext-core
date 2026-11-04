@@ -64,6 +64,29 @@ pub(crate) struct GitView {
     pub(crate) roots: Vec<String>,
 }
 impl GitView {
+    /// Complete conservative placement frontier in candidate ordinals. Compare
+    /// UUIDs first: dense ordinal labels are local to each immutable view.
+    pub(crate) fn placement_frontier(&self, before: &Self) -> Vec<usize> {
+        let mut changed = std::collections::BTreeSet::new();
+        changed.extend(self.nodes.keys().filter(|id| !before.nodes.contains_key(*id)));
+        let sources: std::collections::BTreeSet<_> = before.children.keys()
+            .chain(self.children.keys()).collect();
+        for source in sources {
+            if before.children.get(source) != self.children.get(source) {
+                for target in before.children.get(source).into_iter().flatten()
+                    .chain(self.children.get(source).into_iter().flatten()) {
+                    if self.nodes.contains_key(target) { changed.insert(target); }
+                }
+            }
+        }
+        if before.roots != self.roots {
+            changed.extend(before.roots.iter().chain(self.roots.iter())
+                .filter(|id| self.nodes.contains_key(*id)));
+        }
+        self.nodes.keys().enumerate().filter_map(|(ordinal, id)|
+            changed.contains(id).then_some(ordinal + 1)).collect()
+    }
+
     /// Shape.bend proves this erasure preserves the full Spec.valid predicate.
     pub(crate) fn graph(&self) -> Graph {
         let symbols: HashMap<_, _> = self
