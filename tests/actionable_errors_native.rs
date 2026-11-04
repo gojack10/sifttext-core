@@ -114,7 +114,6 @@ fn legacy_marker_and_shared_capture_errors_are_actionable_and_read_only() {
     for args in [
         vec!["instructions"],
         vec!["check", store_arg],
-        vec!["read", store_arg, ENTRY],
     ] {
         let out = cli(&home, &args);
         assert!(out.status.success(), "{args:?}: {out:?}");
@@ -135,7 +134,6 @@ fn legacy_marker_and_shared_capture_errors_are_actionable_and_read_only() {
     for args in [
         vec!["instructions"],
         vec!["check", store_arg],
-        vec!["read", store_arg, ENTRY],
     ] {
         refusal(
             &home,
@@ -272,7 +270,6 @@ fn legacy_marker_and_shared_capture_errors_are_actionable_and_read_only() {
     let destination = home.join("refused-init");
     for args in [
         vec!["check", store_arg],
-        vec!["read", store_arg, ENTRY],
         vec!["instructions", store_arg],
         vec!["worktree", store_arg],
         vec!["init", destination.to_str().unwrap(), "--bundle", store_arg],

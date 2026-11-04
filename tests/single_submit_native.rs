@@ -172,12 +172,8 @@ impl Native {
         );
         for id in &ids {
             let relative = PathBuf::from(format!("nodes/{id}/node.md"));
-            let body = self.run(
-                env!("CARGO_BIN_EXE_sifttext"),
-                &["read", text(home), id],
-                true,
-            );
-            assert_eq!(body.as_bytes(), expected[&relative]);
+            let body = fs::read(home.join(&relative)).unwrap();
+            assert_eq!(body, expected[&relative]);
             for kind in ["outline.lean", "outline.full.lean"] {
                 assert!(home.join("nodes").join(id).join(kind).is_file());
             }

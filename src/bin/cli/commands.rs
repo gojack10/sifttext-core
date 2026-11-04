@@ -52,7 +52,6 @@ const GROUPS: &[Group] = &[
         name: "retrieve",
         guide: "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
         commands: &[
-            command("read STORE UUID [-y]", "Read node Markdown").guide(READ_GUIDE),
             command("outline STORE UUID [full] [-y]", "Read a shallow or full outline").guide(READ_GUIDE),
             command("search STORE QUERY [UNDER_UUID] [-y]", "Search with ancestor context"),
             command("sql STORE 'SELECT ...' [-y]", "Query the read-only index").guide("4cc0b396-4b55-415e-bb26-b51c97e6ca78"),

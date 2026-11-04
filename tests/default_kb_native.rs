@@ -165,13 +165,6 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         pipeline["onboarding-entry"].as_str().unwrap(),
         format!("{h}/nodes/{ENTRY}/node.md")
     );
-    let ordered: Vec<&str> = std::iter::once(ENTRY).chain(ORDER).collect();
-    for id in ordered.iter().copied() {
-        assert_eq!(
-            n.cli(&["read", h, id], true),
-            fs::read_to_string(format!("{h}/nodes/{id}/node.md")).unwrap()
-        );
-    }
     let pointer = home.join("AGENTS.md");
     let pointer_bytes = fs::read(&pointer).unwrap();
     assert!(fs::symlink_metadata(&pointer).unwrap().is_file());
@@ -204,7 +197,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         ""
     );
     assert_eq!(n.git(&home, &["ls-files", "--", "AGENTS.md"]), "");
-    let operations = n.cli(&["read", h, ORDER[5]], true);
+    let operations = fs::read_to_string(home.join("nodes").join(ORDER[5]).join("node.md")).unwrap();
     for obsolete in [
         "generates no home",
         "no top-level instruction file",
@@ -221,7 +214,7 @@ fn default_bundle_cli_preserves_copy_refusal_publication_and_recovery_controls()
         assert!(operations.contains(expected));
     }
     assert!(
-        n.cli(&["read", h, ROOT], true)
+        fs::read_to_string(home.join("nodes").join(ROOT).join("node.md")).unwrap()
             .contains("SiftText Knowledge Base")
     );
     let runtime = n.cli(&["runtime-check"], true);

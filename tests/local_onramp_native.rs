@@ -192,14 +192,6 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
         pipeline["onboarding-entry"].as_str().unwrap(),
         text(&home.join("nodes").join(ENTRY).join("node.md"))
     );
-    let ordered: Vec<&str> = std::iter::once(ENTRY).chain(CHILDREN).collect();
-    for id in ordered.iter().copied() {
-        let path = home.join("nodes").join(id).join("node.md");
-        assert_eq!(
-            n.cli(&["read", text(&home), id]).as_bytes(),
-            fs::read(path).unwrap()
-        );
-    }
     let node = home.join("nodes").join(ENTRY).join("node.md");
     let bytes = fs::read(&node).unwrap();
     fs::write(&node, "a real unfinished user edit").unwrap();
@@ -487,8 +479,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     .unwrap();
     assert_eq!(s["rows"][0]["c0"], count.to_string());
     assert_eq!(
-        n.run(text(&bin), &["read", text(&restored_view), ENTRY], true)
-            .as_bytes(),
+        fs::read(restored_view.join("nodes").join(ENTRY).join("node.md")).unwrap(),
         bytes
     );
     fs::write(prefix.join("README.md"), "tampered source stamp").unwrap();

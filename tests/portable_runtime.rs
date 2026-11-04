@@ -86,7 +86,6 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
         pipeline["onboarding-entry"].as_str().unwrap(),
         format!("{home}/nodes/{entry}/node.md")
     );
-    assert_eq!(cli(bin, tools, &["read", home, entry]).stdout, original);
     let index = json(bin, tools, &["index", home]);
     let count = index["nodes"].as_u64().unwrap();
     assert!(
@@ -176,7 +175,6 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
     assert!(!Path::new(draft).exists());
     assert_eq!(git(tools, Path::new(home), &["rev-parse", "HEAD"]), commit);
     let view = receipt["home"].as_str().unwrap();
-    assert_eq!(cli(bin, tools, &["read", view, entry]).stdout, edited);
     assert_eq!(
         json(bin, tools, &["search", view, "Portableworkflowuniqueterm"])["total_matches"],
         1
@@ -226,7 +224,7 @@ fn workflow(bin: &Path, tools: &Path, parent: &Path) {
         restored["version"]
     );
     assert_eq!(
-        cli(bin, tools, &["read", recovered, entry]).stdout,
+        fs::read(Path::new(recovered).join("nodes").join(entry).join("node.md")).unwrap(),
         original
     );
     assert_eq!(

@@ -212,16 +212,6 @@ fn reader_cli_preserves_history_and_recovers_after_post_ff_sigkill() {
         published2["candidate"].as_str().unwrap()
     );
     assert_eq!(n.cli(&["advance", text(&home)])["status"], "current");
-    for node in [&root, &separate] {
-        assert_eq!(
-            n.run(
-                env!("CARGO_BIN_EXE_sifttext"),
-                &["read", text(&home), node["id"].as_str().unwrap()],
-                true
-            ),
-            fs::read_to_string(node["path"].as_str().unwrap()).unwrap()
-        );
-    }
     for name in ["Advancefirst", "Advanceseparate"] {
         let s = n.cli(&["search", text(&home), name]);
         assert_eq!(s["version"], advanced["version"]);

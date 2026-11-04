@@ -211,7 +211,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         return Ok(());
     }
     if args.first().is_some_and(|command| matches!(command.as_str(),
-        "read" | "outline" | "search" | "sql" | "index" | "worktree" | "advance" | "accepted" | "submit" | "prepare-home"))
+        "outline" | "search" | "sql" | "index" | "worktree" | "advance" | "accepted" | "submit" | "prepare-home"))
         && let Some(home) = args.get(1)
     {
         sifttext_file_graph::home_format::ensure(&policy, Path::new(home))?;
@@ -231,14 +231,6 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         }
         [cmd, home, flag, source] if cmd == "init" && flag == "--bundle" => {
             local::init(&policy, &absolute(home)?, Some(Path::new(source)))?
-        }
-        [cmd, path, id] if cmd == "read" => {
-            print_read(&local::read(&policy, Path::new(path), id)?, false)?;
-            return Ok(());
-        }
-        [cmd, path, id, flag] if cmd == "read" && flag == "-y" => {
-            print_read(&local::read(&policy, Path::new(path), id)?, true)?;
-            return Ok(());
         }
         [cmd, repo, draft, commit, base, explicit @ ..] if cmd == "submit" => {
             let mut explicit = explicit.to_vec();
@@ -509,16 +501,6 @@ fn checked_policy(runtime: &Path) -> Result<Policy> {
     Ok(policy)
 }
 
-fn print_read(output: &str, force: bool) -> Result<()> {
-    // Every token consumes at least one byte. Small ordinary reads need no tokenizer.
-    if output.len() <= LARGE_RETURN_LIMIT {
-        std::io::stdout().lock().write_all(output.as_bytes())?;
-        Ok(())
-    } else {
-        print_large_return(output, force)
-    }
-}
-
 fn print_large_return(output: &str, force: bool) -> Result<()> {
     check_large_return(output, force)?;
     std::io::stdout().lock().write_all(output.as_bytes())?;
@@ -783,7 +765,6 @@ mod tests {
     fn large_return_warning_names_the_command() {
         for command in [
             "check",
-            "read",
             "outline",
             "search",
             "submit",
