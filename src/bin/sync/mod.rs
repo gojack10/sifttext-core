@@ -644,6 +644,7 @@ fn upload(
     exchange: &mut Exchange,
     remote: Option<&str>,
     remote_pending: &Value,
+    migration_support: bool,
     commit: &str,
     consent_home: &Path,
     policy: &selection::Settings,
@@ -667,6 +668,10 @@ fn upload(
         return Ok(());
     }
     scoped_history(store, commit, HistoryScope::Publication { hosted: remote })?;
+    let migration_size = selection::requires_migration_size(&store.home, commit)?;
+    if migration_size && !migration_support {
+        return Err("sync service requires migration_size_allowances:1 before receiving migrated excess; local knowledge and the pending publication are retained".into());
+    }
     // Only the sharing projection reaches the checker. Never inspect the full
     // private home here, and never trust a caller-authored pass marker.
     let check = sifttext_file_graph::hosted_checks::sync_publication(
@@ -685,6 +690,9 @@ fn upload(
     let verified = checked_response(exchange.send("/sync/v1/state", None)?)?;
     exchange.verify_home(&verified)?;
     compatible(&verified)?;
+    if migration_size && verified["migration_size_allowances"] != 1 {
+        return Err("sync service migration support changed during checking; local knowledge retained, retry sync".into());
+    }
     if verified["accepted"].as_str() != remote || verified["pending"] != *remote_pending {
         return Err("hosted state changed during checking; local knowledge retained, retry sync".into());
     }
@@ -951,6 +959,7 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
         &mut exchange,
         remote_sha,
         &remote["pending"],
+        remote["migration_size_allowances"] == 1,
         &published,
         &store.home,
         &policy,

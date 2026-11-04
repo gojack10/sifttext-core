@@ -218,7 +218,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     }
     let output = match args.as_slice() {
         [cmd, _home] if cmd == "prepare-home" => json!({"status":"home_format_current"}),
-        [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime}),
+        [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime, "migration_size_allowances":1}),
         [cmd] if cmd == "hosted-account-protocol" => json!({"hosted_account":1}),
         [cmd, root, home] if cmd == "install-home" => {
             sifttext_file_graph::updates::initialize(&policy, &absolute(root)?, &absolute(home)?)?

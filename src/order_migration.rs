@@ -147,7 +147,8 @@ pub(crate) fn convert(repo: &Path, draft: &Path, base: &str) -> Result<BTreeSet<
         let path = directory.join("node.md");
         let current = String::from_utf8(crate::read_regular(&path)?)?;
         require(
-            ordering::without_position(&current) == ordering::without_position(original),
+            ordering::without_position(&crate::migration_size::without_record(&current))
+                == ordering::without_position(&crate::migration_size::without_record(original)),
             "migration draft contains authored edits; retain the draft",
         )?;
         let rank = ranks
@@ -156,7 +157,9 @@ pub(crate) fn convert(repo: &Path, draft: &Path, base: &str) -> Result<BTreeSet<
             .or(ordering::position(original)?)
             .unwrap_or(0);
         if ordering::position(&current)? != Some(rank) {
-            fs::write(path, ordering::with_position(original, rank)?)?;
+            let converted = ordering::with_position(original, rank)?;
+            let converted = crate::migration_size::attach(original, &converted, false)?;
+            fs::write(path, converted)?;
         }
     }
     // All positions are written before removing any legacy list.
@@ -213,9 +216,16 @@ pub(crate) fn check(policy: &Policy, repo: &Path, base: &str, converted: &str) -
     }
     for (id, text) in &before.texts {
         require(
-            ordering::without_position(text) == ordering::without_position(&after.texts[id]),
+            ordering::without_position(&crate::migration_size::without_record(text))
+                == ordering::without_position(&crate::migration_size::without_record(&after.texts[id])),
             "ordering migration changed non-position bytes",
         )?;
+        let output = &after.texts[id];
+        if !crate::migration_size::has_record(text)? {
+            require(crate::migration_size::attach(text,
+                &crate::migration_size::without_record(output), false)? == *output,
+                "ordering migration size evidence changed")?;
+        }
         require(
             ordering::position(&after.texts[id])?.is_some(),
             "migration output lacks a position",

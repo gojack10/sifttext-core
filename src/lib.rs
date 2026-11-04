@@ -94,6 +94,7 @@ mod coherent_capture;
 pub(crate) mod git_snapshot;
 pub mod hosted_checks;
 pub mod home_format;
+pub mod migration_size;
 pub(crate) mod source_version;
 #[cfg(test)]
 #[path = "../tests/successor/coherent_capture.rs"]
@@ -478,7 +479,7 @@ fn node_entries(path: &Path) -> Result<Vec<PathBuf>> {
 fn read_regular(path: &Path) -> Result<Vec<u8>> {
     let meta = fs::symlink_metadata(path)?;
     require(
-        meta.is_file() && meta.len() <= LIMIT as u64,
+        meta.is_file() && meta.len() <= migration_size::input_limit(path) as u64,
         "unsafe or oversized authored file",
     )?;
     #[cfg(unix)]
@@ -487,7 +488,7 @@ fn read_regular(path: &Path) -> Result<Vec<u8>> {
         require(meta.nlink() == 1, "hard-linked authored file")?;
     }
     let bytes = fs::read(path)?;
-    require(bytes.len() <= LIMIT, "oversized authored file")?;
+    require(bytes.len() <= migration_size::input_limit(path), "oversized authored file")?;
     Ok(bytes)
 }
 

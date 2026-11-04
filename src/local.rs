@@ -2333,11 +2333,11 @@ fn read_local_file(path: &Path) -> Result<(Vec<u8>, fs::Metadata)> {
     let file = fs::OpenOptions::new().read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)?;
     let identity = file.metadata()?;
-    require(identity.is_file() && identity.nlink() == 1 && identity.len() <= crate::LIMIT as u64
+    require(identity.is_file() && identity.nlink() == 1 && identity.len() <= crate::migration_size::input_limit(path) as u64
         && same_file(&named, &identity), "unsafe or oversized authored file")?;
     let mut bytes = Vec::new();
-    file.take(crate::LIMIT as u64 + 1).read_to_end(&mut bytes)?;
-    require(bytes.len() <= crate::LIMIT, "oversized authored file")?;
+    file.take(crate::migration_size::input_limit(path) as u64 + 1).read_to_end(&mut bytes)?;
+    require(bytes.len() <= crate::migration_size::input_limit(path), "oversized authored file")?;
     require(same_file(&identity, &fs::symlink_metadata(path)?), "authored file changed during read")?;
     Ok((bytes, identity))
 }
@@ -2440,9 +2440,9 @@ pub fn read(_policy: &Policy, path: &Path, prefix: &str) -> Result<String> {
                 && matches!(fields[0], "100644" | "100755"), "unsafe Git node entry")?;
             let object = format!(":{relative}");
             let len: u64 = reader_git(&home, &["cat-file", "-s", &object])?.parse()?;
-            require(len <= crate::LIMIT as u64, "oversized Git node")?;
+            require(len <= crate::migration_size::INPUT_LIMIT as u64, "oversized Git node")?;
             let output = crate::checked_publication::run_command(reader_command(&home, &["show", &object]))?;
-            require(output.status.success() && output.stdout.len() <= crate::LIMIT, "missing or oversized Git node")?;
+            require(output.status.success() && output.stdout.len() <= crate::migration_size::INPUT_LIMIT, "missing or oversized Git node")?;
             output.stdout
         }
         Err(error) => return Err(error.into()),

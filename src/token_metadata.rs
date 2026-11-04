@@ -105,11 +105,11 @@ struct Capture {
 fn capture(path: &Path) -> Result<Capture> {
     let file = open_read(path)?;
     let meta = regular(&file, path)?;
-    require(meta.len() <= LIMIT as u64, "oversized node file")?;
+    require(meta.len() <= crate::migration_size::INPUT_LIMIT as u64, "oversized node file")?;
     let mut bytes = Vec::new();
-    (&file).take((LIMIT + 1) as u64).read_to_end(&mut bytes)?;
+    (&file).take((crate::migration_size::INPUT_LIMIT + 1) as u64).read_to_end(&mut bytes)?;
     require(
-        bytes.len() <= LIMIT && same_version(&meta, &regular(&file, path)?),
+        bytes.len() <= crate::migration_size::INPUT_LIMIT && same_version(&meta, &regular(&file, path)?),
         "source changed during capture",
     )?;
     std::str::from_utf8(&bytes)?;

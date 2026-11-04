@@ -1,6 +1,6 @@
 //! One-time import of old homes. Normal readers and writers use positions only.
 //! The temporary native draft and submission journal retain interrupted work.
-use crate::{Policy, Result, local, require};
+use crate::{Policy, Result, local, ordering, require};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, fs, path::{Path, PathBuf}};
@@ -72,6 +72,32 @@ fn commit(draft: &Path, message: &str) -> Result<String> {
     local::reader_git(draft, &["rev-parse", "HEAD"])
 }
 
+/// Upgrade a retained pre-allowance conversion only when its exact bytes still
+/// follow from the original Git input. Authored descendant repairs are untouched.
+fn recover_allowances(pending: &Pending) -> Result<()> {
+    for id in &pending.explicit {
+        let relative = format!("nodes/{id}/node.md");
+        let path = pending.draft.join(&relative);
+        let text = String::from_utf8(crate::read_regular(&path)?)?;
+        if crate::migration_size::has_record(&text)? { continue }
+        if text.len() <= crate::LIMIT && crate::token_count::ordinary(
+            &crate::parse_markdown(&text)?.content) <= crate::candidate_validation::CEILING { continue }
+        let object = format!("{}:{relative}", pending.base);
+        // Read object bytes unchanged, including the terminal newline.
+        let output = crate::checked_publication::run_command(
+            local::reader_command(&pending.draft, &["show", &object]))?;
+        require(output.status.success(), "missing retained migration source")?;
+        let original = std::str::from_utf8(&output.stdout)?;
+        let position = ordering::position(&text)?.ok_or("missing migrated position")?;
+        let expected = markdown_links(&ordering::with_position(original, position)?)?;
+        if expected == text {
+            let permitted = crate::migration_size::attach(original, &text, true)?;
+            fs::write(path, permitted)?;
+        }
+    }
+    Ok(())
+}
+
 /// Called on update preparation and first home use. Linked drafts are not silently
 /// rewritten: their owners retain their edits and can reconcile against migrated main.
 pub fn ensure(policy: &Policy, home: &Path) -> Result<()> {
@@ -115,7 +141,7 @@ pub fn ensure(policy: &Policy, home: &Path) -> Result<()> {
         for id in &pending.explicit {
             let path = pending.draft.join("nodes").join(id).join("node.md");
             let text = String::from_utf8(crate::read_regular(&path)?)?;
-            let converted = markdown_links(&text)?;
+            let converted = crate::migration_size::convert_links(&text)?;
             if text != converted { fs::write(&path, converted)?; }
         }
         pending.commit = Some(commit(&pending.draft, "home-format: use relative Markdown body references")?);
@@ -127,6 +153,9 @@ pub fn ensure(policy: &Policy, home: &Path) -> Result<()> {
         // same committed-descendant repair route as the managed updater.
         if local::reader_git(&home, &["merge-base", "--is-ancestor", original, "refs/heads/main"]).is_err() {
             let head = local::reader_git(&pending.draft, &["rev-parse", "HEAD"])?;
+            crate::checked_publication::clean(&pending.draft, &head)?;
+            recover_allowances(&pending)?;
+            let head = commit(&pending.draft, "home-format: retain mechanically derived size allowances")?;
             if head != original {
                 local::reader_git(&home, &["merge-base", "--is-ancestor", original, &head])?;
                 crate::checked_publication::clean(&pending.draft, &head)?;

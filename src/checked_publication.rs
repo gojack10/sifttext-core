@@ -1052,8 +1052,12 @@ fn submit_inner(
     receipt.failure_operation = result.as_ref().err()
         .and_then(|error| failure_operation(error.as_ref()));
     if let Err(error) = &result {
-        eprintln!("submission {}: {}", receipt.check,
-            error.to_string().chars().take(4096).collect::<String>());
+        if receipt.check == "migration_size_repair" {
+            eprintln!("{error}");
+        } else {
+            eprintln!("submission {}: {}", receipt.check,
+                error.to_string().chars().take(4096).collect::<String>());
+        }
     }
     if result.is_err() && receipt.published {
         receipt.status = "unavailable";
@@ -1250,6 +1254,13 @@ fn execute(
     let already = run(&repo, &["merge-base", "--is-ancestor", submitted, &main])?
         .status
         .success();
+    // Attribute repair to the original contribution, before merge and automatic
+    // status propagation. Accepted retries finish custody without new repair work.
+    let retired = if !already && let (Some(base), Some(commit), Some(draft)) =
+        (q.base.as_deref(), q.commit.as_deref(), q.draft.as_deref()) {
+        r.check = "migration_size_repair";
+        crate::migration_size::submission(&mut reader, &repo, draft, base, commit, &main, received)?
+    } else { BTreeSet::new() };
     let mut sha = if in_draft {
         if already {
             main.clone()
@@ -1366,8 +1377,21 @@ fn execute(
     let candidate_view = reader.view(&sha)?;
     require(Some(&candidate_view.tree) == r.tree.as_ref(), "candidate tree identity changed")?;
     r.check = "candidate_normalization_rejected";
-    let (normalized, patches) = crate::status::normalize_git(&mut reader, &before, &candidate_view, &q.explicit)?;
+    let (mut normalized, mut patches) = crate::status::normalize_git(&mut reader, &before, &candidate_view, &q.explicit)?;
     normalized.report_reopenings();
+    for id in retired.iter().filter(|id| candidate_view.nodes.contains_key(*id)) {
+        let bytes = match patches.get(id) { Some(bytes) => bytes.clone(), None => reader.bytes(&candidate_view, id)? };
+        let text = crate::migration_size::without_record(std::str::from_utf8(&bytes)?);
+        require(text.len() <= crate::LIMIT, "oversized repaired node after normalization")?;
+        patches.insert(id.clone(), text.into_bytes());
+        if !normalized.normalized_ids.contains(id) {
+            normalized.normalized_ids.push(id.clone());
+            let state = &candidate_view.nodes[id].state;
+            normalized.changes.push(crate::status::Change {
+                id: id.clone(), from: state.status, to: state.status, removed_reason_fields: vec![],
+            });
+        }
+    }
     let final_view = if !patches.is_empty() {
         // Build from exact patches in a private index: never scoop up unrelated
         // staged edits or let a concurrent body write change the checked tree.

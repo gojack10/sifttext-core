@@ -37,6 +37,7 @@ pub(crate) struct NodeFacts {
     pub(crate) blob: String,
     pub(crate) len: u64,
     pub(crate) field_errors: u8,
+    pub(crate) migration_size: bool,
 }
 mod state_record {
     use super::*;
@@ -128,7 +129,7 @@ impl Batch {
     pub(crate) fn bytes(&mut self, oid: &str, len: u64) -> Result<Vec<u8>> {
         let result = (|| {
             require(
-                self.alive && valid_oid(oid) && len <= crate::LIMIT as u64,
+                self.alive && valid_oid(oid) && len <= crate::migration_size::INPUT_LIMIT as u64,
                 "invalid Git object request",
             )?;
             // Leaves and directory markers share the same immutable empty blob.
@@ -381,6 +382,7 @@ pub(crate) struct GitReader {
     pub(crate) repo: PathBuf,
     pub(crate) policy_identity: String,
     pub(crate) imported_baseline: Option<(String, String)>,
+    pub(crate) submitted_nodes: Option<std::collections::BTreeSet<String>>,
     batch: Option<Batch>,
     empty_blob: Option<String>,
     cache: Option<FactCache>,
@@ -396,6 +398,7 @@ impl GitReader {
         Ok(Self {
             batch: None,
             imported_baseline: None,
+            submitted_nodes: None,
             empty_blob: None,
             cache: FactCache::open(&repo),
             repo,
@@ -415,7 +418,7 @@ impl GitReader {
     }
 
     fn object_bytes(&mut self, oid: &str, len: u64) -> Result<Vec<u8>> {
-        require(valid_oid(oid) && len <= crate::LIMIT as u64, "invalid Git object request")?;
+        require(valid_oid(oid) && len <= crate::migration_size::INPUT_LIMIT as u64, "invalid Git object request")?;
         if len == 0 && self.empty_blob.as_deref() == Some(oid) { return Ok(Vec::new()); }
         if self.batch.is_none() { self.batch = Some(Batch::new(&self.repo)?); }
         let bytes = self.batch.as_mut().ok_or("missing Git object reader")?.bytes(oid, len)?;
@@ -496,7 +499,7 @@ impl GitReader {
                     continue;
                 }
                 require(
-                    kind == 0 || len <= crate::LIMIT as u64,
+                    kind == 0 || len <= crate::migration_size::input_limit(&path) as u64,
                     "oversized authored Git blob",
                 )?;
                 insert_entry(&mut insert, path.to_str().ok_or("non-UTF-8 Git path")?,
@@ -790,6 +793,7 @@ impl GitReader {
                         .map(|reference| reference.target)
                         .collect(),
                     field_errors: intrinsic_fields(&parsed.fields),
+                    migration_size: parsed.fields.contains_key("migration_size"),
                     blob: entry.oid.clone(),
                     len: entry.len,
                 })

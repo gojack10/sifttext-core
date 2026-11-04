@@ -171,7 +171,7 @@ fn node_path(id: &str) -> PathBuf {
 
 // The native parser has already validated these lines. Patch only a value or
 // remove the departing reason line; preserve all other spellings and body bytes.
-fn patch(text: &str, key: &str, value: Option<&str>) -> Result<String> {
+pub(crate) fn patch(text: &str, key: &str, value: Option<&str>) -> Result<String> {
     let parsed = markdown(text)?;
     require(parsed.fields.contains_key(key), "missing patched metadata")?;
     let mut offset = text.find('\n').ok_or("missing opening fence")? + 1;
@@ -303,7 +303,7 @@ fn patched_bytes(original: &[u8], raw: &State, state: &State) -> Result<Vec<u8>>
     for key in raw.reasons.keys().filter(|key| !state.reasons.contains_key(*key)) {
         text = patch(&text, key, None)?;
     }
-    require(text.len() <= crate::LIMIT, "oversized normalized node")?;
+    require(text.len() <= crate::migration_size::INPUT_LIMIT, "oversized normalized node")?;
     require(State::read(&text)? == *state, "status patch did not match model")?;
     Ok(text.into_bytes())
 }
@@ -354,12 +354,12 @@ fn status_file(path: &Path, expected: Option<Fingerprint>) -> Result<(Vec<u8>, F
     let file = fs::OpenOptions::new().read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)?;
     let metadata = file.metadata()?;
-    require(metadata.is_file() && metadata.nlink() == 1 && metadata.len() <= crate::LIMIT as u64,
+    require(metadata.is_file() && metadata.nlink() == 1 && metadata.len() <= crate::migration_size::INPUT_LIMIT as u64,
         "unsafe or oversized status file")?;
     require(before == Fingerprint::of(&metadata), "status file replaced before read")?;
     let mut bytes = Vec::new();
-    (&file).take(crate::LIMIT as u64 + 1).read_to_end(&mut bytes)?;
-    require(bytes.len() <= crate::LIMIT, "oversized status file")?;
+    (&file).take(crate::migration_size::INPUT_LIMIT as u64 + 1).read_to_end(&mut bytes)?;
+    require(bytes.len() <= crate::migration_size::INPUT_LIMIT, "oversized status file")?;
     require(before == Fingerprint::of(&file.metadata()?), "status file changed during read")?;
     before.unchanged(path)?;
     Ok((bytes, before))

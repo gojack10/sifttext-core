@@ -6,6 +6,22 @@ use std::collections::BTreeMap;
 
 pub(super) const IGNORE: &str = "/.sifttext/\n/nodes/*/node.meta.json\n/nodes/*/outline*.lean\n/nodes/*/outline*.lean.meta.json\n";
 
+/// Inspect only matching selected files. No private-home ancestry is exported.
+pub(super) fn requires_migration_size(repo: &Path, revision: &str) -> Result<bool> {
+    oid(revision)?;
+    let output = bounded(git_command(repo,
+        &["grep", "-l", "-E", "^[ \t]*migration_size[ \t]*:", revision, "--", "nodes"]))?;
+    if output.status.code() == Some(1) { return Ok(false) }
+    if !output.status.success() { return Err("cannot inspect migration compatibility".into()) }
+    for object in std::str::from_utf8(&output.stdout)?.lines() {
+        if object.ends_with("/node.md") {
+            let text = git(repo, &["show", object])?;
+            if sifttext_file_graph::migration_size::has_record(&text)? { return Ok(true) }
+        }
+    }
+    Ok(false)
+}
+
 use sifttext_file_graph::tree_selection::{Action, includes};
 pub(super) use sifttext_file_graph::tree_selection::Rule;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -192,7 +208,7 @@ impl Snapshot {
                             return Err("invalid Git object response".into());
                         }
                         let len: usize = h[2].parse()?;
-                        if len > 1024 * 1024 {
+                        if len > sifttext_file_graph::migration_size::input_limit(Path::new(path)) {
                             return Err("oversized knowledge blob".into());
                         }
                         let mut bytes = vec![0; len];

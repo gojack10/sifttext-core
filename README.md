@@ -100,6 +100,12 @@ Precompiled packages and supported platforms are listed on the [latest release](
 
 To upgrade a healthy managed installation, use `sifttext update` within your update permission and follow the installed update guide. Rerunning the installer leaves the existing application in place.
 
+Format migration can retain excess caused by relative Markdown links or inserted display positions. A node-local `migration_size` record carries the original body and conversion parameters. Core independently reconstructs an original within 5,000 body tokens and 1 MiB, then verifies the exact conversion. The 4 MiB node input bound accommodates conversion and evidence; ordinary authored submissions still require 5,000 tokens and 1 MiB. Bundled documentation must satisfy the ordinary limits.
+
+Reads and unchanged replication retain a verified allowance. The next authored submission affecting that node must fit the ordinary limits. Core preserves an oversized draft and reports its path, count, limit and SiftText Commit procedure. A compliant accepted edit retires the record through the normal acceptance commit. Accepted Git history prevents later replication from renewing a retired allowance, including after selected exclusion or deletion. Previously unseen received nodes require the same mechanical proof, without historical-age attestation or private ancestry transfer.
+
+Deploy matching Core on the service and guests before enabling allowance uploads. `runtime-check` advertises `migration_size_allowances:1`; the sync service must advertise that value in `/sync/v1/state` only when both acceptance and guest preparation use compatible Core. Clients retain publications containing allowances locally until that capability is present. Service deployment and capability advertisement are separate release work.
+
 Continue local work during a blocked knowledge merge while your agent reconciles the retained private worktree within your permission.
 
 ## Ordinary Git compatibility

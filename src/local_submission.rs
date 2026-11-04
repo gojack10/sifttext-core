@@ -22,6 +22,10 @@ struct Pending {
     base: String,
     branch: String,
     explicit: BTreeSet<String>,
+    // Original submitted paths plus explicit descendant repairs. Core's own
+    // merge/status preparation must never enlist an untouched oversized node.
+    #[serde(default)]
+    authored_deltas: Vec<(String, String)>,
     // Exact Core-created transition; never permission for arbitrary draft edits.
     #[serde(default)]
     prepared_heads: Option<(String, String)>,
@@ -445,6 +449,7 @@ fn submit_with_status(
             base: base.clone(),
             branch,
             explicit: request.explicit.clone(),
+            authored_deltas: vec![(base.clone(), commit.clone())],
             prepared_heads: None,
             prepared_delta: None,
             completed_head: None,
@@ -503,6 +508,11 @@ fn submit_with_status(
             && ancestor(tip, commit)? && reader_git(draft, &["rev-parse", "HEAD"])? == *commit,
             "repair COMMIT must be the clean draft HEAD descended from the recorded preparation; retain original journal")?;
         checked_publication::clean(draft, commit)?;
+        let repair_delta = (tip.clone(), commit.clone());
+        if pending.authored_deltas.is_empty() {
+            pending.authored_deltas.push((base.clone(), pending.commit.clone()));
+        }
+        pending.authored_deltas.push(repair_delta);
         pending.commit = commit.clone();
         pending.explicit = request.explicit.clone();
         pending.prepared_heads = None;
@@ -535,6 +545,16 @@ fn submit_with_status(
             },
         )
     } else {
+        if received_reader.is_none() {
+            received_reader = Some(crate::git_snapshot::GitReader::new(policy, home)?);
+        }
+        if !pending.authored_deltas.is_empty() {
+            let mut authored = BTreeSet::new();
+            for (base, commit) in &pending.authored_deltas {
+                authored.extend(crate::migration_size::submitted_nodes(home, base, commit)?);
+            }
+            received_reader.as_mut().ok_or("missing submitted Git reader")?.submitted_nodes = Some(authored);
+        }
         let previous_heads = pending.prepared_heads.clone();
         let record = |from: &str, to: &str| {
             let main = reader_git(home, &["rev-parse", "refs/heads/main"])?;

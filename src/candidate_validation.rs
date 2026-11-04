@@ -544,9 +544,9 @@ fn field_rows(report: &mut Report, id: &str, errors: u8) {
 }
 
 fn intrinsic_node_rows(report: &mut Report, id: &str, field_errors: u8,
-    references: impl Iterator<Item = impl AsRef<str>>, state: Option<&State>, body_nonblank: bool, tokens: usize) {
+    references: impl Iterator<Item = impl AsRef<str>>, state: Option<&State>, body_nonblank: bool, tokens: usize, allowance: bool) {
     field_rows(report, id, field_errors);
-    if tokens > CEILING {
+    if tokens > CEILING && !allowance {
         report.reject(Some(id), "content_over_limit", CEILING_RULE, Some(tokens));
     }
     let mut targets = BTreeSet::new();
@@ -785,12 +785,16 @@ fn check(
         let parsed = crate::source_error::context(
             (|| crate::markdown(std::str::from_utf8(&bytes)?))(), &path, None)?;
         let tokens = crate::token_count::ordinary(&parsed.authored.content);
+        let allowance = report.observe("migration_size", crate::migration_size::permitted(std::str::from_utf8(&bytes)?))?;
+        if bytes.len() > crate::LIMIT && !allowance {
+            report.reject(Some(id), "file_over_limit", CEILING_RULE, None);
+        }
         let fields = &candidate.metadata[id];
         let requested = state(&candidate, id);
         intrinsic_node_rows(report, id, intrinsic_fields(&fields.iter()
             .map(|(key, value)| (key.as_str(), value.as_str())).collect()),
             node.see_also.iter().map(|reference| &reference.target), requested.as_ref().ok(),
-            !parsed.authored.content.trim().is_empty(), tokens);
+            !parsed.authored.content.trim().is_empty(), tokens, allowance);
         let requested = match requested {
             Ok(s) => s,
             Err(_) => {
@@ -977,8 +981,15 @@ fn check_git(
     }
     for (id, facts) in &candidate.nodes {
         let tokens = report.observe("candidate_tokens", reader.tokens(candidate, id))?;
+        let allowance = if facts.migration_size {
+            let bytes = reader.bytes(candidate, id)?;
+            report.observe("migration_size", crate::migration_size::permitted(std::str::from_utf8(&bytes)?))?
+        } else { false };
+        if facts.len > crate::LIMIT as u64 && !allowance {
+            report.reject(Some(id), "file_over_limit", CEILING_RULE, None);
+        }
         intrinsic_node_rows(report, id, facts.field_errors, facts.reference_targets.iter(),
-            Some(&facts.state), facts.body_nonblank, tokens);
+            Some(&facts.state), facts.body_nonblank, tokens, allowance);
     }
     reader.suspend_objects();
     crate::token_count::release();

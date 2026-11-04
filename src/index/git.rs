@@ -40,7 +40,7 @@ impl Source {
         Ok(source)
     }
     fn from_git(path: &Path, kind: u8, blob: String, size: u64) -> Result<Self> {
-        require(valid_oid(&blob) && size <= crate::LIMIT as u64, "unsafe Git source object")?;
+        require(valid_oid(&blob) && size <= crate::migration_size::input_limit(path) as u64, "unsafe Git source object")?;
         let source = Self { kind, size, target: link_target(path, kind)?, blob: Some(blob), native: None };
         validate(path, &source)?;
         Ok(source)
@@ -91,7 +91,7 @@ fn fingerprint(root: &Path, relative: &Path) -> Result<Option<Source>> {
             continue;
         }
         let kind = if m.is_file() { 1 } else if m.file_type().is_symlink() { 2 } else { return Err("unsafe authored entry".into()) };
-        require(m.len() <= crate::LIMIT as u64 && (kind != 1 || m.nlink() == 1), "unsafe or oversized authored file")?;
+        require(m.len() <= crate::migration_size::input_limit(relative) as u64 && (kind != 1 || m.nlink() == 1), "unsafe or oversized authored file")?;
         let source = Source { kind, size: m.len(), blob: None, native: Some(Native::new(&m)),
             target: (kind == 2).then(|| fs::read_link(&path)).transpose()? };
         validate(relative, &source)?;
@@ -275,7 +275,7 @@ impl<'a> Objects<'a> {
         let mut file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(self.root.join(path))?;
         require(file.metadata()?.is_file() && source.native.as_ref() == Some(&Native::new(&file.metadata()?)), "changed source identity")?;
         let mut bytes = Vec::new();
-        file.by_ref().take(crate::LIMIT as u64 + 1).read_to_end(&mut bytes)?;
+        file.by_ref().take(crate::migration_size::input_limit(path) as u64 + 1).read_to_end(&mut bytes)?;
         require(bytes.len() as u64 == source.size && source.native.as_ref() == Some(&Native::new(&file.metadata()?))
             && fingerprint(self.root, path)?.as_ref() == Some(source), "changed authored bytes")?;
         Ok(bytes)
