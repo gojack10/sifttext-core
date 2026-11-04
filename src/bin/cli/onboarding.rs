@@ -56,6 +56,11 @@ pub(super) fn render(home: &Path, entry: &Value) -> Result<String> {
     match updates::instruction_notice() {
         Ok(notice) if notice["status"] == "update_available" => {
             field(&mut lines, "update-available", notice["application"].clone())?;
+            for key in ["release_name", "release_body", "release_url"] {
+                if let Some(value) = notice.get(key) {
+                    field(&mut lines, &format!("update-{}", key.replace('_', "-")), value.clone())?;
+                }
+            }
             field(&mut lines, "update-guide", json!(home.join("nodes").join(commands::UPDATE_GUIDE).join("node.md")))?;
             actions.push(if notice["permission"] == "ask" {
                 "Read update-guide. When the user is next present, ask for permission to update SiftText."

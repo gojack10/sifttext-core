@@ -18,6 +18,7 @@ use std::{
 const MANIFEST: &str =
     "https://github.com/gojack10/sifttext-core/releases/latest/download/manifest.json";
 const RELEASES: &str = "https://github.com/gojack10/sifttext-core/releases/download/";
+const RELEASE_API: &str = "https://api.github.com/repos/gojack10/sifttext-core/releases/tags/";
 const INTERVAL: u64 = 4 * 60 * 60;
 const RETRY: u64 = 5 * 60;
 pub const HARNESS_GUIDE: &str = "98892306-f87b-4361-9d91-fac2e0023a11";
@@ -127,6 +128,14 @@ pub struct Manifest {
     pub application: Application,
     pub knowledge: Knowledge,
 }
+// GitHub adds unrelated API fields; retain only the release text used by notices.
+#[derive(Serialize, Deserialize)]
+struct ReleaseNotes {
+    tag_name: String,
+    name: Option<String>,
+    body: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Package {
@@ -445,9 +454,42 @@ fn fetch_manifest(root: &Path) -> Result<Manifest> {
     download(MANIFEST, file.path(), 1_048_576)?;
     let manifest: Manifest = load(file.path())?;
     validate_manifest(&manifest)?;
+    // Release text is informational. A GitHub API failure must not block updates.
+    let _ = fetch_release_notes(root, &manifest);
     persist(&root.join("last_manifest.json"), &manifest)?;
     Ok(manifest)
 }
+fn release_tag(manifest: &Manifest) -> Result<&str> {
+    // The knowledge asset identifies the selected release, including knowledge-only updates.
+    official(&manifest.knowledge.asset)?;
+    Ok(manifest.knowledge.asset.url.strip_prefix(RELEASES).unwrap().split('/').next().unwrap())
+}
+
+fn fetch_release_notes(root: &Path, manifest: &Manifest) -> Result<()> {
+    let tag = release_tag(manifest)?;
+    let file = tempfile::NamedTempFile::new_in(root)?;
+    download(&format!("{RELEASE_API}{tag}"), file.path(), 1_048_576)?;
+    let notes: ReleaseNotes = load(file.path())?;
+    require(notes.tag_name == tag, "GitHub release tag differs from selected update")?;
+    persist(&root.join("last_release.json"), &notes)
+}
+
+fn release_notice(root: &Path, current: &Package, state: &State, manifest: &Manifest) -> Result<Value> {
+    let mut notice = opportunistic_notice(current, state, manifest)?;
+    if notice["status"] == "update_available" {
+        let tag = release_tag(manifest)?;
+        notice["release_url"] = json!(format!("https://github.com/gojack10/sifttext-core/releases/tag/{tag}"));
+        // A failed fetch or a cache for another tag never supplies misleading release text.
+        if let Ok(notes) = load::<ReleaseNotes>(&root.join("last_release.json"))
+            && notes.tag_name == tag
+        {
+            notice["release_name"] = json!(notes.name.unwrap_or_default());
+            notice["release_body"] = json!(notes.body.unwrap_or_default());
+        }
+    }
+    Ok(notice)
+}
+
 /// Stage one official package into `destination`.
 ///
 /// The asset URL must sit under the official release path and the archive must match the
@@ -1053,7 +1095,6 @@ fn resume(
 /// Agent-facing next step, respecting the configured automatic/ask policy.
 const UPDATE_NOTICE_ASK: &str =
     "Read update-guide. When the user is next present, ask for permission to update SiftText.";
-const UPDATE_NOTICE_REASON: &str = "The latest release fixes speed and stability.";
 const UPDATE_NOTICE_STANDING: &str =
     "Read update-guide. Automatic updates are enabled. Update SiftText at a convenient pause and keep the user informed.";
 const STANDING_GRANT_COMMAND: &str = "sifttext update --grant standing";
@@ -1094,7 +1135,6 @@ fn opportunistic_notice(current: &Package, state: &State, manifest: &Manifest) -
     } else {
         notice["permission"] = json!(permission);
         notice["grant_command"] = json!(STANDING_GRANT_COMMAND);
-        notice["reason"] = json!(UPDATE_NOTICE_REASON);
     }
     if let Some(pinned) = config["pinned"].as_str() {
         notice["pinned"] = json!(pinned);
@@ -1575,7 +1615,7 @@ pub fn update_with_submission_receipt(
         let check = (|| -> Result<Value> {
             let manifest = fetch_manifest(root)?;
             let current = package(&root.join(&state.application))?;
-            opportunistic_notice(&current, &state, &manifest)
+            release_notice(root, &current, &state, &manifest)
         })();
         if check.is_ok() {
             state.success = state.attempt.clone().unwrap();
@@ -1592,7 +1632,9 @@ pub fn update_with_submission_receipt(
                     "command",
                     "permission",
                     "grant_command",
-                    "reason",
+                    "release_name",
+                    "release_body",
+                    "release_url",
                     "config",
                     "guide",
                 ] {
@@ -1913,7 +1955,7 @@ fn cached_notice(root: &Path, state: &State) -> Result<Value> {
     let manifest: Manifest = load(&cached)?;
     validate_manifest(&manifest)?;
     let current = package(&root.join(&state.application))?;
-    opportunistic_notice(&current, state, &manifest)
+    release_notice(root, &current, state, &manifest)
 }
 
 /// Run in a detached CLI process. The existing attempt clock also prevents concurrent checks.
@@ -1957,8 +1999,10 @@ pub fn admit_update() {
         let config = update_config(&state.home)?;
         if config["permission"] != "standing" || config["pinned"].is_string()
             || state.pending.is_some() || root.join("activation.json").exists()
-            || cached_notice(root, &state)?["status"] != "update_available"
         { return Ok(()) }
+        let notice = cached_notice(root, &state)?;
+        if notice["status"] != "update_available" { return Ok(()) }
+        eprintln!("{}", crate::lean_render::render(&notice)?);
         eprintln!("SiftText is applying the available release under the configured automatic-update policy.");
         let before = fs::canonicalize(root.join("current"))?;
         let mut submission = None;
@@ -2074,8 +2118,8 @@ mod tests {
         assert_eq!(
             crate::lean_render::render(&notice).unwrap(),
             format!(
-                "application:v1\ncommand:sifttext update\ngrant_command:{}\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nreason:{}\nstatus:update_available",
-                STANDING_GRANT_COMMAND, UPDATE_NOTICE_ASK, UPDATE_NOTICE_REASON
+                "application:v1\ncommand:sifttext update\ngrant_command:{}\nguide:/home/fixture/nodes/8b5361e1-20d7-42a9-9dca-26ba3bac9f25/node.md\nnext_action:{}\npermission:ask\nstatus:update_available",
+                STANDING_GRANT_COMMAND, UPDATE_NOTICE_ASK
             )
         );
         assert_eq!(

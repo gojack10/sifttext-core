@@ -44,6 +44,8 @@ Read the checker guidance before sending sensitive text or explaining credits.
 
 For setup details or an inspect-before-run option, follow [INSTALL.md](INSTALL.md).
 
+Update notices show the matching GitHub release name and body as published, plus its link. Release checks cache this text for startup and ordinary commands. If GitHub release details are unavailable, the notice retains the release link and updating can continue.
+
 ### Example
 
 - **Choose a dependable supplier** (in progress)

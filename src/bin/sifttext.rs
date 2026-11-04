@@ -630,7 +630,7 @@ fn render_update_output(mode: &str, output: &serde_json::Value) -> Result<String
             status["resume"] = json!("sifttext update --resume");
         }
         if output["update_check"] == "update_available" {
-            for field in ["application", "next_action", "command", "permission", "grant_command", "reason", "guide"] {
+            for field in ["application", "next_action", "command", "permission", "grant_command", "release_name", "release_body", "release_url", "guide"] {
                 if let Some(value) = output.get(format!("available_{field}")) {
                     status[format!("available_{field}")] = value.clone();
                 }
@@ -861,14 +861,13 @@ mod tests {
             "available_command":"sifttext update",
             "available_permission":"ask",
             "available_grant_command":"sifttext update --grant standing",
-            "available_reason":"The latest release fixes speed and stability.",
             "available_config":"/home/example/knowledge/.sifttext/config.json",
             "available_guide":"/home/example/knowledge/nodes/guide/node.md"
         });
         let rendered = render_update_output("--status", &output).unwrap();
         let shown = sifttext_file_graph::outlines::decode_lean(&format!("{rendered}\n")).unwrap();
         for field in ["home", "application", "knowledge", "activation_pending", "update_check",
-            "available_application", "available_next_action", "available_command", "available_permission", "available_grant_command", "available_reason", "available_guide"] {
+            "available_application", "available_next_action", "available_command", "available_permission", "available_grant_command", "available_guide"] {
             assert_eq!(shown[field], output[field], "{field}");
         }
         assert_eq!(shown["worktree"], output["pending"]["draft"]);
