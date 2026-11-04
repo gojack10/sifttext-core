@@ -961,7 +961,6 @@ fn check_git(
     before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
     explicit: &BTreeSet<String>, report: &mut Report,
 ) -> Result<()> {
-    report.observe("policy_identity", policy.verify_stamp())?;
     let identity = report.observe("policy_identity", policy.validation_identity())?;
     report.observe("policy_identity", require(reader.policy_identity == identity, "validated capture policy changed"))?;
     require(explicit.iter().all(|id| crate::uuid(id) && candidate.nodes.contains_key(id)), "invalid explicit requests")?;
@@ -970,7 +969,7 @@ fn check_git(
     // existing checked Bend validator, not a Rust structural acceptance test.
     let valid = {
         let graph = candidate.graph();
-        report.observe("graph_policy", policy.graph_valid_input(&graph, &reader.repo))?
+        report.observe("graph_policy", policy.graph_valid_input(&graph, &reader.repo, Some(&identity)))?
     };
     if !valid {
         graph_diagnostics(candidate.nodes.iter().map(|(id, facts)|

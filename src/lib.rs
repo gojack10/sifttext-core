@@ -1185,13 +1185,18 @@ impl Policy {
     }
 
     pub(crate) fn graph_valid(&self, s: &Store) -> Result<bool> {
-        self.graph_valid_input(&encode_shape(s), &s.path)
+        self.graph_valid_input(&encode_shape(s), &s.path, None)
     }
 
-    pub(crate) fn graph_valid_input(&self, graph: &Graph, cache_root: &Path) -> Result<bool> {
+    pub(crate) fn graph_valid_input(
+        &self, graph: &Graph, cache_root: &Path, expected_identity: Option<&str>,
+    ) -> Result<bool> {
         let started = Instant::now();
         // A marker never bypasses the checked source/executable stamp guard.
         self.verify_stamp()?;
+        if let Some(expected) = expected_identity {
+            require(self.validation_identity()? == expected, "validated capture policy changed")?;
+        }
         // Graph truth depends on this predicate and proved normalization, not
         // unrelated documentation, SQL rendering, or the runtime's install path.
         let predicate = sha256(&[
