@@ -828,6 +828,20 @@ fn candidate_command(app: &Path, command: &str, home: &Path) -> Result<()> {
         home.display(), String::from_utf8_lossy(&output.stdout)))
 }
 
+/// Incoming preparation runs under the updater's installation lock. Its
+/// caller still publishes with the outgoing process before ready_home prepares
+/// the incoming reader. Keep that selected process's derived state usable too.
+pub fn prepare_outgoing_reader(home: &Path) -> Result<()> {
+    let incoming = local::runtime()?;
+    let Some(root) = incoming.parent().and_then(Path::parent) else { return Ok(()) };
+    if !root.join("state.json").is_file() { return Ok(()) }
+    let state: State = load(&root.join("state.json"))?;
+    if fs::canonicalize(home)? != fs::canonicalize(&state.home)? { return Ok(()) }
+    let outgoing = fs::canonicalize(root.join("current"))?;
+    if outgoing == incoming { return Ok(()) }
+    candidate_command(&outgoing, "index", home)
+}
+
 fn prepare_views(app: &Path, home: &Path) -> Result<usize> {
     candidate_command(app, "index", home)?;
     Ok(1 + prepare_worktrees(app, home)?)

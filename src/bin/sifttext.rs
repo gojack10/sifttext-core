@@ -217,7 +217,10 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         sifttext_file_graph::home_format::ensure(&policy, Path::new(home))?;
     }
     let output = match args.as_slice() {
-        [cmd, _home] if cmd == "prepare-home" => json!({"status":"home_format_current"}),
+        [cmd, home] if cmd == "prepare-home" => {
+            sifttext_file_graph::updates::prepare_outgoing_reader(Path::new(home))?;
+            json!({"status":"home_format_current"})
+        }
         [cmd] if cmd == "runtime-check" => json!({"status":"checked", "runtime":runtime, "migration_size_allowances":1}),
         [cmd] if cmd == "hosted-account-protocol" => json!({"hosted_account":1}),
         [cmd, root, home] if cmd == "install-home" => {
