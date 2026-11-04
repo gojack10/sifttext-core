@@ -22,6 +22,11 @@ for name in Cargo.toml Cargo.lock build.rs README.md AGENTS.md .gitignore rust-t
 done
 mkdir "$STAGE/package/build"
 for name in graph-policy graph-policy.sha256 order-migration order-migration.sha256 candidate.sha256; do cp "build/$name" "$STAGE/package/build/$name"; done
+# Released updaters check this retired helper's hash with their linked Policy
+# after starting the incoming runtime. They never execute it. Keep that archive
+# protocol readable without restoring a helper or a current build requirement.
+printf '%s\n' 'Retired graph-transition helper. Retained only for released updater stamp checks.' > "$STAGE/package/build/graph-transition"
+(cd "$STAGE/package" && shasum -a 256 build/graph-transition > build/graph-transition.sha256)
 cp target/release/sifttext "$STAGE/package/sifttext"
 printf '{"version":"%s","source":"%s","knowledge":"%s","format":1}\n' "$VERSION" "$SOURCE" "$KB" > "$STAGE/package/release.json"
 # Normalize archive order, times and ownership with GNU tar on every build host.
