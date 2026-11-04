@@ -25,6 +25,10 @@ Read [Knowledge Layout](../b6107909-a33b-4c63-ab0d-351ba1a1b672/node.md) for the
 
 ## Read when needed
 
+When inspecting conversation history, prefer retained sources under SiftText `artifacts/` and query them directly with suitable local tools. Follow [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) for source locations, retention and querying.
+
+If a specific requested chat or needed portion is missing, try to locate an available original or export and inspect it there. Retain the relevant source when SiftText Commit is invoked.
+
 Before querying SiftText's knowledge index with SQL, read [SQLite Queries](../4cc0b396-4b55-415e-bb26-b51c97e6ca78/node.md).
 
 When you need guidance on using the SiftText CLI, read [CLI Operations](../a472e05c-9bbf-48f2-89d7-6c6092c339ed/node.md).

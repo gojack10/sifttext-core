@@ -1,40 +1,68 @@
 ---
 id: "3651b9b0-fc21-4c67-9d79-84ef3af963ce"
 name: "Session Evidence"
-micro_summary: "Associates session evidence during Commit and distinguishes links, retained copies and opt-in backup."
+micro_summary: "Guides session discovery, retained transcript copies, shared node links and local querying."
 status: "resolved"
 see_also: []
-scope: "Document shipped opt-in session-retention behavior, verified configuration fields and commands, and the private-data and backup boundaries."
+scope: "Locate, retain and query conversation evidence for materially supported knowledge while preserving original harness files."
 position: 8192
 ---
-## Associate evidence
-Use during Commit when a session materially supports the knowledge being recorded.
+Keep the conversations behind maintained knowledge recoverable, including details that may become relevant later.
 
-Record its actual source location and relevant message range when the harness exposes them.
+## Find the source
 
-Give each materially supported node a recognizable JSONL entrance under artifacts/. Name one evidence owner so related nodes link to that owner’s artifact path rather than retain duplicate copies.
+Start with existing artifact links and recorded source locations. Prefer the exact session path or identity supplied by the harness over guessing from filenames or modification times.
 
-Use only the source and sharing permissions actually supplied.
+Typical locations:
 
-State consequential provenance gaps when session access is unavailable.
+| Harness | Source |
+| --- | --- |
+| **Claude Code** | `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<project>/<session-id>.jsonl`. Prefer the harness-provided `transcript_path`; project-directory names can be customized. |
+| **Codex** | `${CODEX_HOME:-$HOME/.codex}/sessions/YYYY/MM/DD/rollout-*.jsonl` or `.jsonl.zst`; also check `archived_sessions/`. Verify the intended thread against the file's session metadata, especially for subagents. |
+| **Pi** | Use the active session path supplied by Pi. Default storage is under `~/.pi/agent/sessions/`; custom session locations may differ. |
 
-## Retain or back up
-Obtain opt-in permission before retaining an independent transcript copy.
+Claude Code and Codex `history.jsonl` files contain prompt history rather than complete conversation transcripts.
 
-Obtain separate permission for remote backup.
+If the source cannot be recovered, record that limitation and continue the knowledge work.
 
-Use the installed harness's documented capture and association interfaces.
+## Retain once, link thereafter
 
-Core's session commands are listed in its installed help.
+When SiftText Commit is invoked, associate materially supported nodes with the relevant source sessions.
 
-Keep private transcripts and archive credentials outside knowledge Git.
+For **Codex, Claude Code and Pi**:
 
-Review tracked associations in the private knowledge draft and publish them through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md).
+- **First copy:** use `rsync` to copy the native transcript into the evidence owner's durable `artifacts/chats/` directory.
+- **Already retained:** reuse that copy. Create recognizable symlinks under other relevant nodes' `artifacts/chats/`, pointing to the retained copy.
+- **Preserve the original:** our retention operation must never remove, move or replace the harness's original chat file. Never use `rsync --remove-source-files` for session retention.
 
-Verify the link, retained copy or remote backup separately according to what was requested.
+The user or harness may independently clean up the original later. That does not remove the retained artifact copy.
 
-When retention is enabled and authorized, retain one real copy under its evidence owner and link the other nodes to it. Preserve the file an active harness is writing.
+When later conversation records support another Commit, refresh the same retained destination rather than creating duplicate independent copies. Preserve the earlier capture if refreshing fails.
 
-When retention is disabled, use an association to the available durable source and link affected nodes through it. A symlink is not a retained copy or remote backup.
+Use readable names such as `<harness>-<topic>.jsonl`, preserving the actual source format and compression. Record the native session identity and relevant message range or cutoff when available.
 
-A narrower no-read or no-snapshot grant still controls. Continue ordinary Commit when retention is disabled.
+A transcript may reference separate attachments, tool outputs or subagent files. Preserve accompanying material needed by the recorded evidence and identify consequential gaps.
+
+Honor explicit user restrictions on copying, reading or sharing. Keep private transcript contents outside knowledge Git. Verify retained files and links before reporting completion. Remote backup and sharing require separate authorization.
+
+## Query the actual format
+
+Use suitable tools already available, such as Python, jq or DuckDB. Discover the file's keys and value types before writing a query; harness formats can change.
+
+For example, when jq is available, this inventories nested field paths and observed value types in readable JSON or JSONL:
+
+```sh
+jq -r '
+  paths as $p |
+  [
+    ($p | map(if type == "number" then "[]" else . end) | tojson),
+    (getpath($p) | type)
+  ] | @tsv
+' /path/to/chat.jsonl | sort -u
+```
+
+Array positions are grouped as `[]`. Use the discovered structure to select the messages, tool activity or metadata needed for the question. Compressed sources require a compatible reader or decompression stream.
+
+Preserve message ordering, branch relationships and tool-call identifiers when they matter. Keep filename and record or line locators for quoted evidence. Report malformed or incomplete records rather than silently dropping them.
+
+Locating or querying a chat does not itself trigger retention or SiftText Commit.
