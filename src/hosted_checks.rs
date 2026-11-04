@@ -528,55 +528,6 @@ pub fn retain_results(home: &Path, check: &Value) -> Result<()> {
     Ok(())
 }
 
-/// Findings for the current text, not merely the most recent submission.
-pub fn retained_findings(home: &Path) -> Result<Vec<Value>> {
-    let common = crate::local::reader_git(home, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-    let records = Path::new(&common).join("sifttext-hosted-checks/nodes");
-    if !records.try_exists()? { return Ok(Vec::new()); }
-    crate::real_dir(&records)?;
-    let mut findings = Vec::new();
-    for entry in fs::read_dir(&records)? {
-        let path = entry?.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue }
-        let item: Value = serde_json::from_slice(&crate::read_regular(&path)?)?;
-        if !has_findings(&item["response"]) { continue }
-        let id = item["node"].as_str().ok_or("missing retained node")?;
-        require(crate::uuid(id), "invalid retained node")?;
-        if crate::native_kb::documentation(id) { continue }
-        let node = home.join("nodes").join(id).join("node.md");
-        if !node.try_exists()? { continue }
-        let bytes = crate::read_regular(&node)?;
-        let hash = crate::sha256(crate::ordering::without_position(std::str::from_utf8(&bytes)?).as_bytes());
-        if item["review_sha256"] == hash { findings.push(item); }
-    }
-    Ok(findings)
-}
-
-/// Last retained submit check, for onboarding only; never acceptance evidence.
-/// Reading this observation neither runs a checker nor creates a journal.
-pub fn retained_publication(home: &Path) -> Result<Option<Value>> {
-    let common = crate::local::reader_git(home, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-    let records = Path::new(&common).join("sifttext-hosted-checks");
-    if !records.try_exists()? {
-        return Ok(None);
-    }
-    crate::real_dir(&records)?;
-    let mut latest = None;
-    for entry in std::fs::read_dir(&records)? {
-        let path = entry?.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        let metadata = std::fs::symlink_metadata(&path)?;
-        crate::require(metadata.is_file(), "unsafe retained check record")?;
-        let candidate = (metadata.modified()?, path);
-        if latest.as_ref().is_none_or(|previous| &candidate > previous) {
-            latest = Some(candidate);
-        }
-    }
-    latest.map(|(_, path)| Ok(serde_json::from_slice(&crate::read_regular(&path)?)?)).transpose()
-}
-
 /// Apply current documentation policy to a historical display without changing
 /// saved checker responses or pretending their earlier verdict was a pass.
 pub(crate) fn documentation_exempt_record(mut check: Value) -> Value {

@@ -48,7 +48,7 @@ A new home with the complete instruction pipeline receives an AGENTS.md pointer.
 "$BIN" instructions "$home"
 ```
 
-Read `onboarding-entry` and follow `agent-instructions` before other work. Use [Onboarding Output and Help](../a8be9278-ca1b-4bf4-9fa7-027105bb6c36/node.md) to interpret the retained transport, finding and update fields. The grouped help index is appended automatically; `sifttext help` lists each command form and guide.
+Read `onboarding-entry` and follow `agent-instructions` before other work. Use [Onboarding Output and Help](../a8be9278-ca1b-4bf4-9fa7-027105bb6c36/node.md) to interpret retained transport, repair, update and harness notices. The grouped help index is appended automatically; `sifttext help` lists each command form and guide.
 
 During authorized setup, follow [Maintain Memory Continuity](../221ca2fc-1caf-4c40-92e5-d9f55501ba1e/node.md).
 

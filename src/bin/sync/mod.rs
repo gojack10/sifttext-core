@@ -1097,9 +1097,6 @@ pub(super) fn instructions(home: &Path) -> Result<Vec<Value>> {
     };
     let mut repairs = vec![json!({"transport":transport})];
     let error = runner::error(&store)?;
-    if let Some(check) = &state.hosted_check {
-        repairs.push(json!({"hosted_check":check}));
-    }
     if !error.is_null() {
         // Even an old checker refusal really stopped transport. Retain that
         // state until a successful cycle clears it, rather than hiding it.

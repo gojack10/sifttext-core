@@ -27,7 +27,7 @@ During authenticated paid submission, Core requests hosted review of non-exempt 
 | Credit shortage or technical failure | Save marked unchecked and explain the missing check. |
 | Logged-out or free offline use | Keep the existing local save path. |
 
-Hosted authored submissions use native Core checking too. Own-account replication of already accepted history retains findings as repair work without refusing transport on that ground; integrity, topology, account binding and consent checks still apply. This does not approve sharing a flagged node with another person. Resolve its findings before such sharing, and preserve the human approval boundary.
+Hosted authored submissions use native Core checking too. Own-account replication of already accepted history retains findings without refusing transport on that ground; integrity, topology, account binding and consent checks still apply. This does not approve sharing a flagged node with another person. Resolve its findings before such sharing, and preserve the human approval boundary.
 
 ## Accept despite findings only with explicit approval
 

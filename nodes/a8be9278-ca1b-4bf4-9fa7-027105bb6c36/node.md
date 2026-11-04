@@ -11,9 +11,9 @@ Run `sifttext instructions [HOME]` before knowledge work. Read `onboarding-entry
 
 `hosted-sync` reports retained transport state, not a fresh server inquiry. `last-sync-complete` describes the last recorded exchange; it does not establish current remote freshness. `not-configured`, disabled consent, pending delivery, local changes, stopped transport and `needs-repair` are different states. Use `sifttext sync status HOME` and its actual repair guide when directed.
 
-Official GitHub/bundled user-facing documentation is exempt from epistemic-state checks. Current Core omits those identities from finding-driven repair instructions. If an older receipt flags one of these maintained guides, do not detour from the user's task to repair its epistemic state. The historical result is not a current repair obligation or a new PASS. Other knowledge remains subject to the procedure below.
+Session-start `instructions` does not collect semantic findings or assign their retrieval or repair. Saved results remain available through explicit `sifttext check-result ID` requests. A historical finding is not a session-start work assignment, and a later unrelated passing save does not clear it.
 
-`check-findings` and `flagged-nodes` identify affected non-exempt nodes, saved request IDs and checked-text hashes when available. Retrieve each result with `sifttext check-result ID`, compare it with the node's current text, and repair supported findings through [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md). Older receipts may lack a text hash and remain historical until compared. Do not infer that a later unrelated passing save cleared an earlier node's finding.
+Authored submissions retain their semantic-review procedure. Official GitHub/bundled user-facing documentation remains exempt from epistemic-state checks. An older finding on an exempt guide is not a current repair obligation or a new PASS.
 
 Own-device sync retains findings without refusing transport on that ground. Integrity, topology, account binding and consent checks still apply. Do not share a flagged node with another person until its findings are resolved. A checker result is not human approval.
 

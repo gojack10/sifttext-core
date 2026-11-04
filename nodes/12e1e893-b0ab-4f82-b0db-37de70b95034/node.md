@@ -144,10 +144,10 @@ hosted workspace. Epistemic findings are retained per node and checked text;
 they no longer refuse this transport. Integrity, topology, account binding and
 consent checks still apply. Ordinary authored submissions remain checked.
 
-`instructions` identifies retained findings by node, saved request ID and text
-hash when available. Use `sifttext check-result ID` to recover the actual result
-and repair it through SiftText Commit. A later unrelated save does not clear a
-node's finding. Do not share a flagged node with another person until resolved.
+Session-start `instructions` does not collect findings or assign semantic
+repairs. Saved results remain available through explicit `sifttext check-result
+ID` requests. A later unrelated save does not clear a node's finding. Do not
+share a flagged node with another person until resolved.
 
 The instructions transport line describes retained state, not a live freshness
 check. An old refused cycle remains stopped until a successful cycle replaces
