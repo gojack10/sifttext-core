@@ -1,9 +1,9 @@
 //! One-time import of old homes. Normal readers and writers use positions only.
 //! The temporary native draft and submission journal retain interrupted work.
-use crate::{Policy, Result, local, ordering, require};
+use crate::{Policy, Result, local, require};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::{BTreeMap, BTreeSet}, fs, path::{Path, PathBuf}};
+use std::{collections::BTreeSet, fs, path::{Path, PathBuf}};
 
 #[derive(Serialize, Deserialize)]
 struct Pending {
@@ -41,57 +41,6 @@ fn config(home: &Path) -> Result<Value> {
 fn complete(value: &Value) -> bool {
     value["order_format_version"].as_u64().unwrap_or(0) >= 1
         && value["link_format_version"].as_u64().unwrap_or(0) >= 1
-}
-
-/// Parse only importer inputs, without calling a normal home/index reader first.
-/// Existing position order is preserved; a legacy list supplies the old sequence.
-fn import_positions(draft: &Path) -> Result<BTreeSet<String>> {
-    let mut texts = BTreeMap::new();
-    for entry in fs::read_dir(draft.join("nodes"))? {
-        let entry = entry?;
-        if entry.file_name() == ".keep" { continue }
-        let id = entry.file_name().into_string().map_err(|_| "non-UTF8 node identity")?;
-        require(crate::uuid(&id), "invalid migration node identity")?;
-        crate::real_dir(&entry.path())?;
-        let text = String::from_utf8(crate::read_regular(&entry.path().join("node.md"))?)?;
-        require(crate::parse_markdown(&text)?.id == id, "migration node identity mismatch")?;
-        texts.insert(id, text);
-    }
-    let mut ranks = BTreeMap::new();
-    let mut lists = Vec::new();
-    for id in texts.keys() {
-        let dir = draft.join("nodes").join(id);
-        let list = dir.join("children.order");
-        if !list.try_exists()? { continue }
-        let bytes = crate::read_regular(&list)?;
-        let order: Vec<_> = std::str::from_utf8(&bytes)?.lines().collect();
-        let mut members = BTreeSet::new();
-        crate::real_dir(&dir.join("children"))?;
-        for entry in fs::read_dir(dir.join("children"))? {
-            let entry = entry?;
-            if entry.file_name() == ".keep" { continue }
-            let child = entry.file_name().into_string().map_err(|_| "non-UTF8 child")?;
-            require(crate::uuid(&child) && texts.contains_key(&child), "invalid migration child")?;
-            require(fs::read_link(entry.path())? == Path::new(&format!("../../{child}")), "unsafe migration child link")?;
-            members.insert(child);
-        }
-        require(order.len() == members.len() && order.iter().copied().collect::<BTreeSet<_>>() == members.iter().map(String::as_str).collect(),
-            "legacy child list does not match relationships; retain the migration draft")?;
-        for (i, child) in order.iter().enumerate() {
-            require(ranks.insert((*child).to_owned(), (i as u64 + 1) * 1024).is_none(), "multiple migration parents")?;
-        }
-        lists.push(list);
-    }
-    for (id, text) in &texts {
-        let old = ordering::position(text)?;
-        let rank = ranks.get(id).copied().or(old).unwrap_or(0);
-        if old != Some(rank) {
-            fs::write(draft.join("nodes").join(id).join("node.md"), ordering::with_position(text, rank)?)?;
-        }
-    }
-    // Remove lists only after every node has a position. No relationship is rewritten.
-    for list in lists { fs::remove_file(list)?; }
-    Ok(texts.into_keys().collect())
 }
 
 /// Rewrite body references only. Metadata (including see_also) remains byte-identical.
@@ -156,8 +105,10 @@ pub fn ensure(policy: &Policy, home: &Path) -> Result<()> {
         if local::sparse_checkout(&pending.draft)? {
             local::reader_git(&pending.draft, &["sparse-checkout", "disable"])?;
         }
-        pending.explicit = import_positions(&pending.draft)?;
-        pending.baseline = Some(commit(&pending.draft, "home-format: replace shared child lists with positions")?);
+        pending.explicit = crate::order_migration::convert(&home, &pending.draft, &pending.base)?;
+        let baseline = commit(&pending.draft, "home-format: replace shared child lists with positions")?;
+        crate::order_migration::check(policy, &home, &pending.base, &baseline)?;
+        pending.baseline = Some(baseline);
         persist(&journal, &pending)?;
     }
     if pending.commit.is_none() {

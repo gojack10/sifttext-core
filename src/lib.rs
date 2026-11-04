@@ -120,6 +120,7 @@ mod outline_residue_tests;
 pub mod outline_rows;
 pub mod outlines;
 pub mod ordering;
+mod order_migration;
 pub mod tree_render;
 pub mod tree_selection;
 #[cfg(test)]
@@ -1072,7 +1073,7 @@ impl Policy {
 
     fn verify_stamp(&self) -> Result<()> {
         let project = &self.project;
-        for manifest in ["build/candidate.sha256", "build/graph-policy.sha256", "build/graph-transition.sha256"] {
+        for manifest in ["build/candidate.sha256", "build/graph-policy.sha256", "build/graph-transition.sha256", "build/order-migration.sha256"] {
             let contents = fs::read_to_string(project.join(manifest)).map_err(|error| {
                 // Keep the OS error kind so an absent stamp is not reported as unknown.
                 std::io::Error::new(
@@ -1170,6 +1171,16 @@ impl Policy {
             "STG1 REJECT\n".len(),
             policy_deadline(graph)?,
         )
+    }
+
+    pub(crate) fn order_migration(&self, words: &[usize], nodes: usize, hints: usize) -> Result<()> {
+        self.verify_stamp()?;
+        let wire = wire_text(words)?;
+        let verdict = invoke_bounded_with_deadline(
+            &self.project.join("build/order-migration"), wire.as_bytes(),
+            "STOM1 REJECT\n".len(), policy_budget(nodes.max(hints), nodes.saturating_add(hints))?,
+        )?;
+        require(verdict == "STOM1 VALID\n", "legacy ordering conversion rejected; retain the migration draft")
     }
 
     pub(crate) fn graph_valid(&self, s: &Store) -> Result<bool> {

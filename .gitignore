@@ -11,3 +11,7 @@
 /build/graph-policy.c
 /build/graph-policy.sha256
 /build/candidate.sha256
+
+/build/order-migration
+/build/order-migration.c
+/build/order-migration.sha256
