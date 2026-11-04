@@ -1074,7 +1074,7 @@ impl Policy {
 
     fn verify_stamp(&self) -> Result<()> {
         let project = &self.project;
-        for manifest in ["build/candidate.sha256", "build/graph-policy.sha256", "build/graph-transition.sha256", "build/order-migration.sha256"] {
+        for manifest in ["build/candidate.sha256", "build/graph-policy.sha256", "build/order-migration.sha256"] {
             let contents = fs::read_to_string(project.join(manifest)).map_err(|error| {
                 // Keep the OS error kind so an absent stamp is not reported as unknown.
                 std::io::Error::new(

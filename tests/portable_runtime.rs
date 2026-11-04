@@ -336,8 +336,6 @@ fn relocated_runtime_refuses_missing_and_tampered_assets() {
     for name in [
         "build/graph-policy",
         "build/graph-policy.sha256",
-        "build/graph-transition",
-        "build/graph-transition.sha256",
         "build/candidate.sha256",
         "README.md",
         "rust-toolchain.toml",

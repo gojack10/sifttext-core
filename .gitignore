@@ -4,9 +4,6 @@
 /nodes/*/outline.lean.meta.json
 /nodes/*/outline.full.lean.meta.json
 /.tools/
-/build/graph-transition
-/build/graph-transition.c
-/build/graph-transition.sha256
 /build/graph-policy
 /build/graph-policy.c
 /build/graph-policy.sha256
