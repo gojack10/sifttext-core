@@ -441,6 +441,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
             "home must be an independent Git root",
         )?;
         // Recognition is not repair: even an invalid in-progress user edit is untouched.
+        crate::skills::install_missing(path);
         return Ok(json!({"home": fs::canonicalize(path)?, "created": false}));
     }
     // Validate and capture the shipped native tree before touching the destination.
@@ -536,6 +537,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     )?;
     git(path, &["checkout", "--detach", "--quiet"])?;
     index::prepare(policy, path, None)?;
+    crate::skills::install_missing(path);
     Ok(
         json!({"home": fs::canonicalize(path)?, "created": true, "starter_nodes": seed.as_ref().map_or(0, |s| s.nodes.len()), "pointer": pointer.then_some(POINTER), "commit": git(path, &["rev-parse", "HEAD"])?}),
     )

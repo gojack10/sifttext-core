@@ -109,6 +109,7 @@ pub mod leviathan_query;
 #[path = "vendor/leviathan/search.rs"]
 pub mod leviathan_search;
 pub mod local;
+pub(crate) mod skills;
 #[cfg(test)]
 #[path = "../tests/successor/local_onramp.rs"]
 mod local_onramp_tests;

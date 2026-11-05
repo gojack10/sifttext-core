@@ -95,6 +95,12 @@ Watch for dictation and typing errors that may refer to SiftText. Use context to
 When wording could plausibly mean either SiftText or something else, such as “subtext” or “syntax”, ask once which meaning the user intends and carry that clarification forward in the conversation.
 ````
 
+## Commit shortcut
+
+Initialization and managed update preparation install a missing `sifttext-commit` skill in existing Codex, Claude Code and Pi user directories, using the actual knowledge-home path. Existing skill directories are preserved. Invoke it with `$sifttext-commit` in Codex, `/sifttext-commit` in Claude Code or `/skill:sifttext-commit` in Pi. Its pointer leads to SiftText Commit and that node's current procedure.
+
+If the current harness was added later or installation reported an error, retry with `sifttext update --prepare` for a managed installation or `sifttext init /absolute/path/to/home` for an existing home. Use the current harness's supported discovery or reload mechanism. For another harness, install the bundled pointer through its supported skill mechanism and fill in the verified Commit-node path, preserving any different existing skill.
+
 ## Migrate selected memory
 
 Confirm which sources are permitted and how the content may be shared.

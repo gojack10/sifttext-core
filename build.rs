@@ -115,6 +115,7 @@ fn main() {
         ".gitignore",
         "rust-toolchain.toml",
         "install-local.sh",
+        "integrations/skills/sifttext-commit/SKILL.md",
     ] {
         println!("cargo:rerun-if-changed={}", root.join(name).display());
     }

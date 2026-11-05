@@ -141,6 +141,20 @@ cd -P -- "$HOME/sifttext" && pwd -P
 
 Use the returned physical path. Retain any path refusal for diagnosis instead of substituting a symlink alias.
 
+## Commit shortcut
+
+Initialization and managed update preparation install a missing `sifttext-commit` skill for existing Codex, Claude Code and Pi user directories. The bundled skill points to SiftText Commit in the actual knowledge home; its maintained procedure and approval boundary remain in that node.
+
+| Harness | User skill location | Explicit invocation |
+| --- | --- | --- |
+| Codex | `${CODEX_HOME:-~/.codex}/skills/sifttext-commit/SKILL.md` | `$sifttext-commit` or select it from the skills menu |
+| Claude Code | `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/sifttext-commit/SKILL.md` | `/sifttext-commit` |
+| Pi | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills/sifttext-commit/SKILL.md` | `/skill:sifttext-commit` |
+
+Existing skill directories are preserved, including different content or a pointer to another home. Installation does not create an unused harness's configuration directory or change its settings. A skill-installation error is reported without blocking the home or application update. To retry missing-skill installation after resolving the error or adding a harness, run `sifttext update --prepare` for a managed installation, or `sifttext init /absolute/path/to/home` for an existing home.
+
+Start a fresh conversation to discover the skill, or use Pi's `/reload`. Other harnesses can install the [bundled pointer template](integrations/skills/sifttext-commit/SKILL.md) using their supported skill mechanism, replacing `{{COMMIT_NODE}}` with the verified absolute path to `nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md` in the user's knowledge home. Skill discovery depends on the harness's own settings and support.
+
 ## Optional paid services
 
 Choose a plan and sign in through Zitadel to continue to Stripe checkout.

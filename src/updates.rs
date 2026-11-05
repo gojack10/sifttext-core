@@ -50,6 +50,7 @@ fn harness_state(root: &Path) -> Result<HarnessInstructions> {
 
 // Update preparation owns extraction. Onboarding only reads the retained result.
 fn prepare_harness(root: &Path, home: &Path, before: Option<&str>, after: Option<&str>) -> Result<()> {
+    crate::skills::install_missing(home);
     let path = format!("nodes/{HARNESS_GUIDE}/node.md");
     let mut saved = harness_state(root)?;
     if !saved.current.is_empty() {

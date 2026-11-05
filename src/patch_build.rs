@@ -16,6 +16,7 @@ const INPUT_FILES: &[&str] = &[
     "rust-toolchain.toml",
     "AGENTS.md",
     "install-local.sh",
+    "integrations/skills/sifttext-commit/SKILL.md",
 ];
 const INPUT_DIRS: &[&str] = &[".cargo", "src", "laws", "scripts", "nodes", "trees"];
 const BUILD_ENV: &[&str] = &[
