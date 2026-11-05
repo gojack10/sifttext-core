@@ -67,6 +67,16 @@ Allocation starts from accepted main even when the normal home is dirty or behin
 
 it does not change that home.
 
+Drafts use sparse checkout and initially contain the entry node. Read accepted knowledge from the normal knowledge home.
+
+Select the directories needed for your edits:
+
+```sh
+git -C "$wt" sparse-checkout add nodes/UUID
+```
+
+`sifttext create` selects its new node and parent automatically.
+
 After uncertain allocation, inspect registered worktrees before retrying.
 
 ## Edit, inspect and commit

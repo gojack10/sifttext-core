@@ -935,7 +935,7 @@ fn allocate_worktree(
             path.display()
         )
     })?;
-    Ok(json!({"worktree":path,"base":base,"artifact_home":home}))
+    Ok(json!({"worktree":path,"base":base,"artifact_home":home,"checkout":"sparse"}))
 }
 
 #[cfg(test)]
