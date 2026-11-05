@@ -979,7 +979,9 @@ mod tests {
 }
 
 fn main() {
-    let authentication = std::env::args()
+    let worktree_review = std::env::args().nth(1).as_deref() == Some("epistemic-check")
+        && std::env::args().nth(2).as_deref() == Some("--worktree");
+    let authentication = !worktree_review && std::env::args()
         .nth(1)
         .is_some_and(|arg| account::is_command(&arg) || sifttext_file_graph::hosted_checks::is_command(&arg));
     let updating = std::env::args().nth(1).is_some_and(|arg| arg == "update");
