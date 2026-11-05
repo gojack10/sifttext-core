@@ -512,7 +512,17 @@ pub fn version(store: &Store) -> Result<String> {
     let mut digest = source_version::start();
     for (path, entry) in store.inventory.iter().filter(|(p, _)| authored_path(p)) {
         match entry {
-            Entry::Dir => source_version::add(&mut digest, path, Part::Directory)?,
+            Entry::Dir => {
+                source_version::add(&mut digest, path, Part::Directory)?;
+                // Match the index's logical inventory without changing the
+                // physical capture used to detect concurrent filesystem edits.
+                if path.parent() == Some(Path::new("nodes")) {
+                    let children = path.join("children");
+                    if !store.inventory.contains_key(&children) {
+                        source_version::add(&mut digest, &children, Part::Directory)?;
+                    }
+                }
+            }
             Entry::File(_) | Entry::FileRef { .. } => {
                 let (len, hash) = entry.file_identity().ok_or("missing file identity")?;
                 source_version::add(&mut digest, path, Part::File { len, hash: &hash })?;

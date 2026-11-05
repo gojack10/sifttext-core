@@ -196,7 +196,7 @@ pub(crate) fn from_inventory_mode(
     for (id, dir) in &dirs {
         require(uuid(id), "node directory is not a canonical full UUID")?;
         crate::real_dir(dir)?;
-        crate::real_dir(&dir.join("children"))?;
+        crate::optional_dir(&dir.join("children"))?;
         let bytes = |file: &str| -> Result<std::borrow::Cow<'_, [u8]>> {
             match inventory.get(&PathBuf::from(format!("nodes/{id}/{file}"))) {
                 Some(e @ (Entry::File(_) | Entry::FileRef { .. })) => e.bytes(),
@@ -488,6 +488,7 @@ fn node_identities(
         for file in ["node.md", "children"] {
             let p = dir.join(file);
             let m = match fs::symlink_metadata(&p) {
+                Err(error) if file == "children" && error.kind() == std::io::ErrorKind::NotFound => continue,
                 result => source_error::context(result.map_err(Into::into), &relative.join(file), None)?,
             };
             out.insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));

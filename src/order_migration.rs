@@ -85,10 +85,11 @@ impl Snapshot {
             }
             result.entries.insert(path, Entry { kind, mode, oid });
         }
-        require(
-            result.children.keys().eq(result.texts.keys()),
-            "migration children/node inventory mismatch",
-        )?;
+        for id in result.texts.keys() {
+            result.children.entry(id.clone()).or_default();
+        }
+        require(result.children.keys().all(|id| result.texts.contains_key(id)),
+            "unknown migration children owner")?;
         let mut placed = BTreeSet::new();
         for members in result.children.values() {
             for child in members {

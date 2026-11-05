@@ -446,6 +446,19 @@ fn real_dir(path: &Path) -> Result<()> {
     )
 }
 
+// Only absence means an empty child list; existing redirected or unreadable
+// paths must still fail at the filesystem boundary.
+fn optional_dir(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            require(metadata.is_dir(), &format!("not a real directory: {}", path.display()))?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn entries(path: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for entry in fs::read_dir(path)? {

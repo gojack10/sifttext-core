@@ -2119,7 +2119,6 @@ pub fn maintenance_node_path(home: &Path, node_id: &str) -> Result<PathBuf> {
         require(crate::parse_markdown(std::str::from_utf8(&bytes)?)?.id == id,
             "maintenance node identity mismatch")?;
         if id == node_id { return Ok(path); }
-        crate::real_dir(&directory.join("children"))?;
         for child in crate::ordering::children(&home, &id)? {
             require(fs::read_link(directory.join("children").join(&child))?
                 == PathBuf::from(format!("../../{child}")), "unsafe maintenance child link")?;
@@ -2276,9 +2275,11 @@ pub fn create(
     let parent_dir = parent.as_ref().map(|id| path.join("nodes").join(id));
     let position = if let Some(parent) = &parent {
             // The parent cone includes relationship links, not sibling Markdown.
-            let members = fs::read_dir(parent_dir.as_ref().unwrap().join("children"))?
-                .filter_map(|entry| entry.ok()).filter_map(|entry| entry.file_name().into_string().ok())
-                .filter(|id| crate::uuid(id)).collect::<Vec<_>>();
+            let children = parent_dir.as_ref().unwrap().join("children");
+            let members = if crate::optional_dir(&children)? {
+                crate::entries(&children)?.into_iter().map(|entry| crate::name(&entry))
+                    .collect::<Result<Vec<_>>>()?.into_iter().filter(|id| crate::uuid(id)).collect::<Vec<_>>()
+            } else { Vec::new() };
             materialize_nodes(&path, &members)?;
             crate::ordering::children(&path, parent)?.into_iter().map(|id| -> Result<u64> {
                 let bytes = read_local_file(&path.join("nodes").join(id).join("node.md"))?.0;
@@ -2303,11 +2304,11 @@ pub fn create(
         // Exclusive creation never overwrites an existing node or relationship.
         // On failure retain only the work we made, with an actionable location.
         fs::create_dir(&node)?;
-        fs::create_dir(node.join("children"))?;
-        new_file(&node.join("children/.keep"), b"")?;
         new_file(&node.join("node.md"), text.as_bytes())?;
         if let Some(dir) = &parent_dir {
-            symlink(format!("../../{key}"), dir.join("children").join(&key))?;
+            let children = dir.join("children");
+            if !crate::optional_dir(&children)? { fs::create_dir(&children)?; }
+            symlink(format!("../../{key}"), children.join(&key))?;
         } else {
             symlink(format!("../nodes/{key}"), path.join("trees").join(&key))?;
         }

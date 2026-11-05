@@ -31,7 +31,7 @@ pub fn children(home: &Path, id: &str) -> Result<Vec<String>> {
     let dir = home.join("nodes").join(id);
     require(position(std::str::from_utf8(&crate::read_regular(&dir.join("node.md"))?)?)?.is_some(),
         "missing display position")?;
-    crate::real_dir(&dir.join("children"))?;
+    if !crate::optional_dir(&dir.join("children"))? { return Ok(Vec::new()); }
     let mut members = BTreeSet::new();
     for entry in fs::read_dir(dir.join("children"))? {
         let entry = entry?;

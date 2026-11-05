@@ -346,6 +346,19 @@ impl Directory {
     fn unchanged(self, path: &Path) -> Result<()> {
         require(self == Self::at(path)?, "status owner directory changed")
     }
+    fn optional(path: &Path) -> Result<Option<Self>> {
+        match fs::symlink_metadata(path) {
+            Ok(m) => {
+                require(m.is_dir(), &format!("not a real status directory: {}", path.display()))?;
+                Ok(Some(Self(m.dev(), m.ino())))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+    fn unchanged_optional(expected: Option<Self>, path: &Path) -> Result<()> {
+        require(expected == Self::optional(path)?, "status child directory changed")
+    }
 }
 
 fn status_file(path: &Path, expected: Option<Fingerprint>) -> Result<(Vec<u8>, Fingerprint)> {
@@ -370,7 +383,7 @@ struct StatusInput {
     text_hash: [u8; 32],
     node: Fingerprint,
     owner: Directory,
-    children: Directory,
+    children: Option<Directory>,
     links: Vec<Fingerprint>,
     marker: Option<Fingerprint>,
 }
@@ -458,8 +471,9 @@ impl StatusSnapshot {
             input.owner.unchanged(&dir)?;
             input.node.unchanged(&dir.join("node.md"))?;
             let children = dir.join("children");
-            input.children.unchanged(&children)?;
-            let (members, marker) = status_members(&children)?;
+            Directory::unchanged_optional(input.children, &children)?;
+            let (members, marker) = input.children.map(|_| status_members(&children))
+                .transpose()?.unwrap_or_default();
             require(members.iter().eq(self.children[id].iter().collect::<BTreeSet<_>>().into_iter())
                 && marker == input.marker.is_some(), "status child membership changed")?;
             if let Some(marker) = input.marker { marker.unchanged(&children.join(".keep"))?; }
@@ -475,7 +489,7 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
     let dir = nodes.join(id);
     let owner = Directory::at(&dir)?;
     let children_path = dir.join("children");
-    let children_dir = Directory::at(&children_path)?;
+    let children_dir = Directory::optional(&children_path)?;
     let (bytes, node) = status_file(&dir.join("node.md"), None)?;
     let hash = crate::Sha256::digest(&bytes).into();
     let text_hash = crate::Sha256::digest(crate::ordering::without_position(std::str::from_utf8(&bytes)?).as_bytes()).into();
@@ -487,7 +501,8 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
     drop(parsed);
     drop(bytes);
     let ordered = crate::ordering::children(nodes.parent().ok_or("missing status home")?, id)?;
-    let (members, marker) = status_members(&children_path)?;
+    let (members, marker) = children_dir.map(|_| status_members(&children_path))
+        .transpose()?.unwrap_or_default();
     require(ordered.iter().all(|id| uuid(id))
         && ordered.len() == members.len()
         && ordered.iter().collect::<BTreeSet<_>>() == members.iter().collect(),
@@ -504,7 +519,7 @@ fn read_status_node(nodes: &Path, id: &str) -> Result<(State, Vec<String>, Statu
         links.push(fingerprint);
     }
     owner.unchanged(&dir)?;
-    children_dir.unchanged(&children_path)?;
+    Directory::unchanged_optional(children_dir, &children_path)?;
     Ok((state, ordered, StatusInput { hash, text_hash, node, owner,
         children: children_dir, links, marker }))
 }
@@ -570,8 +585,9 @@ impl Baseline {
                 (ordered, input)
             } else {
                 let owner = Directory::at(&dir)?;
-                let children_dir = Directory::at(&children)?;
-                let (members, marker) = status_members(&children)?;
+                let children_dir = Directory::optional(&children)?;
+                let (members, marker) = children_dir.map(|_| status_members(&children))
+                    .transpose()?.unwrap_or_default();
                 let ordered: Vec<_> = members.into_iter().collect();
                 let links = ordered.iter().map(|child| Fingerprint::at(&children.join(child)))
                     .collect::<Result<Vec<_>>>()?;
@@ -584,7 +600,10 @@ impl Baseline {
             };
             digest_field(&mut hash, b"node-id", id.as_bytes());
             digest_directory(&mut hash, b"owner", input.owner);
-            digest_directory(&mut hash, b"children", input.children);
+            digest_field(&mut hash, b"children-present", &[u8::from(input.children.is_some())]);
+            if let Some(directory) = input.children {
+                digest_directory(&mut hash, b"children", directory);
+            }
             digest_leaf(&mut hash, b"node.md", Some(input.node));
             digest_leaf(&mut hash, b"children-marker", input.marker);
             digest_field(&mut hash, b"child-count", &(ordered.len() as u64).to_le_bytes());
@@ -600,7 +619,7 @@ impl Baseline {
                 digest_leaf(&mut hash, b"child-link", Some(*fingerprint));
             }
             input.owner.unchanged(&dir)?;
-            input.children.unchanged(&children)?;
+            Directory::unchanged_optional(input.children, &children)?;
         }
         for (path, directory) in &home.parents { directory.unchanged(path)?; }
         home.nodes_dir.unchanged(&nodes)?;

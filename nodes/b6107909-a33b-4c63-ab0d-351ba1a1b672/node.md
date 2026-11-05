@@ -33,6 +33,10 @@ The UUID identifies a node.
 
 Parentage comes from child symlinks. Display order comes from each child node's `position` in its front matter. Older homes are converted automatically during update preparation or first use. For ordering edits or migration recovery, read [Child Positions and Migration](../80a9fe5d-8b48-412e-9ab1-15e6a67ad072/node.md).
 
+A leaf may omit its `children` directory; an absent or empty directory means zero children. Create that directory when adding the first child link. No `children/.keep` file is required. Existing empty markers remain accepted, and this change needs no home migration. An existing child container must still be a real directory, and its relationship links remain validated.
+
+Earlier releases require child directories even for leaves. Update every application or service reading a shared home before publishing marker-free leaves to it. Root containers and their existing markers are unchanged.
+
 Write body references as normal Markdown links. Resolve a relative target from the containing file: from `nodes/SOURCE/node.md`, link a sibling with `[Name](../TARGET/node.md)`. Preserve the target UUID and meaningful label. Structured front-matter `see_also` records remain data, not Markdown links.
 
 Generated views live at `nodes/<id>/outline.lean` (the node and its direct children) and `nodes/<id>/outline.full.lean` (the whole subtree). Prefer ordinary file tools on them. The outline command fast-tracks the same files and prepends `outline-file` with the selected file's full absolute path. These rebuildable views may need generation before they exist.

@@ -562,8 +562,8 @@ impl GitReader {
         }
         let started = std::time::Instant::now();
         let ledger = Self::inventory(&self.repo, &tree)?;
-        // Git cannot represent an empty directory. Only an empty initialized
-        // home may omit its root containers; node children need their marker.
+        // Git omits empty directories. Root containers retain their existing
+        // contract; every node has a logical child container, even at a leaf.
         let populated: bool = ledger.connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM entries WHERE parent='nodes' AND name<>'.keep')",
             [], |row| row.get(0))?;
@@ -578,6 +578,10 @@ impl GitReader {
                 insert_entry(&mut insert, path, 0, "040000", "", 0)?;
             }
         }
+        ledger.connection.execute("INSERT OR IGNORE INTO entries
+            SELECT path||'/children',CAST(replace(path||'/children','/',char(0)) AS BLOB),
+                path,'children',0,'040000','',0 FROM entries
+            WHERE parent='nodes' AND kind=0", [])?;
         let mut nodes = BTreeMap::new();
         let mut new_facts = Vec::new();
         let (mut entry_count, mut memory_hits, mut fact_hits, mut misses) = (0usize, 0usize, 0usize, 0usize);
@@ -709,22 +713,8 @@ impl GitReader {
         }
         drop(rows);
         drop(entries);
-        let mut missing = Vec::new();
         for id in nodes.keys() {
-            for (tail, kind) in [("", 0), ("/children", 0)] {
-                let path = format!("nodes/{id}{tail}");
-                if !ledger.has(&path, kind)? {
-                    missing.push(path);
-                }
-            }
-        }
-        if !missing.is_empty() {
-            return Err(source_error::PublicationProblem {
-                kind: "missing_scaffolding",
-                paths: missing,
-                reason: "Git node containers are missing",
-                next_action: "Keep the draft. Each leaf needs an empty children/.keep so Git retains its child directory. Restore intended relationship links for non-leaves. Commit the repair and resubmit with the same home, draft and base. Use sifttext create for new nodes.",
-            }.into());
+            require(ledger.has(&format!("nodes/{id}"), 0)?, "missing Git node directory")?;
         }
         let mut members = ledger.connection.prepare(
             "SELECT name FROM entries WHERE parent=?1 AND kind=2 ORDER BY name")?;

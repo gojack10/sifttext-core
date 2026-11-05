@@ -11,7 +11,7 @@ position: 1024
 
 Relationships are symlinks at `nodes/PARENT/children/CHILD`. Each node carries an unsigned integer `position` in its front matter. Readers enumerate child links and sort by `(position, UUID)`. Concurrent appends can choose the same position; UUID breaks the tie deterministically.
 
-`sifttext create` writes the new node and its relationship link. It appends at the maximum sibling position plus 1024. To change display order, edit the child's position in a private draft and publish through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md).
+`sifttext create` writes the new node and its relationship link. It appends at the maximum sibling position plus 1024, creating the parent's child directory when adding its first child. New leaves need no child directory or `.keep` file. To change display order, edit the child's position in a private draft and publish through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md).
 
 ## Automatic conversion
 

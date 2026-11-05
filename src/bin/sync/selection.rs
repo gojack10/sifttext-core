@@ -332,7 +332,6 @@ impl Snapshot {
         self.put("trees/.keep".into(), "100644", Vec::new());
         for id in nodes {
             let order = children.get(id).cloned().unwrap_or_default();
-            self.put(format!("nodes/{id}/children/.keep"), "100644", Vec::new());
             for child in order {
                 self.put(
                     format!("nodes/{id}/children/{child}"),
