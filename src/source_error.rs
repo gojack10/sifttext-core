@@ -181,6 +181,9 @@ impl PublicationProblem {
         if let Some(problem) = error.downcast_ref::<Self>() {
             return problem.clone();
         }
+        if let Some(issue) = error.downcast_ref::<crate::candidate_validation::StructuralIssue>() {
+            return Self::from_error(&issue.problem(), fallback);
+        }
         if let Some(problem) = error.downcast_ref::<SourceError>() {
             return Self { kind: problem.kind, paths: vec![problem.path.clone()],
                 reason: problem.reason, next_action: problem.next_action };

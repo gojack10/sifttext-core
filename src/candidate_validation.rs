@@ -97,7 +97,7 @@ impl std::fmt::Display for StructuralIssue {
 }
 impl std::error::Error for StructuralIssue {}
 impl StructuralIssue {
-    fn problem(&self) -> crate::source_error::SourceError {
+    pub(crate) fn problem(&self) -> crate::source_error::SourceError {
         let mut path = self
             .source
             .as_ref()

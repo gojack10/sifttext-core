@@ -722,13 +722,14 @@ impl GitReader {
             require(nodes[id].position.is_some(), "missing Git display position")?;
             let names = members.query_map([format!("nodes/{id}/children")], |row| row.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            let order = crate::ordering::sort(names, |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
-            children.insert(id.clone(), order);
-            let order = &children[id];
-            for child in order {
+            // Establish membership before asking for a child's position. A
+            // dangling link has no node, not merely a missing display rank.
+            for child in &names {
                 structural_guard(nodes.contains_key(child), Some(id), Some(child),
                     "src/lib.rs:Store.read_view/child_membership", "unknown child UUID")?;
             }
+            let order = crate::ordering::sort(names, |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
+            children.insert(id.clone(), order);
         }
         drop(members);
         require(children.len() == nodes.len(), "unknown Git relationship parent")?;

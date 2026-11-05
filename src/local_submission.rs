@@ -619,7 +619,11 @@ fn submit_with_status(
             output["publication"] = json!(if receipt.published || accepted.is_some() {
                 "accepted_incomplete"
             } else if receipt.accepted_before.is_some()
-                && receipt.candidate.is_some()
+                && (receipt.candidate.is_some()
+                    // Immutable submitted-tree validation happens before any
+                    // preparation record or conditional accepted-ref update.
+                    || (receipt.check == "migration_size_repair"
+                        && receipt.failure_kind == Some("invalid_candidate")))
                 && receipt.check != "conditional_ref_race"
             {
                 "not_accepted"
