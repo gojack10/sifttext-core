@@ -821,6 +821,7 @@ fn candidate_command(app: &Path, command: &str, home: &Path) -> Result<()> {
     let output = Command::new(app.join("sifttext"))
         .arg(command).arg(home)
         .env_remove("SIFTTEXT_INSTALL_ROOT")
+        .env(UPDATE_CALLER, local::runtime()?)
         .output()?;
     std::io::stderr().write_all(&output.stderr)?;
     require(output.status.success(), &format!(
@@ -828,11 +829,22 @@ fn candidate_command(app: &Path, command: &str, home: &Path) -> Result<()> {
         home.display(), String::from_utf8_lossy(&output.stdout)))
 }
 
+/// Runtime of the updater that spawned a target-release command.
+const UPDATE_CALLER: &str = "SIFTTEXT_UPDATE_CALLER";
+
 /// Incoming preparation runs under the updater's installation lock. Its
 /// caller still publishes with the outgoing process before ready_home prepares
 /// the incoming reader. Keep that selected process's derived state usable too.
 pub fn prepare_outgoing_reader(home: &Path) -> Result<()> {
     let incoming = local::runtime()?;
+    // A cached release can update an installation whose older updater cannot
+    // read its package. That caller publishes with the incoming reader, and
+    // the active reader may predate the home format converted just before.
+    if let Some(caller) = std::env::var_os(UPDATE_CALLER)
+        && fs::canonicalize(caller)? == incoming
+    {
+        return Ok(());
+    }
     let Some(root) = incoming.parent().and_then(Path::parent) else { return Ok(()) };
     if !root.join("state.json").is_file() { return Ok(()) }
     let state: State = load(&root.join("state.json"))?;
@@ -1345,10 +1357,14 @@ fn merge_knowledge(
         }));
     }
     if let Err(error) = merge {
-        let paths = repair_paths(policy, &state.home)?;
-        return Ok(
-            json!({"status":"needs_agent","worktree":draft,"conflict_paths":git(&draft, &["diff", "--name-only", "--diff-filter=U"])?,"error":error.to_string(),"resume":"sifttext update --resume","repair":paths}),
-        );
+        let conflicts = git(&draft, &["diff", "--name-only", "--diff-filter=U"])?;
+        let remaining = take_official_where_mechanical(&draft, &conflicts)?;
+        if conflicts.is_empty() || !remaining.is_empty() {
+            let paths = repair_paths(policy, &state.home)?;
+            return Ok(
+                json!({"status":"needs_agent","worktree":draft,"conflict_paths":remaining.join("\n"),"error":error.to_string(),"resume":"sifttext update --resume","repair":paths}),
+            );
+        }
     }
     // Record the authored merge; submit normalizes the exact combined Git candidate.
     git(&draft, &["add", "--", "nodes", "trees"])?;
@@ -1361,6 +1377,45 @@ fn merge_knowledge(
         ],
     )?;
     resume(root, state, preflight, submission)
+}
+/// Home-format conversion rewrites every legacy node mechanically: positions
+/// replace shared child lists and wiki references become relative links. Where
+/// that is the only local difference from the previous official text, the
+/// incoming official text is the merge. Returns the conflicts that remain.
+fn take_official_where_mechanical(draft: &Path, conflicts: &str) -> Result<Vec<String>> {
+    let blob = |stage: u8, path: &str| -> Result<Option<String>> {
+        let output = crate::checked_publication::run_command(local::reader_command(
+            draft, &["cat-file", "blob", &format!(":{stage}:{path}")]))?;
+        Ok(if output.status.success() { String::from_utf8(output.stdout).ok() } else { None })
+    };
+    let mechanical = |text: &str| -> Option<String> {
+        let linked = crate::migration_size::convert_links(text).ok()?;
+        Some(crate::ordering::without_position(&crate::migration_size::without_record(&linked)))
+    };
+    let mut remaining = Vec::new();
+    for path in conflicts.lines().filter(|path| !path.is_empty()) {
+        let stages = if path.ends_with("/node.md") {
+            (blob(1, path)?, blob(2, path)?, blob(3, path)?)
+        } else {
+            (None, None, None)
+        };
+        let (Some(previous), Some(home_text), Some(official)) = stages else {
+            remaining.push(path.to_owned());
+            continue;
+        };
+        let previous = mechanical(&previous);
+        if previous.is_none() || previous != mechanical(&home_text) {
+            remaining.push(path.to_owned());
+            continue;
+        }
+        // Update drafts are sparse; the conflicted file is materialized, and
+        // --sparse stages it without widening the checkout.
+        let file = draft.join(path);
+        if let Some(parent) = file.parent() { fs::create_dir_all(parent)?; }
+        fs::write(&file, official)?;
+        git(draft, &["add", "--sparse", "--", path])?;
+    }
+    Ok(remaining)
 }
 fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(source)?;
