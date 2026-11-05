@@ -79,7 +79,10 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         }
         return account::run(command);
     }
-    if args.first().is_some_and(|cmd| sifttext_file_graph::hosted_checks::is_command(cmd)) {
+    if args.first().is_some_and(|cmd| sifttext_file_graph::hosted_checks::is_command(cmd))
+        && !(args.first().is_some_and(|cmd| cmd == "epistemic-check")
+            && args.get(1).is_some_and(|arg| arg == "--worktree"))
+    {
         return sifttext_file_graph::hosted_checks::run(&args);
     }
     if args
@@ -234,6 +237,46 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         }
         [cmd, home, flag, source] if cmd == "init" && flag == "--bundle" => {
             local::init(&policy, &absolute(home)?, Some(Path::new(source)))?
+        }
+        [cmd, flag, repo, draft, commit, base, explicit @ ..]
+            if cmd == "epistemic-check" && flag == "--worktree" =>
+        {
+            let receipt = sifttext_file_graph::checked_publication::review(
+                &policy,
+                &sifttext_file_graph::checked_publication::Request {
+                    repo: repo.into(),
+                    accepted_ref: "refs/heads/main".into(),
+                    draft: Some(draft.into()),
+                    commit: Some(commit.clone()),
+                    base: Some(base.clone()),
+                    explicit: explicit.iter().cloned().collect(),
+                    pause_before_publish: None,
+                    pause_after_publish: None,
+                },
+            );
+            let mut output: serde_json::Value = serde_json::from_str(
+                &sifttext_file_graph::checked_publication::cli_json(&receipt)?,
+            )?;
+            output["candidate"] = json!(receipt.candidate);
+            output["tree"] = json!(receipt.tree);
+            output["draft"] = json!(draft);
+            output["base"] = json!(base);
+            println!("{}", render_cli_receipt(&output)?);
+            if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() != Ok("json") {
+                if let Some(check) = &receipt.hosted_check {
+                    *hosted_summary = Some(sifttext_file_graph::hosted_checks::render_publication(check)
+                        .replace("Epistemic submit check:", "Epistemic candidate check:"));
+                }
+                if receipt.status == "reviewed" {
+                    println!("Draft retained for human approval. Submit the returned candidate commit with the same base and explicit status IDs.");
+                }
+            }
+            return if receipt.status == "reviewed" { Ok(()) } else {
+                Err(sifttext_file_graph::hosted_checks::ReportedCheckFailure.into())
+            };
+        }
+        [cmd, flag, ..] if cmd == "epistemic-check" && flag == "--worktree" => {
+            return Err("usage: sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]".into());
         }
         [cmd, repo, draft, commit, base, explicit @ ..] if cmd == "submit" => {
             let mut explicit = explicit.to_vec();

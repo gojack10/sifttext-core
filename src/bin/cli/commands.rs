@@ -76,6 +76,7 @@ const GROUPS: &[Group] = &[
         name: "check",
         guide: "1b668703-b591-4790-ae6b-5c4202413de5",
         commands: &[
+            command("epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]", "Review the prepared Git candidate; submission reuses unchanged saved results"),
             command("epistemic-check FILE|-", "Review node grounding"),
             command("epistemic-check --packet FILE", "Review a staged packet"),
             command("slop-check FILE|-", "Review writing quality").guide("869c330b-ec65-4ecd-9d03-9a09dab87010"),

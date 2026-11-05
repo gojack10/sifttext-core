@@ -90,6 +90,8 @@ Accepted changes remain in Git history. Incomplete drafts remain available for r
 
 For a logged-in paid account with credits, the binary checks changed candidate node Markdown before accepting submit.
 
+Use `sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]` to prepare and review that candidate before presenting it for approval. The draft remains private; submit its returned candidate commit after approval. Submission reuses the server's saved node review when the final tree, reviewed context and checker version match. Separate text or staged-packet checks do not certify a Git candidate.
+
 Follow [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle findings or an unchecked save after credit exhaustion or technical failure.
 
 Logged-out and free offline work remains available.

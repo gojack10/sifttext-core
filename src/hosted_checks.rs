@@ -361,7 +361,17 @@ pub(crate) fn publication(reader: &mut GitReader, before: Option<&GitView>, afte
         Ok(true) => (),
     }
     match SyncAccess::checks() {
-        Ok(mut access) => publication_with_access(reader, before, after, &mut access),
+        Ok(mut access) => publication_with_access(reader, before, after, &mut access, true),
+        Err(error) => unavailable(error),
+    }
+}
+
+/// Explicit Git-backed review uses the publication reviewer even for an account
+/// without a subscription. Its normal credit rules still apply.
+pub(crate) fn review(reader: &mut GitReader, before: Option<&GitView>, after: &GitView) -> Value {
+    if let Some(exemption) = documentation_only(before, after) { return exemption }
+    match SyncAccess::checks() {
+        Ok(mut access) => publication_with_access(reader, before, after, &mut access, false),
         Err(error) => unavailable(error),
     }
 }
@@ -388,6 +398,7 @@ pub fn sync_publication(
             before.as_deref(),
             &after,
             access,
+            true,
         ))
     };
     match read() {
@@ -412,19 +423,22 @@ fn publication_with_access(
     before: Option<&GitView>,
     after: &GitView,
     access: &mut SyncAccess,
+    subscription_only: bool,
 ) -> Value {
     if let Some(exemption) = documentation_only(before, after) { return exemption }
     let mut results = Vec::new();
     let mut attempt = || -> Result<Value> {
-        let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
-        require(
-            status == 200 && account["paid"].is_boolean(),
-            &format!("Account balance request failed (HTTP {status}, {}): {}",
-                account["error"].as_str().unwrap_or("invalid_account_response"),
-                account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
-        )?;
-        if account["paid"] != true {
-            return Ok(json!({"status":"not_required","reason":"free_account"}));
+        if subscription_only {
+            let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
+            require(
+                status == 200 && account["paid"].is_boolean(),
+                &format!("Account balance request failed (HTTP {status}, {}): {}",
+                    account["error"].as_str().unwrap_or("invalid_account_response"),
+                    account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
+            )?;
+            if account["paid"] != true {
+                return Ok(json!({"status":"not_required","reason":"free_account"}));
+            }
         }
         for (id, node) in &after.nodes {
             if crate::native_kb::documentation(id) { continue }
@@ -435,13 +449,29 @@ fn publication_with_access(
                 continue;
             }
             let text = String::from_utf8(reader.bytes(after, id)?)?;
-            let value = response(
+            let body = json!({"checker":"epistemic", "text":text,
+                "context":{"node_id":id, "candidate_tree":after.tree, "candidate_version":after.version}});
+            let mut value = response(
                 access,
                 "POST",
                 ROOT,
-                Some(&json!({"checker":"epistemic", "text":text, "context":{"node_id":id}})),
+                Some(&body),
                 false,
             )?;
+            // Authenticate the saved result at its use boundary. Older servers
+            // without candidate binding cannot certify this candidate's review.
+            if completed(&value) && (value["checker"] != "epistemic"
+                || value["checker_version"].as_str().is_none_or(str::is_empty)
+                || value["context"] != body["context"]
+                || value["text_sha256"] != crate::sha256(text.as_bytes()))
+            {
+                value["status"] = json!("failed");
+                value["complete"] = json!(false);
+                value["passed"] = Value::Null;
+                value["error"] = json!("review_identity_mismatch");
+                value["detail"] = json!("The saved result did not confirm this exact candidate and node text. Update the checker service before relying on candidate review reuse.");
+                value["output"] = json!("");
+            }
             let passed = completed(&value) && value["passed"] == true;
             let findings = has_findings(&value);
             results.push(json!({"node":id,"text_sha256":crate::sha256(text.as_bytes()),
@@ -486,6 +516,8 @@ pub fn publication_record(check: &Value) -> Value {
                             | "http_status"
                             | "checker"
                             | "checker_version"
+                            | "text_sha256"
+                            | "context"
                             | "status"
                             | "complete"
                             | "passed"

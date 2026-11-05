@@ -119,7 +119,10 @@ pub fn cli_json(receipt: &impl Serialize) -> Result<String> {
     use serde_json::json;
     let value = serde_json::to_value(receipt)?;
     let saved = value.get("home").is_some();
-    let mut output = if value["status"] == "current" {
+    let mut output = if value["status"] == "reviewed" {
+        json!({"status":"reviewed", "candidate":value["candidate"], "tree":value["tree"],
+            "version":value["version"], "published":false})
+    } else if value["status"] == "current" {
         if saved {
             json!({"status":if value["check"] == "published_checked_candidate" {"saved"} else {"recovered"},
                 "accepted":value["candidate"], "version":value["version"],
@@ -942,7 +945,14 @@ fn authored_tree_refuses_force_tracked_artifacts_including_chat_links() {
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None, false, false)
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None, false, false, false)
+}
+
+/// Prepare and review the same immutable combination used by submission without
+/// advancing the accepted ref. Any normalization remains in the retained draft;
+/// the returned candidate is the commit to show and submit after human approval.
+pub fn review(policy: &Policy, request: &Request) -> Receipt {
+    submit_inner(policy, request, true, None, &mut |_, _| Ok(()), None, None, false, false, true)
 }
 
 /// Check and accept the combination in the submitted worktree. The caller owns
@@ -959,7 +969,7 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record, None, None, false, false)
+    submit_inner(policy, request, true, previous_heads, &mut record, None, None, false, false, false)
 }
 
 pub(crate) fn save_prepared_leased(
@@ -974,7 +984,7 @@ pub(crate) fn save_prepared_leased(
 ) -> Receipt {
     submit_inner(
         policy, request, true, previous_heads, &mut record, Some(lease), reader, received,
-        accept_despite_findings,
+        accept_despite_findings, false,
     )
 }
 
@@ -988,6 +998,7 @@ fn submit_inner(
     reader: Option<&mut crate::git_snapshot::GitReader>,
     received: bool,
     accept_despite_findings: bool,
+    review_only: bool,
 ) -> Receipt {
     let start = Instant::now();
     let mut receipt = Receipt {
@@ -1043,6 +1054,7 @@ fn submit_inner(
             reader,
             received,
             accept_despite_findings,
+            review_only,
         )
     })();
     receipt.lifecycle = notes.take();
@@ -1127,6 +1139,7 @@ fn execute(
     reader: Option<&mut crate::git_snapshot::GitReader>,
     received: bool,
     accept_despite_findings: bool,
+    review_only: bool,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
     crate::real_dir(&q.repo)?;
@@ -1496,10 +1509,14 @@ fn execute(
         let path = records.join(format!("{}.json", final_view.tree));
         // An initial host import has no baseline. Later acceptance recovery reads
         // the ordinary Core record; it never schedules a backlog check.
-        if (draft.is_some() && !already) || (draft.is_none() && host_acceptance && !path.try_exists()?) {
+        if review_only || (draft.is_some() && !already) || (draft.is_none() && host_acceptance && !path.try_exists()?) {
             r.check = "hosted_epistemic_unavailable";
-            let mut result = crate::hosted_checks::publication(&mut reader,
-                if draft.is_some() { Some(&before) } else { None }, &final_view);
+            let baseline = if draft.is_some() { Some(before.as_ref()) } else { None };
+            let mut result = if review_only {
+                crate::hosted_checks::review(&mut reader, baseline, &final_view)
+            } else {
+                crate::hosted_checks::publication(&mut reader, baseline, &final_view)
+            };
             if replication { result["replication"] = serde_json::json!(true); }
             if accept_despite_findings && result["status"] == "findings" {
                 result["accepted_despite_findings"] = serde_json::json!(true);
@@ -1543,6 +1560,17 @@ fn execute(
                 return Err("hosted epistemic findings; draft preserved. To waive only this refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into());
             }
         }
+    }
+    if review_only {
+        // The hosted POST authenticates every verdict. A retained local record
+        // is diagnostic only; it never authorizes review or later publication.
+        r.status = if matches!(r.semantic_check, "passed" | "exempt" | "not_required") {
+            "reviewed"
+        } else {
+            "unavailable"
+        };
+        r.check = if r.status == "reviewed" { "review_complete" } else { "hosted_epistemic_unavailable" };
+        return Ok(());
     }
     drop(final_view);
     drop(before);

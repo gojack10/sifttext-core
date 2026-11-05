@@ -17,7 +17,17 @@ Official GitHub/bundled user-facing KB nodes are durable documentation, exempt f
 
 Do not request paid epistemic review of those documentation nodes or treat an old finding on them as repair work. An exempt receipt is not a PASS. Saved historical results remain available; exemption neither rewrites their verdicts nor reverses earlier charges. Mixed submissions still check non-exempt changed nodes.
 
-During authenticated paid submission, Core requests hosted review of non-exempt changed node Markdown from the immutable combined candidate. Read the binary's actual receipt to establish whether review completed. An agent's claim that a check passed cannot satisfy this gate.
+For a proposal that will be submitted, commit the private draft and use the Git-backed review:
+
+```sh
+sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]
+```
+
+This prepares the same combined candidate as submission: merge accepted work, normalize statuses and apply structural checks, then review the changed non-exempt node Markdown. Preparation may add commits to the retained draft. Use the returned `candidate` commit when rendering the proposal and later submitting it, with the same base and explicit status UUIDs. Nothing is accepted by this review command.
+
+Submission asks the authenticated service for that exact reviewed node text and final candidate tree/version under the current checker version. The service returns a valid saved result without another model run or charge when those inputs match. A different commit ID with the same final tree can reuse the review. Changed combined content, relevant context or checker rules requires a new applicability decision; unchanged individual model judgments may still be reused by the service. A local receipt or agent's claim cannot authorize a PASS. Structural checking and human approval remain required.
+
+During authenticated paid submission, Core uses this same node reviewer for non-exempt changed candidate Markdown. Read the binary's actual receipt to establish whether review completed. Credit shortage or a technical failure does not turn an incomplete review into a PASS.
 
 | Result | Submit behavior |
 | --- | --- |
@@ -55,6 +65,8 @@ Text mode reviews the supplied text. Packet mode stages the review as follows:
 3. Review complete node bodies against that context.
 
 Include the decisive source context in the input. The checker reviews only the material supplied.
+
+These supplied-text and staged-packet reviews are separate from the Git-backed submission review. Their PASS does not certify a Git candidate. Use `--worktree` for the reusable proposal review; choose a packet review only when its additional source/outline review is wanted.
 
 A packet has this shape:
 

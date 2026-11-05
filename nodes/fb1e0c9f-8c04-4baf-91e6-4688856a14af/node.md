@@ -133,7 +133,7 @@ integration retains committed history and its attribution.
 
 Do not bypass the gate or change frozen limits.
 
-Use the optional hosted `epistemic-check` and `slop-check` commands when a separate review is needed.
+For the pre-proposal epistemic review, use `sifttext epistemic-check --worktree "$home" "$wt" "$candidate" "$base_sha"` with the same explicit status UUIDs intended for submit. This prepares the final combined candidate without accepting it. Use its returned candidate commit to render the proposal and submit after approval. The server reuses the exact saved candidate review at submission when its content, context and checker rules still match. Supplied-text and packet modes remain separate reviews; `slop-check` is optional writing review.
 
 Inspect actual writes and any partial failure before retrying.
 
