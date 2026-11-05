@@ -67,7 +67,7 @@ Preserve the user's knowledge and session traces throughout diagnosis.
 
 Implement the smallest repair. Check that it builds and starts; Jack tests the behavior.
 
-NO. FUCKING. TESTS. Never add or run a test unless Jack explicitly asks for it and designs it. No screenshots unless he explicitly requests screenshots. Existing Bend checks inside the normal build remain build steps, not a new agent verification pass.
+Do not add or run tests unless Jack explicitly requests and designs them. No screenshots unless he explicitly requests screenshots. Existing Bend checks inside the normal build remain build steps, not a new agent verification pass.
 
 Keep the local repair available and resume the user's task even when upstream publication is unavailable.
 
