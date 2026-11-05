@@ -20,6 +20,8 @@ Update prepares the managed knowledge home with the incoming executable before a
 
 For the one-time transition from v0.3.14 or earlier, the old updater cannot run this new preparation step. After that upgrade, run `sifttext update --prepare` once before using indexed commands. This offline operation also prepares a restored or separately managed view; source builders can run `sifttext index /absolute/path/to/store` with their new executable. Except for the one-time automatic format conversion, these operations do not change authored knowledge. A missing or incompatible cache produces an explicit preparation request rather than hiding a rebuild inside a read.
 
+An updater from v0.3.15 or earlier cannot read a knowledge package that keeps display order in per-child positions. It stops with `failure_stage:candidate_capture` and a missing `children.order` path after caching the new release under the installation's `releases/` directory. Run that cached release's executable once through the installation root, for example `SIFTTEXT_INSTALL_ROOT="$HOME/.local/share/sifttext" "$HOME/.local/share/sifttext/releases/<newest release>/sifttext" update`. It converts the home, merges the official knowledge and activates itself. Official nodes whose only local change is that conversion take the incoming text without a repair worktree. Later updates use the managed command normally.
+
 ## Establish permission and destinations
 
 For an information request, limit work to inspection until the user authorizes installation.
