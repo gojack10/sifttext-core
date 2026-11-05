@@ -86,7 +86,13 @@ Retrieval guide: <verified absolute path to Retrieve SiftText Knowledge>
 At the start of every new chat, unless I say not to use SiftText, before any other tool call:
 1. Run `sifttext instructions`.
 2. Read the Entry above and follow it, plus any `agent-instructions` the command returns.
-3. Before retrieving knowledge, read the Retrieval guide above, do not search first.
+3. Before retrieving knowledge, read the Retrieval guide above.
+
+### SiftText name recognition
+
+Watch for dictation and typing errors that may refer to SiftText. Use context to recognize variants such as “CivTech”, “Ceftex”, “Civ Tax”, “Siftex”, “CIFtext”, “SivText”, “SIPText” and “Syntex”.
+
+When wording could plausibly mean either SiftText or something else, such as “subtext” or “syntax”, ask once which meaning the user intends and carry that clarification forward in the conversation.
 ````
 
 ## Migrate selected memory
