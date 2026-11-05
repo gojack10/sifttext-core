@@ -892,11 +892,12 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
     }
     let publication = selection::repository(store)?;
     let remote_sha = remote["accepted"].as_str().map(oid).transpose()?;
+    // The latest local projection may never have reached the service.
     let have = state
         .projection
         .as_ref()
-        .filter(|p| oid(&p.published).is_ok())
-        .map(|p| p.published.clone());
+        .and_then(|p| p.received.clone())
+        .filter(|received| oid(received).is_ok());
     // No objects request or projection scan for an unchanged shared identity.
     if remote_sha != have.as_deref() {
         if let Some(incoming) = remote_sha {
@@ -914,25 +915,42 @@ fn cycle(store: &Store, state: &mut State, runtime: &Path) -> Result<()> {
             .trim()
                 == format!("{incoming} commit");
             if !retained {
-                let path = have
-                    .as_ref()
-                    .map(|h| format!("/sync/v1/objects?have={h}"))
-                    .unwrap_or_else(|| "/sync/v1/objects".into());
-                let response = exchange.request(&path, None)?;
-                compatible(&response)?;
-                if response["home"]["id"] != remote["home"]["id"] {
-                    return Err("sync object ownership mismatch".into());
+                if git(&publication.home, &["cat-file", "-t", incoming])
+                    .is_ok_and(|kind| kind == "commit")
+                {
+                    // A locally built publication may now be hosted. Pin its
+                    // existing objects, then apply the normal selected import.
+                    git(
+                        &publication.home,
+                        &["update-ref", "--no-deref", &format!("refs/sifttext-sync/objects/{incoming}"), incoming],
+                    )?;
+                } else {
+                    let path = have
+                        .as_ref()
+                        .map(|h| format!("/sync/v1/objects?have={h}"))
+                        .unwrap_or_else(|| "/sync/v1/objects".into());
+                    let response = exchange.request(&path, None)?;
+                    compatible(&response)?;
+                    if response["home"]["id"] != remote["home"]["id"] {
+                        return Err("sync object ownership mismatch".into());
+                    }
+                    if response["accepted"].as_str() != remote_sha {
+                        return Err("hosted accepted state changed; retry without uploading".into());
+                    }
+                    import_bundle(&publication, &response, incoming)?;
                 }
-                if response["accepted"].as_str() != remote_sha {
-                    return Err("hosted accepted state changed; retry without uploading".into());
-                }
-                import_bundle(&publication, &response, incoming)?;
             }
             scoped_history(&publication, incoming, HistoryScope::Received)?;
             if let Err(error) = selection::import(store, &publication, state, runtime, incoming) {
                 retain_selected_error(store, state, incoming, &error.to_string())?;
                 return Err(error);
             }
+            // Successful no-op imports also acknowledge this accepted history.
+            // Object custody alone never advances the applied download base.
+            let projection = state.projection.get_or_insert_with(Default::default);
+            projection.received = Some(incoming.into());
+            projection.blocked = None;
+            store.save(state)?;
         }
     }
     // Pending hosted contributions remain visible and in server custody; they
