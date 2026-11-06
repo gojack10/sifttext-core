@@ -74,7 +74,7 @@ For account access, upload consent, sharing selection and sync recovery, read [A
 
 ## Hosted checks
 
-Use [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) before submit or for `sifttext epistemic-check FILE` and staged packet review.
+Use [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to prepare the work packet, review a draft with `sifttext epistemic-check`, and submit it with the same packet.
 
 For on-demand writing review with `sifttext slop-check FILE`, follow [AI Slop Writing Check](../869c330b-ec65-4ecd-9d03-9a09dab87010/node.md).
 

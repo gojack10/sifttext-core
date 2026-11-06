@@ -108,12 +108,15 @@ A private commit is not accepted knowledge.
 
 ## Submit the exact combined candidate
 
-```sh
-sifttext submit "$home" "$wt" "$candidate" "$base_sha"
+For saves that require hosted review, follow [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) before showing the proposal. Use the returned commit as `candidate` and the packet path as `work_packet`. After approval, submit that candidate with the same packet.
 
+```sh
+sifttext submit "$home" "$wt" "$candidate" "$base_sha" "$work_packet"
 ```
 
-Append only full UUIDs for explicitly authorized status requests.
+For a local save that does not require hosted review, omit `"$work_packet"`.
+
+Append only full UUIDs for explicitly authorized status requests. Use the same explicit UUIDs for review and submission.
 
 reopening an existing resolved leaf requires its explicit UUID.
 
@@ -133,11 +136,7 @@ integration retains committed history and its attribution.
 
 Do not bypass the gate or change frozen limits.
 
-For the pre-proposal epistemic review, use `sifttext epistemic-check --worktree "$home" "$wt" "$candidate" "$base_sha"` with the same explicit status UUIDs intended for submit. This prepares the final combined candidate without accepting it. Use its returned candidate commit to render the proposal and submit after approval. The server reuses the exact saved candidate review at submission when its content, context and checker rules still match. Supplied-text and packet modes remain separate reviews; `slop-check` is optional writing review.
-
 Inspect actual writes and any partial failure before retrying.
-
-Before submitting knowledge, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle Core's epistemic review.
 
 Read the actual receipt to establish whether checking completed. Agents remain responsible for interpreting the evidence within the user's authority.
 
@@ -153,7 +152,7 @@ Allocate a new draft only for the next authorized edit.
 
 ## Refusal, repair and recovery
 
-Preserve the draft, diagnostics, original submit arguments and Core's pending journals.
+Preserve the draft, work packet, diagnostics, original submit arguments, and Core's pending journals.
 
 A failure may mean `not_accepted`, `accepted_incomplete` or `unknown`.
 

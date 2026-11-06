@@ -41,7 +41,7 @@ Use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) when a s
 
 The official GitHub/bundled user-facing KB is durable documentation, exempt from epistemic-state review. Do not run or require an epistemic check for those maintained instruction identities, bill for their review, or label them passed without a review. Review their source accuracy, instruction route and structural integrity normally. The exemption follows the identities shipped in Core's bundled KB, including locally maintained copies; it does not extend to arbitrary customer knowledge or founder development records.
 
-For non-exempt proposed nodes, commit the private draft and run `sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]` before showing the proposal. It prepares and reviews the same immutable combined candidate as submission while retaining the draft. Use its returned candidate commit for the proposal and submission. An unchanged final tree and reviewed context reuses the authentic server result under compatible checker rules, without another model run or charge. Supplied-text and packet reviews have separate scopes and do not certify that Git candidate. Repair findings and re-check until passing. Show only a passing proposal unless something genuinely significant needs the user's decision. Neither a passing check nor documentation exemption replaces approval.
+For drafts that require hosted review, prepare a work packet and follow [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to review the same Git candidate that submission will use. Render the proposal from the returned candidate. Repair supported findings and recheck within the user's grant. Present the passing proposal for approval. If an incomplete review or unresolved finding needs the user's decision, explain it alongside the proposed change.
 
 Follow [Render a Tree Delta](../5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f/node.md) and render the proposal with `sifttext tree-render` so the displayed change is the actual tree delta.
 
@@ -53,7 +53,7 @@ A proposal-only assignment ends at review.
 
 ## Save and finish
 
-Before submit, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle the result of Core's binary-enforced paid submission check.
+After approval, submit the candidate shown in the proposal. When hosted review applies, use the same work packet, base, and explicit status IDs. Follow [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle the result and record any waiver the user explicitly approves for this save.
 
 Use [Commit Usable Understanding](../edaefe20-50b7-4859-8645-e4c23f4e07ac/node.md) to establish what a later reader can conclude or do.
 

@@ -17,86 +17,58 @@ Official GitHub/bundled user-facing KB nodes are durable documentation, exempt f
 
 Do not request paid epistemic review of those documentation nodes or treat an old finding on them as repair work. An exempt receipt is not a PASS. Saved historical results remain available; exemption neither rewrites their verdicts nor reverses earlier charges. Mixed submissions still check non-exempt changed nodes.
 
-For a proposal that will be submitted, commit the private draft and use the Git-backed review:
+## Prepare the work packet
 
-```sh
-sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]
-```
-
-This prepares the same combined candidate as submission: merge accepted work, normalize statuses and apply structural checks, then review the changed non-exempt node Markdown. Preparation may add commits to the retained draft. Use the returned `candidate` commit when rendering the proposal and later submitting it, with the same base and explicit status UUIDs. Nothing is accepted by this review command.
-
-Submission asks the authenticated service for that exact reviewed node text and final candidate tree/version under the current checker version. The service returns a valid saved result without another model run or charge when those inputs match. A different commit ID with the same final tree can reuse the review. Changed combined content, relevant context or checker rules requires a new applicability decision; unchanged individual model judgments may still be reused by the service. A local receipt or agent's claim cannot authorize a PASS. Structural checking and human approval remain required.
-
-During authenticated paid submission, Core uses this same node reviewer for non-exempt changed candidate Markdown. Read the binary's actual receipt to establish whether review completed. Credit shortage or a technical failure does not turn an incomplete review into a PASS.
-
-| Result | Submit behavior |
-| --- | --- |
-| Official documentation exemption | Continue publication without epistemic review or a new review charge for those nodes; do not report PASS. |
-| Passing check | Continue the checked publication procedure. |
-| Findings | Refuse acceptance and preserve the draft for repair unless the user explicitly approves accepting despite findings for this submission. |
-| Credit shortage or technical failure | Save marked unchecked and explain the missing check. |
-| Logged-out or free offline use | Keep the existing local save path. |
-
-Hosted authored submissions use native Core checking too. Own-account replication of already accepted history retains findings without refusing transport on that ground; integrity, topology, account binding and consent checks still apply. This does not approve sharing a flagged node with another person. Resolve its findings before such sharing, and preserve the human approval boundary.
-
-## Accept despite findings only with explicit approval
-
-When `sifttext submit --help` lists `--accept-despite-findings`, the user may approve waiving the findings refusal for one submission:
-
-```sh
-sifttext submit HOME WORKTREE COMMIT BASE --accept-despite-findings
-```
-
-Documentation exemption is automatic and does not use this flag. For non-exempt work, agents must never pass `--accept-despite-findings` without the user's explicit OK. Approval to save knowledge alone is not approval to waive findings. If the flag is unavailable in the installed version, preserve the draft rather than bypassing publication.
-
-The checker still runs. Findings stay recorded as `semantic_check: findings`; the check record marks `accepted_despite_findings` without relabeling the verdict as passed or unchecked. Structural, integrity and consent checks still refuse invalid publication. The flag waives only the findings refusal for this invocation, not a later submission or permission to share a flagged node with another person. `-y` controls large output only and does not waive findings.
-
-## Check supplied text on demand
-
-```sh
-sifttext epistemic-check FILE
-sifttext epistemic-check --packet PACKET.json
-```
-
-Text mode reviews the supplied text. Packet mode stages the review as follows:
-
-1. Establish the work record.
-2. Review the proposed outline.
-3. Review complete node bodies against that context.
-
-Include the decisive source context in the input. The checker reviews only the material supplied.
-
-These supplied-text and staged-packet reviews are separate from the Git-backed submission review. Their PASS does not certify a Git candidate. Use `--worktree` for the reusable proposal review; choose a packet review only when its additional source/outline review is wanted.
-
-A packet has this shape:
+Write a JSON file with a `work_record` explaining what happened and an `outline` showing the proposed nodes and their relationships. Include decisive `source_evidence` and an `artifact_plan` when relevant. Send only material authorized for hosted processing.
 
 ```json
 {
-  "work_record": "What happened and the sources supporting the proposal.",
-  "outline": "Node identities and proposed relationships.",
-  "nodes": [{"id": "NODE_UUID", "markdown": "Complete node Markdown."}],
-  "artifact_plan": "Who owns the artifacts and where they belong, if applicable."
+  "work_record": "What happened, what was decided, and what supports it.",
+  "outline": "The proposed nodes and how they relate.",
+  "source_evidence": [{"text": "A source excerpt", "locator": "Where it came from"}],
+  "artifact_plan": "Who owns any supporting artifacts and where they belong."
 }
 ```
 
-Send only material authorized for hosted processing.
+Core takes the changed non-exempt node text from the final Git candidate. The checker reviews the work record, the outline, and the node bodies against that context.
 
-Core rejects encoded JSON requests above 128 KiB. Reduce the supplied text or packet to leave room for JSON fields and escaping.
+## Review and submit the same draft
 
-## Handle findings
+Commit the private draft and run:
 
-Compare each finding with the affected text and its evidence. Repair a supported defect within the user's grant. If a proposed correction would lose supported meaning, explain that with evidence. Never invent facts to satisfy a checker.
+```sh
+sifttext epistemic-check HOME DRAFT COMMIT BASE WORK_PACKET.json [EXPLICIT_UUID ...]
+```
 
-| Failed stage | Repair |
+This prepares the same combined candidate as submission, including merging accepted work, normalizing statuses, and applying structural checks. Use the returned `candidate` commit to render the proposal. After the user approves the proposal, submit with the same work packet, base, and explicit status IDs:
+
+```sh
+sifttext submit HOME DRAFT COMMIT BASE WORK_PACKET.json [EXPLICIT_UUID ...]
+```
+
+The authenticated service reuses a saved PASS when the final candidate tree, work packet, and checker version match. Reuse adds no model run or charge. When there is no applicable PASS, submission runs the same review. Structural checks and human approval remain required.
+
+## When a save is blocked
+
+| Result | Next action |
 | --- | --- |
-| Work record | Correct the account of the work while retaining sound drafts. |
-| Outline | Repair the organization and regenerate the affected bodies. |
+| Missing or invalid work packet | Prepare or repair the packet from available evidence. |
+| Incomplete review or insufficient credits | Keep the draft. Use the recorded reason to recover the result or explain what prevented review. |
+| Findings | Compare them with the draft and its evidence. Repair supported defects within the user's grant. |
 
-Report the classifications or explanations actually returned. Do not turn a reason code into a purported model-written explanation.
+For an incomplete review, explain which notes the user asked you to write, what the review checks in those notes, and why they haven’t been added. If saving without review is an option, ask the user to approve it for this save. Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md).
 
-Ask for approval of any correction beyond the existing grant.
+After explicit approval to save without review, use:
 
-Continue Commit's publication procedure after review.
+```sh
+sifttext submit HOME DRAFT COMMIT BASE [WORK_PACKET.json] [EXPLICIT_UUID ...] --skip-epistemic-check
+```
+
+The receipt marks the save as unchecked and records the waiver. Check it later with the user’s permission.
+
+If the check returned findings, explain the actual findings. Use `--accept-despite-findings` only if the user explicitly approves saving this draft with those findings. Include the work packet. The receipt preserves the findings and records the override. Both flags apply to one submission and preserve the structural, integrity, and consent gates.
+
+Logged-out and free-account local saves follow the local save path. Own-account replication of already accepted history retains findings for repair while applying its existing integrity and consent checks.
 
 ## Understand credits
 
@@ -158,16 +130,3 @@ sifttext check-result REQUEST_ID --delete
 ```
 
 Deletion ends retrieval and reuse of that result. The completed service's charge remains.
-
-## Explain an unchecked save
-
-Unchecked means epistemic review remains pending. Report the reason for the missing check, keeping the saved knowledge's quality unassessed.
-
-| Reason | Explain or offer |
-| --- | --- |
-| Credits ran out | Offer renewal or an explicit top-up. |
-| Technical failure | Explain that the check consumed zero customer credits. |
-
-Check the backlog only with the user's permission, including after credits or service return.
-
-Return to [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) with the actual result and unfinished work.
