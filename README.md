@@ -34,7 +34,7 @@ External AI-client subscriptions are separate purchases.
 
 | Hosted operation | Guidance |
 | --- | --- |
-| `sifttext epistemic-check FILE` | [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) |
+| `sifttext epistemic-check` | [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) |
 | `sifttext slop-check FILE` | [AI Slop Writing Check](nodes/869c330b-ec65-4ecd-9d03-9a09dab87010/node.md), on demand only |
 | `sifttext check-result REQUEST_ID` | Retrieve a saved check without another run or charge |
 
@@ -88,11 +88,9 @@ Submit normalizes statuses and checks the exact combined candidate before updati
 
 Accepted changes remain in Git history. Incomplete drafts remain available for recovery.
 
-For a logged-in paid account with credits, the binary checks changed candidate node Markdown before accepting submit.
+For a logged-in paid account, the binary reviews a work packet and the changed node text from the final candidate before accepting a submission.
 
-Use `sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]` to prepare and review that candidate before presenting it for approval. The draft remains private; submit its returned candidate commit after approval. Submission reuses the server's saved node review when the final tree, reviewed context and checker version match. Separate text or staged-packet checks do not certify a Git candidate.
-
-Follow [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) to handle findings or an unchecked save after credit exhaustion or technical failure.
+Follow [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) to review a draft, submit the returned candidate with the same work packet, and resolve a blocked save.
 
 Logged-out and free offline work remains available.
 
