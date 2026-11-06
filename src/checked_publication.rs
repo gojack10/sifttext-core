@@ -459,6 +459,15 @@ fn ignored_entry(root: &Path, path: &Path, durable_home: bool) -> Result<()> {
         crate::real_dir(&root.join(parent))?;
     }
     let metadata = fs::symlink_metadata(root.join(path))?;
+    // Durable navigation folders are never recursively removed. Do not walk
+    // all of their entries on each reader advance.
+    if durable_home && let ["nodes", id, name] = parts.as_slice() && crate::uuid(id) {
+        match *name {
+            "links-to" | "linked-from" if metadata.is_dir() => return Ok(()),
+            "parent" if crate::node_links::is_parent_link(&root.join(path)) => return Ok(()),
+            _ => (),
+        }
+    }
     if matches!(parts.as_slice(), ["nodes", id, "artifacts", "chats", _] if crate::uuid(id)) {
         return require(metadata.file_type().is_symlink(), "local chat artifact must be a symlink");
     }

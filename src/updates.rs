@@ -84,7 +84,8 @@ pub fn prepare_incoming(home: &Path) -> Result<()> {
     if fs::canonicalize(root.join(target))? != app { return Ok(()) }
     let state: State = load(&root.join("state.json"))?;
     if fs::canonicalize(home)? != fs::canonicalize(&state.home)? { return Ok(()) }
-    prepare_activation(root, &state, activation["baseline"].as_str())
+    prepare_activation(root, &state, activation["baseline"].as_str())?;
+    crate::node_links::prepare(home)
 }
 
 pub fn harness_instruction_notice(home: &Path) -> Result<Value> {
@@ -1661,6 +1662,7 @@ pub fn update_with_submission_receipt(
         require(!root.join("activation.json").exists() && state.pending.is_none(),
             "finish the pending update with `sifttext update --resume` before preparing")?;
         let views = prepare_views(&root.join(&state.application), &state.home)?;
+        crate::node_links::prepare(&state.home)?;
         prepare_harness(root, &state.home, None, state.baseline.as_deref())?;
         migrate_update_policy(&state.home)?;
         return Ok(json!({"status":"prepared", "application":state.application, "views":views}));
@@ -1945,6 +1947,7 @@ fn rollback(root: &Path, state: &mut State, submission: &mut Option<Value>) -> R
 }
 fn resume_rollback(root: &Path, state: &mut State, previous: Recovery, submission: &mut Option<Value>) -> Result<Value> {
     let policy = checked_runtime(&root.join(&previous.application))?;
+    crate::node_links::retire(&state.home)?;
     let mut activation = json!({"application":previous.application,"application_sha256":previous.application_sha256,"knowledge":previous.knowledge,"baseline":previous.baseline,"previous":null});
     if let Some(mut pending) = state.pending.clone() {
         adopt_committed_repair(&state.home, &mut pending)?;

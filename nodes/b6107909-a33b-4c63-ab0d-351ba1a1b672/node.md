@@ -21,6 +21,9 @@ Keep it separate from the Core source checkout and the software installation.
 ```text
 nodes/UUID/node.md
 nodes/UUID/children/UUID
+nodes/UUID/parent
+nodes/UUID/links-to/UUID
+nodes/UUID/linked-from/UUID
 nodes/UUID/outline.lean
 nodes/UUID/outline.full.lean
 nodes/UUID/artifacts/NAME
@@ -38,6 +41,8 @@ A leaf may omit its `children` directory; an absent or empty directory means zer
 Earlier releases require child directories even for leaves. Update every application or service reading a shared home before publishing marker-free leaves to it. Root containers and their existing markers are unchanged.
 
 Write body references as normal Markdown links. Resolve a relative target from the containing file: from `nodes/SOURCE/node.md`, link a sibling with `[Name](../TARGET/node.md)`. Preserve the target UUID and meaningful label. Structured front-matter `see_also` records remain data, not Markdown links.
+
+The normal knowledge home generates three navigation paths. `parent` opens the parent node. `links-to/` and `linked-from/` show cross-references from relative Markdown node links and `see_also`. These shortcuts are local and rebuildable. Edit the source node or its authored child links to change a relationship. Managed updates prepare the shortcuts once and record `node_links_format_version` in `.sifttext/config.json`.
 
 Generated views live at `nodes/<id>/outline.lean` (the node and its direct children) and `nodes/<id>/outline.full.lean` (the whole subtree). Prefer ordinary file tools on them. The outline command fast-tracks the same files and prepends `outline-file` with the selected file's full absolute path. These rebuildable views may need generation before they exist.
 

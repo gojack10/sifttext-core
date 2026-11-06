@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const SCHEMA: &str = "sifttext-index/6";
+const SCHEMA: &str = "sifttext-index/7";
 #[derive(Default)]
 struct Work {
     refreshed: bool,
@@ -25,6 +25,9 @@ struct Work {
     nodes_main_reused: u64,
     nodes_donor_reused: u64,
     outline_rows_written: u64,
+    node_link_writes: u64,
+    node_link_extract_us: u128,
+    node_link_refresh_us: u128,
     refresh_lock_wait_us: u128,
     sql_writer_held_us: u128,
 }
@@ -40,6 +43,8 @@ impl Drop for Work {
                 "nodes_parsed":self.nodes_parsed,"nodes_main_reused":self.nodes_main_reused,
                 "files_hashed":self.files_hashed,"hash_reused":self.hash_reused,
                 "nodes_donor_reused":self.nodes_donor_reused,"outline_rows_written":self.outline_rows_written,
+                "node_link_writes":self.node_link_writes,"node_link_extract_us":self.node_link_extract_us,
+                "node_link_refresh_us":self.node_link_refresh_us,
                 "refresh_lock_wait_us":self.refresh_lock_wait_us,"sql_writer_held_us":self.sql_writer_held_us
             }));
         }
@@ -210,8 +215,10 @@ fn compatible(connection: &Connection) -> Result<bool> {
         && meta(connection, "processing")?.as_deref() == Some(processing_identity()))
 }
 
-fn current(connection: &Connection, snapshot: &Snapshot) -> Result<Option<(String, String)>> {
-    if !compatible(connection)? || meta(connection, "artifacts_ready")?.as_deref() != Some("1") {
+fn current(connection: &Connection, snapshot: &Snapshot, node_links: bool) -> Result<Option<(String, String)>> {
+    if !compatible(connection)? || meta(connection, "artifacts_ready")?.as_deref() != Some("1")
+        || (node_links && meta(connection, "node_links_ready")?.as_deref() != Some("1"))
+    {
         return Ok(None);
     }
     let (Some(version), Some(generation)) = (meta(connection, "version")?, meta(connection, "generation")?) else {
@@ -296,6 +303,9 @@ fn setup(connection: &Connection) -> Result<()> {
             children TEXT NOT NULL, record TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS links (source TEXT NOT NULL, target TEXT NOT NULL,
             reason TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(source,target));
+        CREATE INDEX IF NOT EXISTS links_target ON links(target);
+        CREATE TABLE IF NOT EXISTS body_links (source TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(source,target));
+        CREATE INDEX IF NOT EXISTS body_links_target ON body_links(target);
         CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS sources (path TEXT PRIMARY KEY, signature BLOB NOT NULL, content_hash TEXT);
         CREATE TABLE IF NOT EXISTS child_links (source TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(source,target));
@@ -447,6 +457,7 @@ fn refresh(
     snapshot: &Snapshot,
     donor: Option<(&Connection, &Path)>,
     accepted: Option<(&str, &str)>,
+    node_links: bool,
     work: &mut Work,
 ) -> Result<bool> {
     work.refreshed = true;
@@ -455,6 +466,8 @@ fn refresh(
     // global work; ordinary reads do not re-audit the forest on a new boot.
     let force_artifact_verification = meta(connection, "artifacts_ready")?.as_deref() != Some("1")
         || !crate::outlines::indexed_current(connection)?;
+    let rebuild_links = node_links && (force || force_artifact_verification
+        || meta(connection, "node_links_ready")?.as_deref() != Some("1"));
     setup(connection)?;
     let version = version(connection, snapshot, !force, snapshot.accepted_version(accepted), work)?;
     let mut objects = Objects::new(&snapshot.repo);
@@ -474,6 +487,7 @@ fn refresh(
         }
     }
     drop(delta);
+    let link_changes = if node_links && !rebuild_links { changes.clone() } else { BTreeSet::new() };
     // A child's position belongs to that child, but changes its parent's view.
     let changed: Vec<_> = changes.iter().cloned().collect();
     for child in changed {
@@ -517,16 +531,28 @@ fn refresh(
     let writer = Instant::now();
     let result = (|| -> Result<bool> {
         let tx = connection.transaction()?;
+        let before = if node_links && !rebuild_links {
+            let started = Instant::now();
+            let links = crate::node_links::affected(&tx, &link_changes)?;
+            work.node_link_refresh_us += started.elapsed().as_micros();
+            links
+        } else { BTreeSet::new() };
         crate::leviathan_search::initialize_incremental(&tx)?;
         for id in &changes {
             if !present.contains(id) {
                 tx.execute("DELETE FROM nodes WHERE id=?1", [id])?;
                 tx.execute("DELETE FROM links WHERE source=?1", [id])?;
+                tx.execute("DELETE FROM body_links WHERE source=?1", [id])?;
                 crate::leviathan_search::remove_one(&tx, id)?;
                 relations(&tx, id, None)?;
             } else {
                 let (record, body): (String, Option<String>) = tx.query_row("SELECT record,body FROM projected WHERE id=?1", [id], |r| Ok((r.get(0)?,r.get(1)?)))?;
                 let row: Value = serde_json::from_str(&record)?;
+                if body.is_some() {
+                    let started = Instant::now();
+                    crate::node_links::index_body(&tx, id, row["content"].as_str().ok_or("missing content")?)?;
+                    work.node_link_extract_us += started.elapsed().as_micros();
+                }
                 write_record(&tx, &row, body.as_deref())?;
                 relations(&tx, id, Some(&row))?;
             }
@@ -541,6 +567,19 @@ fn refresh(
         // Project/render from the complete logical overlay. git_sources retains
         // only immutable baseline metadata in this same rebuildable SQLite cache.
         work.outline_rows_written += crate::outlines::refresh_indexed_from(&tx, root, &version, &changes, force || force_artifact_verification, donor)?;
+        if node_links {
+            let started = Instant::now();
+            work.node_link_writes += if rebuild_links {
+                crate::node_links::rebuild(&tx, root)?
+            } else {
+                let after = crate::node_links::affected(&tx, &link_changes)?;
+                crate::node_links::update(root, &before, &after)?
+            };
+            work.node_link_refresh_us += started.elapsed().as_micros();
+            put(&tx, "node_links_ready", "1")?;
+        } else {
+            put(&tx, "node_links_ready", "0")?;
+        }
         // Git reconciles tracked, staged, untracked and deleted inputs, including
         // sparse omissions. Generated-output retirement cannot change this identity.
         if !snapshot.unchanged()? { return Ok(false) }
@@ -582,7 +621,7 @@ pub(crate) fn repair(policy: &Policy, path: &Path) -> Result<(String, i64)> {
 pub(crate) fn prepare(
     _policy: &Policy, path: &Path, donor: Option<&Path>,
 ) -> Result<(String, i64)> {
-    with_source(path, donor, None, true, false, |tx, _| {
+    with_source(path, donor, None, true, false, false, |tx, _| {
         Ok(tx.query_row("SELECT count(*) FROM nodes", [], |row| row.get(0))?)
     })
 }
@@ -603,7 +642,7 @@ pub(crate) fn with_current_from<T>(
     prepared: Option<&Path>,
     query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
-    with_source(path, prepared, None, false, true, query)
+    with_source(path, prepared, None, false, true, false, query)
 }
 
 /// Reader advance needs completed derived state, not a query over mutable rows.
@@ -613,12 +652,24 @@ pub(crate) fn with_current_from<T>(
 pub(crate) fn refresh_current(
     path: &Path, prepared: Option<&Path>, accepted: Option<(&str, &str)>,
 ) -> Result<String> {
-    Ok(with_source(path, prepared, accepted, false, false, |_, _| Ok(()))?.0)
+    Ok(with_source(path, prepared, accepted, false, false, false, |_, _| Ok(()))?.0)
+}
+
+pub(super) fn prepare_node_links(path: &Path) -> Result<()> {
+    with_source(path, None, None, true, false, true, |_, _| Ok(()))?;
+    Ok(())
+}
+
+pub(super) fn invalidate_node_links(path: &Path) -> Result<()> {
+    let (connection, directory) = cache(path)?;
+    let _lock = lock(&directory)?;
+    put(&connection, "node_links_ready", "0")
 }
 
 fn with_source<T>(
     path: &Path, prepared: Option<&Path>,
     accepted: Option<(&str, &str)>, prepare: bool, verify_query: bool,
+    prepare_links: bool,
     mut query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
     let mut work = Work::default();
@@ -628,6 +679,7 @@ fn with_source<T>(
     let database = directory.join("index.sqlite");
     let database_id = identity(&database)?;
     let donor = prepared.and_then(|p| donor(p).ok());
+    let node_links = prepare_links || crate::node_links::enabled(&root)?;
     let capture = || Snapshot::read(&root);
     for _ in 0..4 {
         let snapshot = match capture() {
@@ -639,7 +691,7 @@ fn with_source<T>(
         let tx = connection.transaction()?;
         require(prepare || (compatible(&tx)? && crate::outlines::indexed_current(&tx)?),
             &format!("derived data requires update preparation, not a read-time rebuild. Run `sifttext index {}` (managed installation: `sifttext update --prepare`), then retry", root.display()))?;
-        let tx = if current(&tx, &snapshot)?.is_none() {
+        let tx = if current(&tx, &snapshot, node_links)?.is_none() {
             drop(tx);
             let waiting = Instant::now();
             refresh_lock = Some(lock(&directory)?);
@@ -647,9 +699,9 @@ fn with_source<T>(
             // Another refresher may have published while this caller waited.
             // Reuse our inputs: mutable bytes validate their native identities
             // when read, and the final barrier catches any intervening changes.
-            if current(&connection, &snapshot)?.is_none() {
+            if current(&connection, &snapshot, node_links)?.is_none() {
                 if !refresh(&mut connection, &root, &snapshot,
-                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, &mut work)? {
+                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, node_links, &mut work)? {
                     continue;
                 }
             } else if !snapshot.unchanged()? {
@@ -657,7 +709,7 @@ fn with_source<T>(
             }
             connection.transaction()?
         } else { tx };
-        let Some((version, generation)) = current(&tx, &snapshot)? else { continue };
+        let Some((version, generation)) = current(&tx, &snapshot, node_links)? else { continue };
         let result = query(&tx, &version)?;
         tx.commit()?;
         // Real queries retain their post-query source barrier. Ensure-only
@@ -666,7 +718,7 @@ fn with_source<T>(
         let (observer, _) = cache(&root)?;
         // A fresh connection observes another publisher's dirty generation;
         // the original read transaction cannot. No additional source scan.
-        if current(&observer, &snapshot)? != Some((version.clone(), generation)) {
+        if current(&observer, &snapshot, node_links)? != Some((version.clone(), generation)) {
             continue;
         }
         for (p, expected) in [(&directory, directory_id), (&database, database_id)] {

@@ -209,6 +209,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             _ => return Err("usage: sifttext instructions [STORE]".into()),
         };
         sifttext_file_graph::home_format::ensure(&policy, &path)?;
+        sifttext_file_graph::node_links::prepare(&path)?;
         let instructions = local::instructions(&policy, &path)?;
         println!("{}", onboarding::render(&path, &instructions)?);
         return Ok(());

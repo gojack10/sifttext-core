@@ -176,6 +176,7 @@ fn processing_identity() -> &'static str {
                 include_str!("coherent_capture.rs"),
                 include_str!("index.rs"),
                 include_str!("index/current.rs"),
+                include_str!("node_links.rs"),
                 include_str!("index/git.rs"),
                 include_str!("git_snapshot.rs"),
                 include_str!("index/residue.rs"),
@@ -233,6 +234,14 @@ pub fn prepare(policy: &Policy, path: &Path, donor: Option<&Path>) -> Result<Val
         eprintln!("Immutable Git facts not prepared for {}: {error}; authored working files are unchanged", path.display());
     }
     Ok(serde_json::json!({"status":"current", "version":version, "nodes":nodes}))
+}
+
+pub(crate) fn prepare_node_links(path: &Path) -> Result<()> {
+    current::prepare_node_links(path)
+}
+
+pub(crate) fn invalidate_node_links(path: &Path) -> Result<()> {
+    current::invalidate_node_links(path)
 }
 
 /// Explicitly repair generated outputs after loss or damage; authored knowledge is unchanged.

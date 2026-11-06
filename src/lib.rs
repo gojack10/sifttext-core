@@ -94,6 +94,7 @@ mod coherent_capture;
 pub(crate) mod git_snapshot;
 pub mod hosted_checks;
 pub mod home_format;
+pub mod node_links;
 pub mod migration_size;
 pub(crate) mod source_version;
 #[cfg(test)]

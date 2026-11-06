@@ -77,7 +77,7 @@ fn write_pointer(home: &Path) -> Result<()> {
 /// Local discovery and node-owned work are not authored tree assets. Keep them
 /// out of Git without changing the recognized `.gitignore` marker. Local excludes
 /// are reinstalled on worktree/save/advance entry because clones do not copy them.
-fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
+pub(crate) fn exclude_local_artifacts(home: &Path, pointer: bool, extra: &[&str]) -> Result<()> {
     let dotgit = home.join(".git");
     let file = if fs::symlink_metadata(&dotgit)?.is_dir() {
         dotgit.join("info/exclude")
@@ -100,6 +100,7 @@ fn exclude_local_artifacts(home: &Path, pointer: bool) -> Result<()> {
     let bytes = fs::read(&file).unwrap_or_default();
     let existing = String::from_utf8_lossy(&bytes);
     let mut rules = vec![CHAT_ARTIFACTS_RULE, ARTIFACTS_RULE];
+    rules.extend_from_slice(extra);
     if pointer {
         rules.push(POINTER_RULE);
     }
@@ -519,7 +520,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     // Persist only the selected identity; future drafts share this local config.
     git(path, &["config", "--local", "user.name", &author_name])?;
     git(path, &["config", "--local", "user.email", &author_email])?;
-    exclude_local_artifacts(path, pointer)?;
+    exclude_local_artifacts(path, pointer, &[])?;
     if !stage_initialized_home(path, seed.as_ref(), true)? {
         let mut commit = git_command(path);
         commit
@@ -537,6 +538,7 @@ pub fn init(policy: &Policy, path: &Path, starter: Option<&Path>) -> Result<Valu
     )?;
     git(path, &["checkout", "--detach", "--quiet"])?;
     index::prepare(policy, path, None)?;
+    crate::node_links::prepare(path)?;
     crate::skills::install_missing(path);
     Ok(
         json!({"home": fs::canonicalize(path)?, "created": true, "starter_nodes": seed.as_ref().map_or(0, |s| s.nodes.len()), "pointer": pointer.then_some(POINTER), "commit": git(path, &["rev-parse", "HEAD"])?}),
@@ -1080,7 +1082,7 @@ fn reader_repository(home: &Path) -> Result<()> {
             )? == dotgit.to_str().ok_or("non-UTF-8 home")?,
         "reader must be an independent Git home root",
     )?;
-    exclude_local_artifacts(home, false)?;
+    exclude_local_artifacts(home, false, &[])?;
     Ok(())
 }
 
@@ -2037,7 +2039,7 @@ pub fn restore_session_links(home: &Path, archive_root: &Path) -> Result<Value> 
     // re-apply them before writing private links; otherwise they surface as untracked
     // knowledge and can be committed by an ordinary `git add -A`.
     if home.join(".git").exists() {
-        exclude_local_artifacts(&home, home.join(POINTER).is_file())?;
+        exclude_local_artifacts(&home, home.join(POINTER).is_file(), &[])?;
     }
     let mut restored = 0;
     // Include private/unlinked nodes too. Only sidecar owners need source reads;
