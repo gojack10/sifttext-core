@@ -6,6 +6,7 @@ use crate::{
     git_snapshot::{GitReader, GitView},
     require,
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -18,6 +19,47 @@ use std::{
 const ROOT: &str = "/api/checks";
 const MAX_INPUT: u64 = crate::account::CHECK_REQUEST_LIMIT as u64;
 const RETENTION: &str = "Your submitted text stays with the saved result until you delete it.\nDelete: sifttext check-result ID --delete";
+const WORK_PACKET_MODE: &str = "work-packet-v1";
+const WAIVER_GUIDANCE: &str = "agent-instructions:Tell the user what they asked you to write, give one concrete example of what SiftText was checking in those notes, and say why the notes haven’t been added. Ask whether to add them as written without the review. Waive it only if the user explicitly approves this save.";
+
+#[derive(Clone, Copy, Default)]
+pub struct PublicationReview<'a> {
+    pub(crate) work_packet: Option<&'a Path>,
+    pub(crate) skip: bool,
+    pub(crate) accept_despite_findings: bool,
+    pub(crate) migration: bool,
+}
+
+impl<'a> PublicationReview<'a> {
+    pub fn new(work_packet: Option<&'a Path>, skip: bool, accept_despite_findings: bool) -> Self {
+        Self { work_packet, skip, accept_despite_findings, migration: false }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkPacket {
+    work_record: String,
+    outline: String,
+    #[serde(default)]
+    artifact_plan: String,
+    #[serde(default)]
+    source_evidence: Vec<WorkEvidence>,
+}
+
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct WorkEvidence {
+    text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    actor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    locator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    omission: Option<String>,
+}
 
 fn response(
     access: &mut SyncAccess,
@@ -135,7 +177,7 @@ fn input(path: &Path) -> Result<String> {
         std::io::stdin().lock().take(MAX_INPUT + 1).read_to_string(&mut data)?;
     } else {
         fs::File::open(path)
-            .map_err(|error| format!("Cannot read {}: {error}. This argument is a file path. Pipe text to sifttext slop-check - or sifttext epistemic-check -.", path.display()))?
+            .map_err(|error| format!("Cannot read {}: {error}. This argument is a file path.", path.display()))?
             .take(MAX_INPUT + 1)
             .read_to_string(&mut data)?;
     }
@@ -270,35 +312,11 @@ impl std::fmt::Display for ReportedCheckFailure {
 impl std::error::Error for ReportedCheckFailure {}
 
 pub fn run(args: &[String]) -> Result<()> {
-    let mut request = match args {
-        [cmd, file] if cmd == "slop-check" || cmd == "epistemic-check" =>
-            Some(json!({"checker":if cmd == "slop-check" {"slop"} else {"epistemic"}, "text":input(Path::new(file))?})),
-        [cmd, flag, file] if cmd == "epistemic-check" && flag == "--packet" =>
-            Some(json!({"checker":"epistemic", "packet":serde_json::from_str::<Value>(&input(Path::new(file))?)?})),
+    let request = match args {
+        [cmd, file] if cmd == "slop-check" =>
+            Some(json!({"checker":"slop", "text":input(Path::new(file))?})),
         _ => None,
     };
-    if let Some(request) = &mut request {
-        if request["checker"] == "epistemic" {
-            let documentation = |text: &str| crate::parse_markdown(text)
-                .is_ok_and(|node| crate::native_kb::documentation(&node.id));
-            let mut exempt = 0;
-            let empty = if let Some(text) = request["text"].as_str() {
-                exempt = usize::from(documentation(text));
-                exempt > 0
-            } else if let Some(nodes) = request["packet"]["nodes"].as_array_mut() {
-                nodes.retain(|node| {
-                    let skip = node["markdown"].as_str().is_some_and(documentation);
-                    if skip { exempt += 1; }
-                    !skip
-                });
-                nodes.is_empty() && exempt > 0
-            } else { false };
-            if exempt > 0 {
-                writeln!(std::io::stdout().lock(), "Epistemic check: EXEMPT ({exempt} official documentation nodes; no review or charge for those nodes).")?;
-            }
-            if empty { return Ok(()) }
-        }
-    }
     let mut access = SyncAccess::checks()?;
     let value = if let Some(request) = request {
         response(&mut access, "POST", ROOT, Some(&request), true)?
@@ -336,7 +354,7 @@ pub fn run(args: &[String]) -> Result<()> {
             writeln!(std::io::stdout().lock(), "{}", credit(&json!({"balance":value,"credits_used":0})))?;
             return Ok(());
         }
-        _ => return Err("usage:\n  sifttext slop-check FILE|-\n  sifttext epistemic-check FILE|- | --packet FILE\n  sifttext check-result ID [--delete]\n  sifttext credits [--buy-10 [REQUEST_KEY]]".into()),
+        _ => return Err("usage:\n  sifttext slop-check FILE|-\n  sifttext check-result ID [--delete]\n  sifttext credits [--buy-10 [REQUEST_KEY]]".into()),
     }};
     let mut out = std::io::stdout().lock();
     if !completed(&value) {
@@ -351,27 +369,43 @@ pub fn run(args: &[String]) -> Result<()> {
     }
 }
 
-/// Called only on validated immutable final input, before conditional ref publication.
-/// Changed node markdown is the entire upload allowlist; no artifacts or unrelated nodes.
-pub(crate) fn publication(reader: &mut GitReader, before: Option<&GitView>, after: &GitView) -> Value {
+/// Review the immutable authored candidate before conditional ref publication.
+pub(crate) fn publication(
+    reader: &mut GitReader,
+    before: Option<&GitView>,
+    after: &GitView,
+    options: PublicationReview<'_>,
+    replication: bool,
+) -> Value {
     if let Some(exemption) = documentation_only(before, after) { return exemption }
     match SyncAccess::saved_login_exists() {
         Ok(false) => return json!({"status":"not_required","reason":"logged_out"}),
+        _ if options.skip && !replication => return json!({"status":"unchecked","waived":true,"reason":"user_waived"}),
         Err(error) => return unavailable(error),
         Ok(true) => (),
     }
     match SyncAccess::checks() {
-        Ok(mut access) => publication_with_access(reader, before, after, &mut access, true),
+        Ok(mut access) if replication => publication_with_access(reader, before, after, &mut access, true),
+        Ok(mut access) => match paid_account(&mut access) {
+            Ok(true) => review_packet(reader, before, after, options.work_packet, &mut access),
+            Ok(false) => json!({"status":"not_required","reason":"free_account"}),
+            Err(error) => unavailable(error),
+        },
         Err(error) => unavailable(error),
     }
 }
 
 /// Explicit Git-backed review uses the publication reviewer even for an account
 /// without a subscription. Its normal credit rules still apply.
-pub(crate) fn review(reader: &mut GitReader, before: Option<&GitView>, after: &GitView) -> Value {
+pub(crate) fn review(
+    reader: &mut GitReader,
+    before: Option<&GitView>,
+    after: &GitView,
+    work_packet: Option<&Path>,
+) -> Value {
     if let Some(exemption) = documentation_only(before, after) { return exemption }
     match SyncAccess::checks() {
-        Ok(mut access) => publication_with_access(reader, before, after, &mut access, false),
+        Ok(mut access) => review_packet(reader, before, after, work_packet, &mut access),
         Err(error) => unavailable(error),
     }
 }
@@ -380,11 +414,87 @@ fn unavailable(error: Box<dyn std::error::Error>) -> Value {
     json!({"status":"unchecked","reason":"service_unavailable","detail":error.to_string(),"uncertain_usage":true})
 }
 
+fn paid_account(access: &mut SyncAccess) -> Result<bool> {
+    let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
+    require(
+        status == 200 && account["paid"].is_boolean(),
+        &format!("Account balance request failed (HTTP {status}, {}): {}",
+            account["error"].as_str().unwrap_or("invalid_account_response"),
+            account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
+    )?;
+    Ok(account["paid"] == true)
+}
+
+fn read_work_packet(path: &Path) -> Result<WorkPacket> {
+    let packet: WorkPacket = serde_json::from_str(&input(path)?)?;
+    require(!packet.work_record.trim().is_empty() && !packet.outline.trim().is_empty(),
+        "The work packet requires a work record and an outline.")?;
+    Ok(packet)
+}
+
+fn review_packet(
+    reader: &mut GitReader,
+    before: Option<&GitView>,
+    after: &GitView,
+    path: Option<&Path>,
+    access: &mut SyncAccess,
+) -> Value {
+    let Some(path) = path else {
+        return json!({"status":"unchecked","reason":"work_packet_required",
+            "detail":"Provide the work packet file after BASE. See Epistemic Check in SiftText."});
+    };
+    let work = match read_work_packet(path) {
+        Ok(work) => work,
+        Err(error) => return json!({"status":"unchecked","reason":"invalid_work_packet",
+            "detail":format!("Prepare a valid work packet before submitting: {error}")}),
+    };
+    let mut attempt = || -> Result<Value> {
+        let mut nodes = Vec::new();
+        let mut node_hashes = serde_json::Map::new();
+        for (id, node) in &after.nodes {
+            if crate::native_kb::documentation(id) || before
+                .and_then(|view| view.nodes.get(id))
+                .is_some_and(|old| old.text_hash == node.text_hash) {
+                continue;
+            }
+            let markdown = String::from_utf8(reader.bytes(after, id)?)?;
+            node_hashes.insert(id.clone(), json!(crate::sha256(crate::ordering::without_position(&markdown).as_bytes())));
+            nodes.push(json!({"id":id,"markdown":markdown}));
+        }
+        let packet = json!({"work_record":work.work_record,"outline":work.outline,
+            "nodes":nodes,"artifact_plan":work.artifact_plan,"source_evidence":work.source_evidence});
+        let digest = crate::sha256(&serde_json::to_vec(&packet)?);
+        let context = json!({"review_mode":WORK_PACKET_MODE,"candidate_tree":after.tree,
+            "candidate_version":after.version});
+        let body = json!({"checker":"epistemic","packet":packet,"context":context});
+        if serde_json::to_vec(&body)?.len() > MAX_INPUT as usize {
+            return Ok(json!({"status":"unchecked","reason":"work_packet_too_large",
+                "detail":"The encoded work packet exceeds 128 KiB. Shorten optional evidence or split the draft into coherent proposals."}));
+        }
+        let mut reply = response(access, "POST", ROOT, Some(&body), false)?;
+        if completed(&reply) && (reply["checker"] != "epistemic"
+            || !reply["checker_version"].as_str().is_some_and(|v| v.starts_with("staged-v36-batched-"))
+            || reply["context"] != body["context"] || reply["packet_sha256"] != digest)
+        {
+            reply["complete"] = json!(false);
+            reply["error"] = json!("review_binding_mismatch");
+            reply["detail"] = json!("The review did not certify this candidate and work packet.");
+        }
+        let status = if !completed(&reply) { "unchecked" }
+            else if reply["passed"] == true { "passed" } else { "findings" };
+        let reason = reply["error"].clone();
+        Ok(json!({"status":status,"reason":reason,"node_hashes":node_hashes,
+            "results":[{"response":reply}]}))
+    };
+    attempt().unwrap_or_else(unavailable)
+}
+
 /// Gate only the already-selected independent publication repository. The caller
 /// owns this auth lease and must restore its sync resource and reverify home.
 pub fn sync_publication(
     policy: &crate::Policy,
     repo: &Path,
+    reviewed_home: &Path,
     baseline: Option<&str>,
     candidate: &str,
     access: &mut SyncAccess,
@@ -393,6 +503,21 @@ pub fn sync_publication(
         let mut reader = GitReader::new(policy, repo)?;
         let before = baseline.map(|sha| reader.view(sha)).transpose()?;
         let after = reader.view(candidate)?;
+        // This is advisory only. Exact tree identity lets own-account sync
+        // carry the original review outcome without paying to review it again.
+        let common = crate::local::reader_git(reviewed_home,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+        let retained = Path::new(&common).join("sifttext-hosted-checks").join(format!("{}.json", after.tree));
+        if retained.try_exists()? {
+            let check = documentation_exempt_record(serde_json::from_slice(&crate::read_regular(&retained)?)?);
+            let context = &check["results"][0]["response"]["context"];
+            if check["waived"] == true || (context["review_mode"] == WORK_PACKET_MODE
+                && context["candidate_tree"] == after.tree
+                && (check["status"] == "passed" || check["accepted_despite_findings"] == true))
+            {
+                return Ok(check);
+            }
+        }
         Ok(publication_with_access(
             &mut reader,
             before.as_deref(),
@@ -428,17 +553,8 @@ fn publication_with_access(
     if let Some(exemption) = documentation_only(before, after) { return exemption }
     let mut results = Vec::new();
     let mut attempt = || -> Result<Value> {
-        if subscription_only {
-            let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
-            require(
-                status == 200 && account["paid"].is_boolean(),
-                &format!("Account balance request failed (HTTP {status}, {}): {}",
-                    account["error"].as_str().unwrap_or("invalid_account_response"),
-                    account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
-            )?;
-            if account["paid"] != true {
-                return Ok(json!({"status":"not_required","reason":"free_account"}));
-            }
+        if subscription_only && !paid_account(access)? {
+            return Ok(json!({"status":"not_required","reason":"free_account"}));
         }
         for (id, node) in &after.nodes {
             if crate::native_kb::documentation(id) { continue }
@@ -517,6 +633,7 @@ pub fn publication_record(check: &Value) -> Value {
                             | "checker"
                             | "checker_version"
                             | "text_sha256"
+                            | "packet_sha256"
                             | "context"
                             | "status"
                             | "complete"
@@ -546,7 +663,21 @@ pub fn retain_results(home: &Path, check: &Value) -> Result<()> {
     if !records.try_exists()? { fs::create_dir(&records)?; }
     crate::real_dir(&records)?;
     let record = publication_record(check);
-    for item in record["results"].as_array().into_iter().flatten() {
+    let mut items = record["results"].as_array().cloned().unwrap_or_default();
+    if let Some(hashes) = check["node_hashes"].as_object()
+        && let Some(response) = items.first().map(|item| item["response"].clone())
+        && response["complete"] == true
+    {
+        for stage in check["results"][0]["response"]["result"]["stages"].as_array().into_iter().flatten() {
+            let Some(node) = stage["node_id"].as_str() else { continue };
+            let Some(hash) = hashes.get(node) else { continue };
+            if stage["complete"] != true { continue }
+            let mut response = response.clone();
+            response["passed"] = json!(stage["verdict"] == "PASS");
+            items.push(json!({"node":node,"review_sha256":hash,"response":response}));
+        }
+    }
+    for item in &items {
         // A technical failure cannot clear an earlier finding on the same text.
         if !item["response"]["passed"].is_boolean() || item["response"]["complete"] != true { continue }
         let (Some(node), Some(hash)) = (item["node"].as_str(), item["review_sha256"].as_str()) else { continue };
@@ -594,7 +725,10 @@ pub fn render_publication(check: &Value) -> String {
         Some("findings") if check["replication"] == true => lines.push("Epistemic findings retained for repair; own-account replication is not blocked.".into()),
         Some("findings") => lines.push("Not accepted. Draft preserved. To waive only the findings refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into()),
         Some("not_required") if check["reason"] == "no_changed_node_text" => lines.push("Epistemic submit check: no changed node text.".into()),
+        Some("not_required") if check["reason"] == "accepted_replication" => (),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),
+        Some("unchecked") if check["waived"] == true => lines.push("Epistemic review explicitly waived for this save.".into()),
+        Some("unchecked") if check["blocked"] == true => (),
         _ => lines.push("Epistemic submit check: unchecked (no credits or service unavailable). To check these nodes later, run epistemic-check explicitly.".into()),
     }
     if let Some(detail) = check["detail"].as_str() {
@@ -605,10 +739,9 @@ pub fn render_publication(check: &Value) -> String {
     let mut retrieved = false;
     if let Some(results) = check["results"].as_array() {
         for item in results {
-            lines.push(format!(
-                "Node: {}",
-                item["node"].as_str().unwrap_or("unknown")
-            ));
+            if let Some(node) = item["node"].as_str() {
+                lines.push(format!("Node: {node}"));
+            }
             let text = render_result(&item["response"], false);
             if let Some((body, _)) = text.rsplit_once('\n') {
                 lines.push(body.into());
@@ -620,6 +753,12 @@ pub fn render_publication(check: &Value) -> String {
                 last_response = Some(response);
             }
         }
+    }
+    if check["blocked"] == true && check["prior_findings"] == true {
+        lines.push("Earlier findings remain recorded for this draft. Resolve them or obtain explicit approval to accept them.".into());
+    } else if check["blocked"] == true && !matches!(check["reason"].as_str(),
+        Some("work_packet_required" | "invalid_work_packet" | "work_packet_too_large")) {
+        lines.push(WAIVER_GUIDANCE.into());
     }
     if let Some(response) = last_response {
         lines.push(RETENTION.into());
@@ -642,7 +781,7 @@ pub fn render_publication(check: &Value) -> String {
         total["credits_used"] = json!((used * 1_000_000.0).round() / 1_000_000.0);
         total["reused"] = json!(false);
         lines.push(credit(&total));
-    } else if check["status"] == "unchecked" {
+    } else if check["status"] == "unchecked" && check["uncertain_usage"] == true {
         lines.push("Credits: usage and balance unconfirmed (retrieve any completed request before retrying).".into());
     }
     lines.join("\n")

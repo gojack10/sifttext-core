@@ -954,14 +954,15 @@ fn authored_tree_refuses_force_tracked_artifacts_including_chat_links() {
 /// Submit once, or recover the currently accepted ref. No caller pull or checkout
 /// modification. Errors fail closed; a post-CAS error is explicitly unavailable.
 pub fn submit(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None, false, false, false)
+    submit_inner(policy, request, false, None, &mut |_, _| Ok(()), None, None, false, Default::default(), false)
 }
 
 /// Prepare and review the same immutable combination used by submission without
 /// advancing the accepted ref. Any normalization remains in the retained draft;
 /// the returned candidate is the commit to show and submit after human approval.
-pub fn review(policy: &Policy, request: &Request) -> Receipt {
-    submit_inner(policy, request, true, None, &mut |_, _| Ok(()), None, None, false, false, true)
+pub fn review(policy: &Policy, request: &Request, work_packet: &Path) -> Receipt {
+    let review = crate::hosted_checks::PublicationReview { work_packet: Some(work_packet), ..Default::default() };
+    submit_inner(policy, request, true, None, &mut |_, _| Ok(()), None, None, false, review, true)
 }
 
 /// Check and accept the combination in the submitted worktree. The caller owns
@@ -978,7 +979,7 @@ pub(crate) fn save_prepared(
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
-    submit_inner(policy, request, true, previous_heads, &mut record, None, None, false, false, false)
+    submit_inner(policy, request, true, previous_heads, &mut record, None, None, false, Default::default(), false)
 }
 
 pub(crate) fn save_prepared_leased(
@@ -986,14 +987,14 @@ pub(crate) fn save_prepared_leased(
     request: &Request,
     lease: &crate::local::DraftLease,
     received: bool,
-    accept_despite_findings: bool,
+    review: crate::hosted_checks::PublicationReview<'_>,
     reader: Option<&mut crate::git_snapshot::GitReader>,
     previous_heads: Option<(&str, &str)>,
     mut record: impl FnMut(&str, &str) -> Result<()>,
 ) -> Receipt {
     submit_inner(
         policy, request, true, previous_heads, &mut record, Some(lease), reader, received,
-        accept_despite_findings, false,
+        review, false,
     )
 }
 
@@ -1006,7 +1007,7 @@ fn submit_inner(
     lease: Option<&crate::local::DraftLease>,
     reader: Option<&mut crate::git_snapshot::GitReader>,
     received: bool,
-    accept_despite_findings: bool,
+    review: crate::hosted_checks::PublicationReview<'_>,
     review_only: bool,
 ) -> Receipt {
     let start = Instant::now();
@@ -1062,7 +1063,7 @@ fn submit_inner(
             &notes,
             reader,
             received,
-            accept_despite_findings,
+            review,
             review_only,
         )
     })();
@@ -1147,7 +1148,7 @@ fn execute(
     notes: &owned::Notes,
     reader: Option<&mut crate::git_snapshot::GitReader>,
     received: bool,
-    accept_despite_findings: bool,
+    review: crate::hosted_checks::PublicationReview<'_>,
     review_only: bool,
 ) -> Result<()> {
     require(!in_draft || q.draft.is_some(), "save requires a draft")?;
@@ -1511,6 +1512,7 @@ fn execute(
     // validation and consent remain mandatory; findings become retained work.
     // Ordinary authored submissions (including guest-agent saves) remain gated.
     let replication = received || host_acceptance;
+    let existing_knowledge = replication || review.migration;
     if draft.is_some() || host_acceptance || common.join("sifttext-hosted-checks").try_exists()? {
         let records = common.join("sifttext-hosted-checks");
         if !records.try_exists()? { fs::create_dir(&records)?; }
@@ -1522,20 +1524,53 @@ fn execute(
             r.check = "hosted_epistemic_unavailable";
             let baseline = if draft.is_some() { Some(before.as_ref()) } else { None };
             let mut result = if review_only {
-                crate::hosted_checks::review(&mut reader, baseline, &final_view)
+                crate::hosted_checks::review(&mut reader, baseline, &final_view, review.work_packet)
+            } else if replication {
+                // Replication carries accepted history. Keep any recorded
+                // findings without starting another paid authored review.
+                if path.try_exists()? {
+                    crate::hosted_checks::documentation_exempt_record(
+                        serde_json::from_slice(&crate::read_regular(&path)?)?)
+                } else {
+                    serde_json::json!({"status":"not_required","reason":"accepted_replication"})
+                }
             } else {
-                crate::hosted_checks::publication(&mut reader, baseline, &final_view)
+                crate::hosted_checks::publication(&mut reader, baseline, &final_view, review, existing_knowledge)
             };
             if replication { result["replication"] = serde_json::json!(true); }
-            if accept_despite_findings && result["status"] == "findings" {
+            if result["status"] == "unchecked" && path.try_exists()? {
+                // Incomplete or skipped checks cannot erase findings on this tree.
+                let previous = crate::hosted_checks::documentation_exempt_record(
+                    serde_json::from_slice(&crate::read_regular(&path)?)?);
+                if previous["status"] == "findings" {
+                    if result["waived"] == true {
+                        result = previous;
+                    } else {
+                        result["prior_findings"] = serde_json::json!(true);
+                    }
+                } else if result["waived"] == true && previous["status"] == "unchecked"
+                    && previous["reason"] != "user_waived"
+                {
+                    result["waived_reason"] = previous["reason"].clone();
+                    if let Some(request) = previous["results"][0]["response"].get("request_id") {
+                        result["waived_request_id"] = request.clone();
+                    }
+                }
+            }
+            if review.accept_despite_findings && result["status"] == "findings" {
                 result["accepted_despite_findings"] = serde_json::json!(true);
             }
+            let blocked = result["status"] == "unchecked" && result["waived"] != true
+                && !existing_knowledge && !review_only;
+            if blocked { result["blocked"] = serde_json::json!(true); }
             crate::hosted_checks::retain_results(&repo, &result)?;
-            let mut file = tempfile::NamedTempFile::new_in(&records)?;
-            serde_json::to_writer(&mut file, &crate::hosted_checks::publication_record(&result))?;
-            file.as_file().sync_all()?;
-            file.persist(&path)?;
-            fs::File::open(&records)?.sync_all()?;
+            if result["prior_findings"] != true {
+                let mut file = tempfile::NamedTempFile::new_in(&records)?;
+                serde_json::to_writer(&mut file, &crate::hosted_checks::publication_record(&result))?;
+                file.as_file().sync_all()?;
+                file.persist(&path)?;
+                fs::File::open(&records)?.sync_all()?;
+            }
             r.semantic_check = match result["status"].as_str() {
                 Some("passed") => "passed",
                 Some("findings") => "findings",
@@ -1544,15 +1579,18 @@ fn execute(
                 _ => "unchecked",
             };
             r.hosted_check = Some(result);
-            if r.semantic_check == "findings" && !replication && !accept_despite_findings {
+            if r.semantic_check == "findings" && !replication && !review.accept_despite_findings {
                 r.check = "hosted_epistemic_findings";
                 return Err("hosted epistemic findings; draft preserved. To waive only this refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into());
+            }
+            if blocked {
+                return Err("epistemic review could not complete; draft preserved".into());
             }
         } else if path.try_exists()? {
             let mut result = crate::hosted_checks::documentation_exempt_record(
                 serde_json::from_slice(&crate::read_regular(&path)?)?);
             if replication { result["replication"] = serde_json::json!(true); }
-            if accept_despite_findings && result["status"] == "findings" {
+            if review.accept_despite_findings && result["status"] == "findings" {
                 result["accepted_despite_findings"] = serde_json::json!(true);
             }
             // Historical diagnostics only: never use this file to authorize a new candidate.
@@ -1564,7 +1602,7 @@ fn execute(
                 _ => "unchecked",
             };
             r.hosted_check = Some(result);
-            if r.semantic_check == "findings" && !replication && !already && !accept_despite_findings {
+            if r.semantic_check == "findings" && !replication && !already && !review.accept_despite_findings {
                 r.check = "hosted_epistemic_findings";
                 return Err("hosted epistemic findings; draft preserved. To waive only this refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into());
             }

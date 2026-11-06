@@ -1,7 +1,7 @@
 //! CLI completion over the checked same-draft publisher. Journals are custody,
 //! never acceptance evidence: every retry rechecks the accepted Git result.
 use super::{advance_checked, reader_git, reader_state};
-use crate::{Policy, Result, checked_publication, require};
+use crate::{Policy, Result, checked_publication, hosted_checks::PublicationReview, require};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -312,7 +312,7 @@ pub fn submit(policy: &Policy, request: &checked_publication::Request) -> Result
 /// changes are explicit; the combined candidate still passes the ordinary gate.
 /// A retained native request always keeps its original, frozen intents.
 pub fn submit_received(policy: &Policy, request: &checked_publication::Request) -> Result<Value> {
-    submit_with_status(policy, request, true, false, None, || Ok(())).map_err(|error| {
+    submit_with_status(policy, request, true, PublicationReview::default(), None, || Ok(())).map_err(|error| {
         format!("received submission completion unknown; retain files and original arguments for retry: {error}").into()
     })
 }
@@ -324,9 +324,9 @@ pub fn submit_with_options(
     policy: &Policy,
     request: &checked_publication::Request,
     received: bool,
-    accept_despite_findings: bool,
+    review: PublicationReview<'_>,
 ) -> Result<Value> {
-    submit_with_status(policy, request, received, accept_despite_findings, None, || Ok(())).map_err(|error| {
+    submit_with_status(policy, request, received, review, None, || Ok(())).map_err(|error| {
         format!("submission completion unknown unless reported below; retain files and original submit arguments for retry: {error}").into()
     })
 }
@@ -338,7 +338,8 @@ pub(crate) fn submit_migration(
     request: &checked_publication::Request,
     baseline: &str,
 ) -> Result<Value> {
-    submit_with_status(policy, request, false, true, Some(baseline), || Ok(()))
+    let review = PublicationReview { accept_despite_findings: true, migration: true, ..Default::default() };
+    submit_with_status(policy, request, false, review, Some(baseline), || Ok(()))
 }
 
 fn submit_inner(
@@ -346,14 +347,14 @@ fn submit_inner(
     request: &checked_publication::Request,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
-    submit_with_status(policy, request, false, false, None, before_return)
+    submit_with_status(policy, request, false, PublicationReview::default(), None, before_return)
 }
 
 fn submit_with_status(
     policy: &Policy,
     request: &checked_publication::Request,
     received: bool,
-    accept_despite_findings: bool,
+    review: PublicationReview<'_>,
     migration_baseline: Option<&str>,
     before_return: impl FnOnce() -> Result<()>,
 ) -> Result<Value> {
@@ -574,7 +575,7 @@ fn submit_with_status(
             &request,
             &draft_lease,
             received,
-            accept_despite_findings,
+            review,
             received_reader.as_mut(),
             previous_heads
                 .as_ref()

@@ -80,8 +80,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         return account::run(command);
     }
     if args.first().is_some_and(|cmd| sifttext_file_graph::hosted_checks::is_command(cmd))
-        && !(args.first().is_some_and(|cmd| cmd == "epistemic-check")
-            && args.get(1).is_some_and(|arg| arg == "--worktree"))
+        && args.first().is_some_and(|cmd| cmd != "epistemic-check")
     {
         return sifttext_file_graph::hosted_checks::run(&args);
     }
@@ -239,9 +238,12 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         [cmd, home, flag, source] if cmd == "init" && flag == "--bundle" => {
             local::init(&policy, &absolute(home)?, Some(Path::new(source)))?
         }
-        [cmd, flag, repo, draft, commit, base, explicit @ ..]
-            if cmd == "epistemic-check" && flag == "--worktree" =>
+        [cmd, repo, draft, commit, base, packet, explicit @ ..]
+            if cmd == "epistemic-check" && !repo.starts_with("--") =>
         {
+            if !explicit.iter().all(|id| sifttext_file_graph::uuid(id)) {
+                return Err("append only full UUIDs for explicit status requests".into());
+            }
             let receipt = sifttext_file_graph::checked_publication::review(
                 &policy,
                 &sifttext_file_graph::checked_publication::Request {
@@ -254,6 +256,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                     pause_before_publish: None,
                     pause_after_publish: None,
                 },
+                Path::new(packet),
             );
             let mut output: serde_json::Value = serde_json::from_str(
                 &sifttext_file_graph::checked_publication::cli_json(&receipt)?,
@@ -276,8 +279,8 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 Err(sifttext_file_graph::hosted_checks::ReportedCheckFailure.into())
             };
         }
-        [cmd, flag, ..] if cmd == "epistemic-check" && flag == "--worktree" => {
-            return Err("usage: sifttext epistemic-check --worktree HOME DRAFT COMMIT BASE [EXPLICIT_UUID ...]".into());
+        [cmd, ..] if cmd == "epistemic-check" => {
+            return Err("usage: sifttext epistemic-check HOME DRAFT COMMIT BASE WORK_PACKET.json [EXPLICIT_UUID ...]".into());
         }
         [cmd, repo, draft, commit, base, explicit @ ..] if cmd == "submit" => {
             let mut explicit = explicit.to_vec();
@@ -287,10 +290,23 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             }
             let accept_despite_findings = explicit.iter().any(|arg| arg == "--accept-despite-findings");
             explicit.retain(|arg| arg != "--accept-despite-findings");
+            let skip = explicit.iter().any(|arg| arg == "--skip-epistemic-check");
+            explicit.retain(|arg| arg != "--skip-epistemic-check");
             let received = explicit == ["--received-statuses"];
             if received {
                 explicit.clear();
             }
+            if skip && (received || accept_despite_findings) {
+                return Err("--skip-epistemic-check requires an ordinary save and is separate from --accept-despite-findings".into());
+            }
+            let packet = explicit.first().is_some_and(|arg|
+                !arg.starts_with("--") && !sifttext_file_graph::uuid(arg))
+                .then(|| explicit.remove(0));
+            if !explicit.iter().all(|id| sifttext_file_graph::uuid(id)) {
+                return Err("append only full UUIDs for explicit status requests".into());
+            }
+            let review = sifttext_file_graph::hosted_checks::PublicationReview::new(
+                packet.as_deref().map(Path::new), skip, accept_despite_findings);
             let receipt = local::submit_with_options(
                 &policy,
                 &sifttext_file_graph::checked_publication::Request {
@@ -304,7 +320,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                     pause_after_publish: None,
                 },
                 received,
-                accept_despite_findings,
+                review,
             )?;
             print_large_return(
                 &format!(

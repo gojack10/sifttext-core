@@ -675,7 +675,7 @@ fn upload(
     // Only the sharing projection reaches the checker. Never inspect the full
     // private home here, and never trust a caller-authored pass marker.
     let check = sifttext_file_graph::hosted_checks::sync_publication(
-        &super::checked_policy(runtime)?, &store.home, remote, commit, &mut exchange.auth,
+        &super::checked_policy(runtime)?, &store.home, consent_home, remote, commit, &mut exchange.auth,
     );
     sifttext_file_graph::hosted_checks::retain_results(consent_home, &check)?;
     let mut metadata = sifttext_file_graph::hosted_checks::publication_record(&check);
