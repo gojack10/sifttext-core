@@ -19,7 +19,9 @@ Do not request paid epistemic review of those documentation nodes or treat an ol
 
 ## Prepare the work packet
 
-Write a JSON file with a `work_record` explaining what happened and an `outline` showing the proposed nodes and their relationships. Include decisive `source_evidence` and an `artifact_plan` when relevant. Send only material authorized for hosted processing.
+Use the home's `sync.default` and `sync.rules` to identify the included review scope, following [Account and Synced Knowledge](../12e1e893-b0ab-4f82-b0db-37de70b95034/node.md). These upload exclusions also apply to explicit epistemic checking, independently of `sync.mode`. A proposal's display omissions do not change this policy.
+
+Write a JSON file with a `work_record` explaining the included work and an `outline` showing only the included proposed nodes and their relationships. Include decisive `source_evidence` and an `artifact_plan` only for that scope. Leave excluded nodes, their facts, excerpts, names, paths and artifact details out of every packet field. Summarize shared events using only the included material; do not copy private context into a public summary. Included authored prose is sent as written: Core filters nodes and structured references, not the meaning of free text.
 
 ```json
 {
@@ -30,7 +32,9 @@ Write a JSON file with a `work_record` explaining what happened and an `outline`
 }
 ```
 
-Core takes the changed non-exempt node text from the final Git candidate. The checker reviews the work record, the outline, and the node bodies against that context.
+Core applies the home's current upload rules to the final Git candidate before collecting changed non-exempt node text. It omits excluded nodes and structured references to them from the request. The checker reviews the included work record, outline and node bodies against that context. A PASS covers this included scope only; the local receipt lists included and excluded nodes.
+
+Mixed saves still save all approved nodes locally and apply the full structural checks. If every changed non-exempt node is excluded, submission needs no work packet, hosted request, credits or review waiver. The receipt marks review as not required, rather than passed. Changing the policy does not delete previously uploaded text or results.
 
 ## Review and submit the same draft
 
@@ -46,7 +50,7 @@ This prepares the same combined candidate as submission, including merging accep
 sifttext submit HOME DRAFT COMMIT BASE WORK_PACKET.json [EXPLICIT_UUID ...]
 ```
 
-The authenticated service reuses a saved PASS when the final candidate tree, work packet, and checker version match. Reuse adds no model run or charge. When there is no applicable PASS, submission runs the same review. Structural checks and human approval remain required.
+Core filters the packet before sending it, including when requesting reuse. The authenticated service reuses a saved PASS when the final candidate tree, filtered work packet, and checker version match. Reuse adds no model run or charge. When there is no applicable PASS, submission runs the same review. Structural checks and human approval remain required.
 
 ## When a save is blocked
 

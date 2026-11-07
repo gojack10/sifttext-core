@@ -9,6 +9,7 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
     path::Path,
@@ -378,21 +379,29 @@ pub(crate) fn publication(
     replication: bool,
 ) -> Value {
     if let Some(exemption) = documentation_only(before, after) { return exemption }
-    match SyncAccess::saved_login_exists() {
-        Ok(false) => return json!({"status":"not_required","reason":"logged_out"}),
-        _ if options.skip && !replication => return json!({"status":"unchecked","waived":true,"reason":"user_waived"}),
+    let scope = match ReviewScope::read(&reader.repo, before, after) {
+        Ok(scope) => scope,
         Err(error) => return unavailable(error),
-        Ok(true) => (),
-    }
-    match SyncAccess::checks() {
-        Ok(mut access) if replication => publication_with_access(reader, before, after, &mut access, true),
-        Ok(mut access) => match paid_account(&mut access) {
-            Ok(true) => review_packet(reader, before, after, options.work_packet, &mut access),
-            Ok(false) => json!({"status":"not_required","reason":"free_account"}),
+    };
+    let result = if scope.included.is_empty() {
+        json!({"status":"not_required","reason":"upload_excluded"})
+    } else {
+        match SyncAccess::saved_login_exists() {
+            Ok(false) => json!({"status":"not_required","reason":"logged_out"}),
+            _ if options.skip && !replication => json!({"status":"unchecked","waived":true,"reason":"user_waived"}),
             Err(error) => unavailable(error),
-        },
-        Err(error) => unavailable(error),
-    }
+            Ok(true) => match SyncAccess::checks() {
+                Ok(mut access) if replication => publication_with_access(reader, after, &scope, &mut access, true),
+                Ok(mut access) => match paid_account(&mut access) {
+                    Ok(true) => review_packet(reader, after, &scope, options.work_packet, &mut access),
+                    Ok(false) => json!({"status":"not_required","reason":"free_account"}),
+                    Err(error) => unavailable(error),
+                },
+                Err(error) => unavailable(error),
+            },
+        }
+    };
+    scope.record(result)
 }
 
 /// Explicit Git-backed review uses the publication reviewer even for an account
@@ -404,9 +413,55 @@ pub(crate) fn review(
     work_packet: Option<&Path>,
 ) -> Value {
     if let Some(exemption) = documentation_only(before, after) { return exemption }
-    match SyncAccess::checks() {
-        Ok(mut access) => review_packet(reader, before, after, work_packet, &mut access),
-        Err(error) => unavailable(error),
+    let scope = match ReviewScope::read(&reader.repo, before, after) {
+        Ok(scope) => scope,
+        Err(error) => return unavailable(error),
+    };
+    let result = if scope.included.is_empty() {
+        json!({"status":"not_required","reason":"upload_excluded"})
+    } else {
+        match SyncAccess::checks() {
+            Ok(mut access) => review_packet(reader, after, &scope, work_packet, &mut access),
+            Err(error) => unavailable(error),
+        }
+    };
+    scope.record(result)
+}
+
+struct ReviewScope {
+    selected: BTreeSet<String>,
+    included: Vec<String>,
+    excluded: Vec<String>,
+}
+
+impl ReviewScope {
+    fn read(home: &Path, before: Option<&GitView>, after: &GitView) -> Result<Self> {
+        let policy = crate::sync_policy::settings(home)?;
+        let parents: BTreeMap<_, _> = after.children.iter().flat_map(|(parent, children)|
+            children.iter().map(move |child| (child.as_str(), parent.as_str()))).collect();
+        let selected: BTreeSet<_> = after.nodes.keys().filter(|id| {
+            let ancestors = std::iter::successors(parents.get(id.as_str()).copied(),
+                |parent| parents.get(parent).copied());
+            policy.includes(id, ancestors)
+        }).cloned().collect();
+        let (included, excluded) = changed_nodes(before, after).into_iter()
+            .filter(|id| !crate::native_kb::documentation(id))
+            .partition(|id| selected.contains(id));
+        Ok(Self { selected, included, excluded })
+    }
+
+    fn record(&self, mut result: Value) -> Value {
+        // Local diagnostics only: excluded identities never enter the request.
+        result["included_nodes"] = json!(self.included);
+        result["excluded_nodes"] = json!(self.excluded);
+        result
+    }
+
+    fn markdown(&self, reader: &mut GitReader, view: &GitView, id: &str) -> Result<String> {
+        let text = String::from_utf8(reader.bytes(view, id)?)?;
+        let refs = crate::parse_markdown(&text)?.see_also.into_iter()
+            .filter(|reference| self.selected.contains(&reference.target)).collect::<Vec<_>>();
+        crate::tree_selection::references(&text, &refs)
     }
 }
 
@@ -434,8 +489,8 @@ fn read_work_packet(path: &Path) -> Result<WorkPacket> {
 
 fn review_packet(
     reader: &mut GitReader,
-    before: Option<&GitView>,
     after: &GitView,
+    scope: &ReviewScope,
     path: Option<&Path>,
     access: &mut SyncAccess,
 ) -> Value {
@@ -451,13 +506,8 @@ fn review_packet(
     let mut attempt = || -> Result<Value> {
         let mut nodes = Vec::new();
         let mut node_hashes = serde_json::Map::new();
-        for (id, node) in &after.nodes {
-            if crate::native_kb::documentation(id) || before
-                .and_then(|view| view.nodes.get(id))
-                .is_some_and(|old| old.text_hash == node.text_hash) {
-                continue;
-            }
-            let markdown = String::from_utf8(reader.bytes(after, id)?)?;
+        for id in &scope.included {
+            let markdown = scope.markdown(reader, after, id)?;
             node_hashes.insert(id.clone(), json!(crate::sha256(crate::ordering::without_position(&markdown).as_bytes())));
             nodes.push(json!({"id":id,"markdown":markdown}));
         }
@@ -518,10 +568,17 @@ pub fn sync_publication(
                 return Ok(check);
             }
         }
+        if let Some(exemption) = documentation_only(before.as_deref(), &after) { return Ok(exemption) }
+        let scope = ReviewScope {
+            selected: after.nodes.keys().cloned().collect(),
+            included: changed_nodes(before.as_deref(), &after).into_iter()
+                .filter(|id| !crate::native_kb::documentation(id)).collect(),
+            excluded: Vec::new(),
+        };
         Ok(publication_with_access(
             &mut reader,
-            before.as_deref(),
             &after,
+            &scope,
             access,
             true,
         ))
@@ -532,10 +589,14 @@ pub fn sync_publication(
     }
 }
 
-fn documentation_only(before: Option<&GitView>, after: &GitView) -> Option<Value> {
-    let changed: Vec<_> = after.nodes.iter().filter(|(id, node)|
+fn changed_nodes(before: Option<&GitView>, after: &GitView) -> Vec<String> {
+    after.nodes.iter().filter(|(id, node)|
         before.and_then(|view| view.nodes.get(*id)).is_none_or(|old| old.text_hash != node.text_hash)
-    ).map(|(id, _)| id).collect();
+    ).map(|(id, _)| id.clone()).collect()
+}
+
+fn documentation_only(before: Option<&GitView>, after: &GitView) -> Option<Value> {
+    let changed = changed_nodes(before, after);
     if changed.is_empty() {
         Some(json!({"status":"not_required", "reason":"no_changed_node_text"}))
     } else if changed.iter().all(|id| crate::native_kb::documentation(id)) {
@@ -545,26 +606,18 @@ fn documentation_only(before: Option<&GitView>, after: &GitView) -> Option<Value
 
 fn publication_with_access(
     reader: &mut GitReader,
-    before: Option<&GitView>,
     after: &GitView,
+    scope: &ReviewScope,
     access: &mut SyncAccess,
     subscription_only: bool,
 ) -> Value {
-    if let Some(exemption) = documentation_only(before, after) { return exemption }
     let mut results = Vec::new();
     let mut attempt = || -> Result<Value> {
         if subscription_only && !paid_account(access)? {
             return Ok(json!({"status":"not_required","reason":"free_account"}));
         }
-        for (id, node) in &after.nodes {
-            if crate::native_kb::documentation(id) { continue }
-            if before
-                .and_then(|view| view.nodes.get(id))
-                .is_some_and(|old| old.text_hash == node.text_hash)
-            {
-                continue;
-            }
-            let text = String::from_utf8(reader.bytes(after, id)?)?;
+        for id in &scope.included {
+            let text = scope.markdown(reader, after, id)?;
             let body = json!({"checker":"epistemic", "text":text,
                 "context":{"node_id":id, "candidate_tree":after.tree, "candidate_version":after.version}});
             let mut value = response(
@@ -725,11 +778,16 @@ pub fn render_publication(check: &Value) -> String {
         Some("findings") if check["replication"] == true => lines.push("Epistemic findings retained for repair; own-account replication is not blocked.".into()),
         Some("findings") => lines.push("Not accepted. Draft preserved. To waive only the findings refusal, submit with --accept-despite-findings. Agents must never pass it without the user's explicit OK.".into()),
         Some("not_required") if check["reason"] == "no_changed_node_text" => lines.push("Epistemic submit check: no changed node text.".into()),
+        Some("not_required") if check["reason"] == "upload_excluded" => lines.push("Epistemic submit check: all changed knowledge excluded by upload policy; no review, upload or charge.".into()),
         Some("not_required") if check["reason"] == "accepted_replication" => (),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),
         Some("unchecked") if check["waived"] == true => lines.push("Epistemic review explicitly waived for this save.".into()),
         Some("unchecked") if check["blocked"] == true => (),
         _ => lines.push("Epistemic submit check: unchecked (no credits or service unavailable). To check these nodes later, run epistemic-check explicitly.".into()),
+    }
+    if let Some(excluded) = check["excluded_nodes"].as_array().filter(|nodes| !nodes.is_empty()) {
+        let included = check["included_nodes"].as_array().map_or(0, Vec::len);
+        lines.push(format!("Hosted review scope: {included} included; {} excluded by upload policy. Excluded nodes were not uploaded or checked.", excluded.len()));
     }
     if let Some(detail) = check["detail"].as_str() {
         lines.push(detail.to_owned());

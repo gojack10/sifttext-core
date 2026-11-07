@@ -1542,7 +1542,11 @@ fn execute(
                 // Incomplete or skipped checks cannot erase findings on this tree.
                 let previous = crate::hosted_checks::documentation_exempt_record(
                     serde_json::from_slice(&crate::read_regular(&path)?)?);
-                if previous["status"] == "findings" {
+                // Findings from a broader private packet do not bind a newly
+                // restricted review. Preserve findings within the same scope.
+                let same_scope = result["excluded_nodes"].as_array().is_none_or(Vec::is_empty)
+                    || previous["included_nodes"] == result["included_nodes"];
+                if previous["status"] == "findings" && same_scope {
                     if result["waived"] == true {
                         result = previous;
                     } else {

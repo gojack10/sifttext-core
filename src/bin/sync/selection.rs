@@ -22,81 +22,9 @@ pub(super) fn requires_migration_size(repo: &Path, revision: &str) -> Result<boo
     Ok(false)
 }
 
-use sifttext_file_graph::tree_selection::{Action, includes};
-pub(super) use sifttext_file_graph::tree_selection::Rule;
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Settings {
-    pub mode: String,
-    default: Action,
-    rules: Vec<Rule>,
-}
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            mode: "unanswered".into(),
-            default: Action::Include,
-            rules: Vec::new(),
-        }
-    }
-}
-fn config(home: &Path) -> Result<Value> {
-    if let Ok(meta) = fs::symlink_metadata(home.join(".sifttext")) {
-        if !meta.is_dir() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o022 != 0 {
-            return Err("unsafe local configuration directory".into());
-        }
-    }
-    let path = home.join(".sifttext/config.json");
-    match fs::symlink_metadata(&path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
-        Err(e) => Err(e.into()),
-        Ok(meta) => {
-            if !meta.is_file() || meta.nlink() != 1 || meta.len() > 1024 * 1024 {
-                return Err("unsafe local configuration".into());
-            }
-            let mut file = fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(path)?;
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)?;
-            let value: Value = serde_json::from_slice(&bytes)?;
-            if !value.is_object() {
-                return Err("local configuration must be an object".into());
-            }
-            Ok(value)
-        }
-    }
-}
-pub(super) fn settings(home: &Path) -> Result<Settings> {
-    let file = config(home)?;
-    let settings: Settings = file
-        .get("sync")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()?
-        .unwrap_or_default();
-    validate(&settings)?;
-    Ok(settings)
-}
-fn validate(settings: &Settings) -> Result<()> {
-    if !["unanswered", "declined", "disabled", "enabled"].contains(&settings.mode.as_str()) {
-        return Err("sync.mode must be unanswered, declined, disabled or enabled".into());
-    }
-    let mut rules: BTreeMap<&str, Action> = BTreeMap::new();
-    for rule in &settings.rules {
-        if !uuid(&rule.node) {
-            return Err("sync rule requires a canonical node UUID".into());
-        }
-        if rules
-            .insert(&rule.node, rule.action)
-            .is_some_and(|old| old != rule.action)
-        {
-            return Err("opposing sync rules for one node; no transfer permitted".into());
-        }
-    }
-    Ok(())
-}
+use sifttext_file_graph::sync_policy::{config, validate};
+pub(super) use sifttext_file_graph::sync_policy::{Settings, settings};
+use sifttext_file_graph::tree_selection::references;
 pub(super) fn set_policy(home: &Path, input: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(input)?;
     if !meta.is_file() || meta.len() > 1024 * 1024 {
@@ -356,7 +284,7 @@ impl Snapshot {
             .into_iter()
             .filter(|id| {
                 let ancestors = std::iter::successors(parents.get(id), |parent| parents.get(*parent));
-                includes(&policy.rules, policy.default, id, ancestors.map(String::as_str))
+                policy.includes(id, ancestors.map(String::as_str))
             })
             .collect())
     }
@@ -444,33 +372,6 @@ fn identity(mut command: Command) -> Command {
         .env("GIT_COMMITTER_NAME", "SiftText Sync")
         .env("GIT_COMMITTER_EMAIL", "sync@sifttext.invalid");
     command
-}
-fn references(text: &str, refs: &[sifttext_file_graph::Reference]) -> Result<String> {
-    if parse_markdown(text)?.see_also == refs {
-        return Ok(text.into());
-    }
-    let mut result = String::new();
-    let mut fences = 0;
-    let mut replaced = false;
-    for line in text.split_inclusive('\n') {
-        if line.trim_end_matches(['\r', '\n']) == "---" {
-            fences += 1;
-        }
-        if fences == 1
-            && line
-                .split_once(':')
-                .is_some_and(|(key, _)| key.trim() == "see_also")
-        {
-            result.push_str(&format!("see_also: {}\n", serde_json::to_string(refs)?));
-            replaced = true;
-        } else {
-            result.push_str(line);
-        }
-    }
-    if !replaced {
-        return Err("missing structured references".into());
-    }
-    Ok(result)
 }
 
 #[derive(Serialize, Deserialize)]

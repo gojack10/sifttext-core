@@ -126,6 +126,7 @@ pub mod ordering;
 mod order_migration;
 pub mod tree_render;
 pub mod tree_selection;
+pub mod sync_policy;
 #[cfg(test)]
 #[path = "../tests/successor/prepared_publication.rs"]
 mod prepared_publication_tests;

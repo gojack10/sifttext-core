@@ -121,6 +121,8 @@ A node's direct rule takes priority. Without a direct rule, selection uses its n
 
 To share only one tree, set the default to `exclude` and add a recursive `include` rule for its root.
 
+The same `sync.default` and `sync.rules` also exclude knowledge from hosted epistemic checking, including explicit candidate review. This selection applies independently of `sync.mode`, which controls sync transfers. Mixed saves review only included changed nodes and save all approved nodes locally. Entirely excluded saves make no hosted review request. Follow [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) to keep excluded facts out of work records, outlines, evidence and artifact plans as well.
+
 Publication uses the selected nodes' current accepted text. Review that text for private material because manually copied words and links are included.
 
 | Material | Publication behavior |
