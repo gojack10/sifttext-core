@@ -37,7 +37,7 @@ For instruction changes, apply [Canopy (Prompt Authoring Framework)](../957aa569
 
 Use [Associate External Artifact Directories](../de7cea55-c93d-48db-a4f6-58368bf6c36f/node.md) when a node materially uses an external directory.
 
-Use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) when a session materially supports the knowledge.
+When saving understanding developed in the current conversation, use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) to retain its source and associate it with the supported nodes. The retained copy keeps the original discussion recoverable after the harness clears its history.
 
 The official GitHub/bundled user-facing KB is durable documentation, exempt from epistemic-state review. Do not run or require an epistemic check for those maintained instruction identities, bill for their review, or label them passed without a review. Review their source accuracy, instruction route and structural integrity normally. The exemption follows the identities shipped in Core's bundled KB, including locally maintained copies; it does not extend to arbitrary customer knowledge or founder development records.
 
