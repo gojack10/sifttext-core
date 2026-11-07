@@ -7,6 +7,22 @@ see_also: []
 scope: "Carry an approved knowledge change through publication."
 position: 7168
 ---
+## Prepare usable understanding
+
+Prepare a source-grounded proposal that leaves the affected understanding usable for the next reader. Observations made during the task may change what that reader should believe or do. Reconcile those changes in the affected knowledge, preserving historical context and making unresolved questions explicit. The user’s stated scope and approval govern what is saved.
+
+### Example of updating affected recovery instructions
+
+The user asks to save machine details. While drafting, the agent discovers that the same recovery note still instructs a reader to restore an archived automation. The incident is reported in [GitHub issue #36](https://github.com/gojack10/sifttext-core/issues/36).
+
+**Bad example (A), observed excerpt**
+
+> I only flagged that the LaunchAgents list is stale and didn't rewrite it. Refreshing that list would be a separate change.
+
+**Better example (B), synthetic**
+
+> While adding the machine details, I found that the recovery instructions would restore an archived job. I checked its current status and included the supported correction in the proposal.
+
 ## Permission and timing
 
 Ask for approval of the proposed changes before saving unless the user explicitly preapproves them or the setting is autonomous with no user interaction.
