@@ -64,7 +64,7 @@ const GROUPS: &[Group] = &[
         name: "write",
         guide: "fb1e0c9f-8c04-4baf-91e6-4688856a14af",
         commands: &[
-            command("worktree HOME", "Allocate a private draft"),
+            command("worktree HOME [--for-import]", "Allocate a private draft; imports defer its search index"),
             command("create WORKTREE NAME SUMMARY [PARENT_UUID]", "Create a root or child"),
             command("normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]", "Apply draft status changes"),
             command("submit REPO DRAFT COMMIT BASE [WORK_PACKET.json] [EXPLICIT_UUID ... | --received-statuses] [--skip-epistemic-check | --accept-despite-findings] [-y]", "Publish a draft. Hosted review requires its work packet. Either override requires the user's explicit approval for this save."),

@@ -16,6 +16,8 @@ Do not edit the normal home directly or hide edits with Git index flags. Preserv
 
 Submission owns its required reader completion. Do not add a ritual `advance`, index refresh or duplicate preflight before ordinary worktree allocation or submission. Use explicit reader recovery only when an actual receipt or reading need calls for it.
 
+For native imports, `sifttext worktree HOME --for-import` allocates the same Git draft while deferring its SQLite search index. Submit the incoming files through Core; submission updates the destination home's reader and index.
+
 ## Temporary drafts and expiry
 
 Core allocates new private drafts and internal publication views beneath the platform's temporary directory.

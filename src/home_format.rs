@@ -117,7 +117,7 @@ pub fn ensure(policy: &Policy, home: &Path) -> Result<()> {
     let mut pending: Pending = if journal.try_exists()? {
         serde_json::from_slice(&crate::read_regular(&journal)?)?
     } else {
-        let allocated = local::migration_worktree(policy, &home)?;
+        let allocated = local::import_worktree(policy, &home)?;
         let pending = Pending {
             draft: PathBuf::from(allocated["worktree"].as_str().ok_or("missing migration draft")?),
             base: allocated["base"].as_str().ok_or("missing migration base")?.into(),

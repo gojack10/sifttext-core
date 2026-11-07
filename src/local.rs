@@ -870,7 +870,8 @@ pub fn worktree(policy: &Policy, home: &Path) -> Result<Value> {
     worktree_inner(policy, home, |_| Ok(()))
 }
 
-pub(crate) fn migration_worktree(policy: &Policy, home: &Path) -> Result<Value> {
+/// Allocate native import custody; submission prepares the destination index.
+pub fn import_worktree(policy: &Policy, home: &Path) -> Result<Value> {
     allocate_worktree(policy, home, false, |_| Ok(()))
 }
 

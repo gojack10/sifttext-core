@@ -381,6 +381,9 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             receipt
         },
         [cmd, home] if cmd == "worktree" => local::worktree(&policy, Path::new(home))?,
+        [cmd, home, flag] if cmd == "worktree" && flag == "--for-import" => {
+            local::import_worktree(&policy, Path::new(home))?
+        },
         [cmd, source, descriptor, archive] if cmd == "session-capture" => {
             let descriptor_path = absolute(descriptor)?;
             let metadata = std::fs::symlink_metadata(&descriptor_path)?;
