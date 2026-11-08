@@ -352,6 +352,14 @@ pub fn run(args: &[String]) -> Result<()> {
             if let Some(end) = value["period_end"].as_str() {
                 writeln!(std::io::stdout().lock(), "Monthly credits renew: {end}")?;
             }
+            let trial = &value["trial"];
+            if trial.is_object() {
+                writeln!(std::io::stdout().lock(),
+                    "Introductory credits: remaining {} of {} | started {} | expires {}",
+                    trial["remaining"], trial["allowance"],
+                    trial["started_at"].as_str().unwrap_or("not yet"),
+                    trial["expires_at"].as_str().unwrap_or("not yet"))?;
+            }
             writeln!(std::io::stdout().lock(), "{}", credit(&json!({"balance":value,"credits_used":0})))?;
             return Ok(());
         }
