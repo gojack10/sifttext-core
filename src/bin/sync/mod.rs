@@ -21,7 +21,6 @@ use std::{
 };
 
 const ENDPOINT: &str = "https://workspace.sifttext.com";
-const RESOURCE: &str = "https://workspace.sifttext.com/mcp";
 const LIMIT: usize = 32 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -263,15 +262,19 @@ fn reader_tips(home: &Path) -> Result<(String, String)> {
 fn ancestor(home: &Path, a: &str, b: &str) -> bool {
     a == b || git(home, &["merge-base", "--is-ancestor", a, b]).is_ok()
 }
+pub(super) fn resource() -> Result<String> {
+    Ok(format!("{}/mcp", endpoint()?))
+}
 fn endpoint() -> Result<String> {
     let endpoint = std::env::var("SIFTTEXT_SYNC_ORIGIN").unwrap_or_else(|_| ENDPOINT.into());
     if endpoint != ENDPOINT
+        && endpoint != "https://workspace-staging.sifttext.com"
         && !endpoint
             .strip_prefix("http://127.0.0.1:")
             .and_then(|p| p.parse::<u16>().ok())
             .is_some_and(|p| p > 0)
     {
-        return Err("sync origin must be official Workspace or explicit loopback port".into());
+        return Err("sync origin must be official Workspace, staging, or explicit loopback port".into());
     }
     Ok(endpoint)
 }
@@ -380,7 +383,7 @@ impl Exchange {
             Binding::Bound { home_id } => Some(home_id.clone()),
         };
         Ok(Self {
-            auth: account::SyncAccess::open(RESOURCE)?,
+            auth: account::SyncAccess::open(&resource()?)?,
             endpoint: state.endpoint.clone(),
             home_id,
         })
@@ -422,7 +425,7 @@ impl Exchange {
         let encoded = body.map(Value::to_string);
         let mut response = self.send(path, encoded.as_deref())?;
         if response.0 == 401 {
-            self.auth.renew(RESOURCE)?;
+            self.auth.renew(&resource()?)?;
             // Renewal must prove the SAME home before replaying even a POST or
             // downloading objects. A new token alone is not ownership evidence.
             let remote = checked_response(self.send("/sync/v1/state", None)?)?;
@@ -686,7 +689,7 @@ fn upload(
     // Checker calls use the ordinary Platform MCP audience. Restore the sync
     // audience under the same rotation lease, then prove the same remote owner
     // and baseline before any upload. Failed restoration cannot authorize transfer.
-    exchange.auth.renew(RESOURCE)?;
+    exchange.auth.renew(&resource()?)?;
     let verified = checked_response(exchange.send("/sync/v1/state", None)?)?;
     exchange.verify_home(&verified)?;
     compatible(&verified)?;

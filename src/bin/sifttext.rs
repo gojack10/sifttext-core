@@ -74,10 +74,13 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
     if let Some(command) = args.first()
         && account::is_command(command)
     {
-        if args.len() != 1 {
-            return Err(format!("usage: sifttext {command}").into());
-        }
-        return account::run(command);
+        // A separate workspace grant exists only in the isolated OIDC configuration.
+        let resource = match args.as_slice() {
+            [_] => None,
+            [_, flag, value] if flag == "--resource" && *value == sync::resource()? => Some(value.as_str()),
+            _ => return Err(format!("usage: sifttext {command}").into()),
+        };
+        return account::run(command, resource);
     }
     if args.first().is_some_and(|cmd| sifttext_file_graph::hosted_checks::is_command(cmd))
         && args.first().is_some_and(|cmd| cmd != "epistemic-check")

@@ -1,5 +1,6 @@
 //! Browser OAuth is independent of knowledge, installed assets and update locks.
 //! curl is an existing installation prerequisite; credentials travel only over stdin.
+mod provider;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -35,14 +36,16 @@ struct Credentials {
     expires_at: u64,
     #[serde(default)]
     resource: String,
+    #[serde(default)]
+    issuer: String,
 }
 
 impl Credentials {
-    fn load(dir: &Path) -> Result<Self> {
+    fn load(path: &Path) -> Result<Self> {
         let mut file = OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(dir.join("credentials.json"))
+            .open(path)
             .map_err(|_| "No usable saved login. Run sifttext login.")?;
         check_file(&file)?;
         let mut bytes = Vec::new();
@@ -65,16 +68,16 @@ pub(crate) fn random() -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-// The override is intentionally loopback-only, for local integration tests/development.
+// Exact staging origin only; arbitrary servers must not receive saved credentials.
 fn origin() -> Result<String> {
     let origin = std::env::var("SIFTTEXT_AUTH_ORIGIN").unwrap_or_else(|_| PLATFORM.into());
     let loopback = origin
         .strip_prefix("http://127.0.0.1:")
         .and_then(|port| port.parse::<u16>().ok())
         .is_some_and(|port| port != 0);
-    if origin != PLATFORM && !loopback {
+    if origin != PLATFORM && origin != "https://staging.sifttext.com" && !loopback {
         return Err(
-            "authentication origin must be the official Platform or an explicit loopback port"
+            "authentication origin must be official Platform, staging, or an explicit loopback port"
                 .into(),
         );
     }
@@ -83,11 +86,35 @@ fn origin() -> Result<String> {
 
 struct Store {
     dir: PathBuf,
+    filename: String,
     _lock: File,
 }
 
+fn account_resource() -> Result<String> {
+    Ok(format!("{}/mcp", origin()?))
+}
+
+// Production keeps its single legacy credential file. OIDC grants are bound to
+// one resource, so each configured resource keeps its own grant file.
+fn grant_filename(resource: &str) -> Result<String> {
+    let issuer = provider::issuer()?;
+    if issuer.is_empty() {
+        return Ok("credentials.json".to_owned());
+    }
+    let key = serde_json::to_vec(&(origin()?, issuer, resource))?;
+    Ok(format!("grant-{:x}.json", Sha256::digest(key)))
+}
+
+fn check_provider(credentials: &Credentials) -> Result<()> {
+    if credentials.origin != origin()? || credentials.issuer != provider::issuer()? {
+        return Err("saved login belongs to another account service or issuer; sign in again".into());
+    }
+    Ok(())
+}
+
 impl Store {
-    fn open() -> Result<Self> {
+    fn open(resource: &str) -> Result<Self> {
+        let filename = grant_filename(resource)?;
         let home = fs::canonicalize(std::env::var_os("HOME").ok_or("HOME is not set")?)?;
         let destination = home.join(".config/sifttext/account");
         // Check before creating anything: a Git-backed HOME must remain untouched.
@@ -132,15 +159,15 @@ impl Store {
         if !managed() && unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err("another authentication command is running".into());
         }
-        Ok(Self { dir, _lock: lock })
+        Ok(Self { dir, filename, _lock: lock })
     }
 
     fn path(&self) -> PathBuf {
-        self.dir.join("credentials.json")
+        self.dir.join(&self.filename)
     }
 
     fn load(&self) -> Result<Credentials> {
-        Credentials::load(&self.dir)
+        Credentials::load(&self.path())
     }
 
     fn save(&self, credentials: &Credentials) -> Result<()> {
@@ -339,15 +366,33 @@ fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
         .ok_or_else(|| format!("Platform response missing {key}").into())
 }
 
+fn oauth_error_name(value: Option<&str>) -> &'static str {
+    // Never print arbitrary provider descriptions, credentials or callback contents.
+    match value {
+        Some("invalid_client") => "invalid_client (client registration/configuration)",
+        Some("invalid_scope") => "invalid_scope (requested client scopes)",
+        Some("invalid_target") => "invalid_target (resource audience configuration)",
+        Some("invalid_grant") => "invalid_grant (expired/revoked grant or callback mismatch)",
+        Some("unauthorized_client") => "unauthorized_client (client flow configuration)",
+        Some("access_denied") => "access_denied (authorization not granted)",
+        Some("temporarily_unavailable") => "temporarily_unavailable",
+        _ => "unrecognized authorization error",
+    }
+}
+
 fn tokens(origin: &str, client_id: &str, fields: &[(&str, &str)]) -> Result<Credentials> {
+    let provider = provider::discover()?;
     let (status, value) = http(
-        origin,
-        "/oauth/token",
+        &provider.token,
+        "",
         None,
         Some(("application/x-www-form-urlencoded", &form(fields))),
     )?;
     if status != 200 {
-        return Err("Authorization expired or was revoked. Run sifttext login.".into());
+        if provider.issuer.is_empty() {
+            return Err("Authorization expired or was revoked. Run sifttext login.".into());
+        }
+        return Err(format!("Token endpoint returned HTTP {status}: {}. Use the matching login command to retry.", oauth_error_name(value["error"].as_str())).into());
     }
     if !text(&value, "token_type")?.eq_ignore_ascii_case("bearer") {
         return Err("unsupported OAuth token type".into());
@@ -362,12 +407,17 @@ fn tokens(origin: &str, client_id: &str, fields: &[(&str, &str)]) -> Result<Cred
         access_token: text(&value, "access_token")?.into(),
         refresh_token: text(&value, "refresh_token")?.into(),
         expires_at: now()?.saturating_add(lifetime),
+        issuer: provider.issuer,
         resource: fields.iter().find(|(key, _)| *key == "resource")
             .map(|(_, value)| (*value).to_owned()).unwrap_or_default(),
     })
 }
 
 fn refresh_for(store: &Store, credentials: &mut Credentials, resource: &str) -> Result<()> {
+    check_provider(credentials)?;
+    if !credentials.issuer.is_empty() && credentials.resource != resource {
+        return Err("resource-bound grant cannot change audience; login separately for this resource".into());
+    }
     *credentials = tokens(
         &credentials.origin,
         &credentials.client_id,
@@ -382,15 +432,11 @@ fn refresh_for(store: &Store, credentials: &mut Credentials, resource: &str) -> 
     store.save(credentials)
 }
 
-fn refresh(store: &Store, credentials: &mut Credentials) -> Result<()> {
-    let resource = format!("{}/mcp", credentials.origin);
-    refresh_for(store, credentials, &resource)
-}
-
 // Lock credential access/rotation, not the work using an access token. Atomic
 // credential replacement permits lock-free reads between network requests.
 pub struct SyncAccess {
     dir: PathBuf,
+    file: PathBuf,
     credentials: Option<Credentials>,
 }
 impl SyncAccess {
@@ -398,7 +444,8 @@ impl SyncAccess {
     pub(crate) fn saved_login_exists() -> Result<bool> {
         if managed() { return Ok(true); }
         let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-        let path = PathBuf::from(home).join(".config/sifttext/account/credentials.json");
+        let path = PathBuf::from(home).join(".config/sifttext/account")
+            .join(grant_filename(&account_resource()?)?);
         match fs::symlink_metadata(path) {
             Ok(_) => Ok(true),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -407,7 +454,7 @@ impl SyncAccess {
     }
 
     pub(crate) fn checks() -> Result<Self> {
-        Self::open(&format!("{}/mcp", origin()?))
+        Self::open(&account_resource()?)
     }
 
     /// Persist non-content recovery custody before any checker dispatch.
@@ -460,12 +507,14 @@ impl SyncAccess {
     }
 
     pub fn open(resource: &str) -> Result<Self> {
-        let store = Store::open()?;
-        if managed() { return Ok(Self { dir: store.dir.clone(), credentials: None }); }
-        let mut credentials = store.load()?;
-        if credentials.origin != origin()? {
-            return Err("saved login belongs to another Platform".into());
-        }
+        let store = Store::open(resource)?;
+        if managed() { return Ok(Self { dir: store.dir.clone(), file: store.path(), credentials: None }); }
+        let mut credentials = if provider::issuer()?.is_empty() {
+            store.load()?
+        } else {
+            store.load().map_err(|_| format!("No saved grant for {resource}. Run sifttext login --resource {resource}."))?
+        };
+        check_provider(&credentials)?;
         let saved_resource = if credentials.resource.is_empty() {
             format!("{}/mcp", credentials.origin)
         } else {
@@ -474,12 +523,12 @@ impl SyncAccess {
         if saved_resource != resource || credentials.expires_at <= now()?.saturating_add(60) {
             refresh_for(&store, &mut credentials, resource)?;
         }
-        Ok(Self { dir: store.dir.clone(), credentials: Some(credentials) })
+        Ok(Self { dir: store.dir.clone(), file: store.path(), credentials: Some(credentials) })
     }
     pub fn token(&self) -> Result<&str> {
         // The socket supplies authority; this is never a bearer credential.
         let Some(credentials) = self.credentials.as_ref() else { return Ok(""); };
-        let saved = Credentials::load(&self.dir)?;
+        let saved = Credentials::load(&self.file)?;
         // Rotation may serve another resource without replacing the login.
         if saved.origin != credentials.origin || saved.client_id != credentials.client_id {
             return Err("saved login changed during sync; no further transfer attempted".into());
@@ -488,7 +537,10 @@ impl SyncAccess {
     }
     pub fn renew(&mut self, resource: &str) -> Result<()> {
         let Some(credentials) = self.credentials.as_mut() else { return Ok(()); };
-        let store = Store::open()?;
+        let store = Store::open(resource)?;
+        if store.path() != self.file {
+            return Err("resource-bound grant cannot change audience; login separately for this resource".into());
+        }
         let saved = store.load()?;
         // Never adopt a new login or replay a concurrently rotated refresh token.
         if store.dir != self.dir || saved.origin != credentials.origin
@@ -507,35 +559,40 @@ impl SyncAccess {
     }
 }
 
-fn account(store: &Store, credentials: &mut Credentials) -> Result<Value> {
-    if credentials.origin != origin()? {
-        return Err("saved login belongs to a different Platform; run sifttext login".into());
-    }
-    if (!credentials.resource.is_empty()
-        && credentials.resource != format!("{}/mcp", credentials.origin))
+fn account(store: &Store, credentials: &mut Credentials, resource: &str) -> Result<Value> {
+    check_provider(credentials)?;
+    if (!credentials.resource.is_empty() && credentials.resource != resource)
         || credentials.expires_at <= now()?.saturating_add(30) {
-        refresh(store, credentials)?;
+        refresh_for(store, credentials, resource)?;
     }
+    let workspace = !credentials.issuer.is_empty() && resource != account_resource()?;
+    let path = if workspace { "/oauth/hosted-account" } else { "/oauth/account" };
+    let endpoint = if workspace {
+        resource.strip_suffix("/mcp").ok_or("invalid workspace resource")?.to_owned()
+    } else { credentials.origin.clone() };
     let mut response = http(
-        &credentials.origin,
-        "/oauth/account",
+        &endpoint,
+        path,
         Some(&credentials.access_token),
         None,
     )?;
     if response.0 == 401 {
-        refresh(store, credentials)?;
+        refresh_for(store, credentials, resource)?;
         response = http(
-            &credentials.origin,
-            "/oauth/account",
+            &endpoint,
+            path,
             Some(&credentials.access_token),
             None,
         )?;
     }
     if response.0 != 200 {
-        return Err(
-            "could not verify Platform account; run sifttext login if authorization was revoked"
-                .into(),
-        );
+        if credentials.issuer.is_empty() {
+            return Err(
+                "could not verify Platform account; run sifttext login if authorization was revoked"
+                    .into(),
+            );
+        }
+        return Err(format!("Grant saved, but account verification at {endpoint}{path} returned HTTP {}. A 403 can mean this signed-in identity has no enabled SiftText account mapping; a 401 means the resource rejected its token.", response.0).into());
     }
     if !response.1["paid"].is_boolean() {
         return Err("Platform did not confirm subscription status".into());
@@ -603,6 +660,7 @@ fn callback(
     stream: &mut TcpStream,
     authority: &str,
     state: &str,
+    expected_issuer: Option<&str>,
     remaining: Duration,
 ) -> Result<String> {
     let deadline = Instant::now() + remaining;
@@ -652,8 +710,13 @@ fn callback(
     if fields.get("state").map(String::as_str) != Some(state) {
         return Err("callback state mismatch".into());
     }
+    if let Some(issuer) = expected_issuer
+        && fields.get("iss").map(String::as_str) != Some(issuer)
+    {
+        return Err("authorization callback issuer mismatch".into());
+    }
     if fields.contains_key("error") {
-        return Err("browser authorization was denied or cancelled".into());
+        return Err(format!("Browser authorization failed: {}", oauth_error_name(fields.get("error").map(String::as_str))).into());
     }
     fields
         .remove("code")
@@ -661,8 +724,9 @@ fn callback(
         .ok_or_else(|| "missing callback code".into())
 }
 
-fn login(store: &Store) -> Result<()> {
+fn login(store: &Store, resource: &str) -> Result<()> {
     let origin = origin()?;
+    let provider = provider::discover()?;
     let listener = TcpListener::bind("127.0.0.1:0")?;
     listener.set_nonblocking(true)?;
     let authority = listener.local_addr()?.to_string();
@@ -670,20 +734,25 @@ fn login(store: &Store) -> Result<()> {
     let state = random()?;
     let verifier = random()?;
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let registration = json!({"client_name":"SiftText CLI", "redirect_uris":[redirect], "token_endpoint_auth_method":"none", "grant_types":["authorization_code","refresh_token"], "response_types":["code"]});
-    let (status, registration) = http(
-        &origin,
-        "/oauth/register",
-        None,
-        Some(("application/json", &registration.to_string())),
-    )?;
-    if status != 200 && status != 201 {
-        return Err("could not register SiftText CLI with Platform".into());
-    }
-    let client_id = text(&registration, "client_id")?;
-    let resource = format!("{origin}/mcp");
+    let client_id = if let Some(client_id) = &provider.client_id {
+        client_id.clone()
+    } else {
+        let registration = json!({"client_name":"SiftText CLI", "redirect_uris":[redirect], "token_endpoint_auth_method":"none", "grant_types":["authorization_code","refresh_token"], "response_types":["code"]});
+        let (status, value) = http(
+            provider.registration.as_deref().ok_or("missing client registration endpoint")?,
+            "", None, Some(("application/json", &registration.to_string())),
+        )?;
+        if status != 200 && status != 201 {
+            return Err("could not register SiftText CLI with Platform".into());
+        }
+        text(&value, "client_id")?.to_owned()
+    };
+    let client_id = client_id.as_str();
+    let scope = if provider.issuer.is_empty() { "mcp" }
+        else if resource == account_resource()? { "openid account:read" }
+        else { "openid mcp" };
     let url = format!(
-        "{origin}/oauth/authorize?{}",
+        "{}?{}", provider.authorization,
         form(&[
             ("response_type", "code"),
             ("client_id", client_id),
@@ -691,8 +760,8 @@ fn login(store: &Store) -> Result<()> {
             ("state", &state),
             ("code_challenge", &challenge),
             ("code_challenge_method", "S256"),
-            ("scope", "mcp"),
-            ("resource", &resource),
+            ("scope", scope),
+            ("resource", resource),
         ])
     );
     writeln!(
@@ -720,6 +789,7 @@ fn login(store: &Store) -> Result<()> {
                     &mut stream,
                     &authority,
                     &state,
+                    if provider.verify_callback_issuer { Some(&provider.issuer) } else { None },
                     deadline.saturating_duration_since(Instant::now()),
                 );
                 let (status, body) = if result.is_ok() {
@@ -756,13 +826,16 @@ fn login(store: &Store) -> Result<()> {
             ("code", &code),
             ("redirect_uri", &redirect),
             ("code_verifier", &verifier),
-            ("resource", &resource),
+            ("resource", resource),
         ],
     )?;
     store.save(&credentials)?;
-    let account = account(store, &mut credentials)?;
+    let account = account(store, &mut credentials, resource)?;
     show_account(&account)?;
-    if account["paid"] == true {
+    if !provider.issuer.is_empty() {
+        writeln!(std::io::stdout(), "Authentication successful. Service entitlements are enforced separately.")?;
+        Ok(())
+    } else if account["paid"] == true {
         writeln!(std::io::stdout(), "Authentication successful.")?;
         Ok(())
     } else {
@@ -803,7 +876,7 @@ pub fn managed() -> bool {
     std::env::var_os("SIFTTEXT_ACCOUNT_SOCKET").is_some()
 }
 
-pub fn run(command: &str) -> Result<()> {
+pub fn run(command: &str, selected_resource: Option<&str>) -> Result<()> {
     if managed() {
         if matches!(command, "login" | "logout") {
             return Err("The server manages this hosted workspace's session. Use sifttext account to inspect it; sign in or disconnect through your MCP client.".into());
@@ -816,23 +889,29 @@ pub fn run(command: &str) -> Result<()> {
         show_account(&account)?;
         return Ok(());
     }
-    let store = Store::open()?;
+    let default_resource = account_resource()?;
+    let resource = selected_resource.unwrap_or(&default_resource);
+    if selected_resource.is_some() && provider::issuer()?.is_empty() {
+        return Err("explicit resource login is available only for the isolated OIDC configuration".into());
+    }
+    let store = Store::open(resource)?;
     match command {
-        "login" => login(&store),
+        "login" => login(&store, resource),
         "account" => {
             let mut credentials = store.load()?;
-            show_account(&account(&store, &mut credentials)?)
+            show_account(&account(&store, &mut credentials, resource)?)
         }
         "logout" => {
             let credentials = store.load().ok();
             // Local removal comes first, even when offline or the saved file is malformed.
             store.clear()?;
             let revoked = credentials
-                .filter(|c| origin().is_ok_and(|o| o == c.origin))
+                .filter(|c| check_provider(c).is_ok())
                 .is_some_and(|c| {
+                    let Ok(provider) = provider::discover() else { return false; };
                     http(
-                        &c.origin,
-                        "/oauth/revoke",
+                        &provider.revocation,
+                        "",
                         None,
                         Some((
                             "application/x-www-form-urlencoded",
