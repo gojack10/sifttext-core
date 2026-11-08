@@ -678,7 +678,7 @@ fn upload(
     // Only the sharing projection reaches the checker. Never inspect the full
     // private home here, and never trust a caller-authored pass marker.
     let check = sifttext_file_graph::hosted_checks::sync_publication(
-        &super::checked_policy(runtime)?, &store.home, consent_home, remote, commit, &mut exchange.auth,
+        &super::checked_policy(runtime)?, &store.home, consent_home, remote, commit,
     );
     sifttext_file_graph::hosted_checks::retain_results(consent_home, &check)?;
     let mut metadata = sifttext_file_graph::hosted_checks::publication_record(&check);
@@ -686,8 +686,8 @@ fn upload(
     metadata["replication"] = json!(true);
     state.hosted_check = Some(metadata);
     store.save(state)?;
-    // Checker calls use the ordinary Platform MCP audience. Restore the sync
-    // audience under the same rotation lease, then prove the same remote owner
+    // Checker calls use the account grant. A legacy single login rotated to that
+    // audience, so restore the sync audience, then prove the same remote owner
     // and baseline before any upload. Failed restoration cannot authorize transfer.
     exchange.auth.renew(&resource()?)?;
     let verified = checked_response(exchange.send("/sync/v1/state", None)?)?;
