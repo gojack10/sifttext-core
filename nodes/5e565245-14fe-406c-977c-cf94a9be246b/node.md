@@ -7,7 +7,10 @@ see_also: []
 scope: "Introduce SiftText and route the agent through reading, interaction, setup and authorized knowledge changes."
 position: 5120
 ---
-Knowledge nodes live at `nodes/<id>/node.md` in the knowledge home.
+- A **node** holds one piece of knowledge. It lives at `nodes/<id>/node.md` in the knowledge home.
+- A **tree** organizes nodes about one subject into a hierarchy.
+- A **subtree** consists of a node and all its descendants.
+- An **outline** shows the structure of all or part of a tree.
 
 Run `sifttext instructions` first. Read the returned onboarding entry and follow any `agent-instructions`. The command includes a help index. `sifttext help` lists command forms and their guides.
 
