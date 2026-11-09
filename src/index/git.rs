@@ -100,11 +100,10 @@ fn fingerprint(root: &Path, relative: &Path) -> Result<Option<Source>> {
     Err("empty authored path".into())
 }
 fn output(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    // Retrieval must not hold Git's optional index-write lock while a publisher
-    // advances the reader. Keep reader_command's GIT_OPTIONAL_LOCKS=0: status
-    // still discovers working changes without opportunistically rewriting index.
-    let output = crate::checked_publication::run_command(
-        crate::local::reader_command(root, args))?;
+    checked_output(crate::local::reader_command(root, args))
+}
+fn checked_output(command: std::process::Command) -> Result<Vec<u8>> {
+    let output = crate::checked_publication::run_command(command)?;
     require(output.status.success(), &format!("Git change discovery failed: {}", String::from_utf8_lossy(&output.stderr)))?;
     Ok(output.stdout)
 }
@@ -116,13 +115,26 @@ pub(super) struct Snapshot {
     changes: BTreeMap<PathBuf, Option<Source>>,
 }
 impl Snapshot {
-    pub fn read(root: &Path) -> Result<Self> {
+    pub fn read(root: &Path, save_checkpoint: bool) -> Result<Self> {
         let discovery = crate::local::reader_git(root, &["rev-parse", "--show-toplevel", "HEAD^{tree}"])?;
         let (top, tree) = discovery.split_once('\n').ok_or("missing Git source root")?;
         require(fs::canonicalize(top)? == root, "knowledge view must be its Git root")?;
         require(valid_oid(tree), "invalid Git tree identity")?;
         let tree = tree.to_owned();
-        let status = output(root, &["-c", "core.untrackedCache=true", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--", "nodes", "trees"])?;
+        let mut status = crate::local::reader_command(root, &[]);
+        // The cold preparation pass may save a checkpoint for an already
+        // enabled native monitor. Ordinary reads and the final check keep
+        // optional writes disabled. Git owns locking and stale-token fallback.
+        if cfg!(target_os = "macos") && save_checkpoint
+            && fs::symlink_metadata(root.join(".git")).is_ok_and(|entry| entry.is_dir())
+            && crate::local::reader_git(root, &["config", "--local", "--no-includes", "--get-all", "core.fsmonitor"])
+                .is_ok_and(|value| value == "true")
+            && crate::local::reader_git(root, &["fsmonitor--daemon", "status"]).is_ok()
+        {
+            status.env("GIT_OPTIONAL_LOCKS", "1").args(["-c", "core.fsmonitor=true"]);
+        }
+        status.args(["-c", "core.untrackedCache=true", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--", "nodes", "trees"]);
+        let status = checked_output(status)?;
         let mut changes = BTreeMap::new();
         let mut hash = Sha256::new();
         hash.update(tree.as_bytes());
@@ -153,7 +165,7 @@ impl Snapshot {
             .map(|(_, version)| version)
     }
     pub fn unchanged(&self) -> Result<bool> {
-        match Self::read(&self.repo) {
+        match Self::read(&self.repo, false) {
             Ok(after) => Ok(after.identity == self.identity),
             Err(error) if super::Refusal::is_changed_source(error.as_ref()) => Ok(false),
             Err(error) => Err(error),

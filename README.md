@@ -119,6 +119,9 @@ can reduce warm status work using Git's built-in monitor and untracked cache.
 It is opt-in, repository-local, capability/filesystem gated, and currently
 qualified only on local internal macOS APFS. Initialization does not enable it;
 setup and re-prime deliberately allow an index write without staging user files.
+During a cold SiftText index build, an already enabled and running built-in
+monitor can save its checkpoint in the first status pass. The final status
+pass can reuse it with optional writes disabled.
 It does not repair or accelerate Core's isolated checked-publication helpers.
 
 ## Recover an incomplete save

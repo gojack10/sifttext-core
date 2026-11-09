@@ -382,9 +382,7 @@ fn project(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Resu
                     "invalid authored field type",
                 )?;
             }
-            let order = bytes_for_order(connection, objects, id)?;
             row.insert("content".into(), json!(parsed.authored.content));
-            row.insert("children".into(), json!(order));
             Ok(Value::Object(row))
         })(),
         &relative,
@@ -493,6 +491,15 @@ fn refresh(
     let rebuild_links = node_links && (force || force_artifact_verification
         || meta(connection, "node_links_ready")?.as_deref() != Some("1"));
     setup(connection)?;
+    // Before the first publication, these commits stage rebuildable data.
+    // Sync the completed generation after its final source check.
+    let checkpoint = if meta(connection, "version")?.is_none() {
+        let pages = connection.pragma_query_value(None, "wal_autocheckpoint", |row| row.get::<_, i64>(0))?;
+        connection.execute_batch("PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=0;")?;
+        Some(pages)
+    } else {
+        None
+    };
     let version = version(connection, snapshot, !force, snapshot.accepted_version(accepted), work)?;
     let mut objects = Objects::new(&snapshot.repo);
     let present = ids(connection)?;
@@ -524,7 +531,8 @@ fn refresh(
         changes.extend(connection.prepare("SELECT id FROM nodes")?.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<BTreeSet<_>>>()?);
     }
     for id in changes.iter().filter(|id| present.contains(*id)) {
-        let hash: String = connection.query_row("SELECT content_hash FROM expected_sources WHERE path=?1", [format!("nodes/{id}/node.md")], |r| r.get(0))?;
+        let path = format!("nodes/{id}/node.md");
+        let hash: String = connection.query_row("SELECT content_hash FROM expected_sources WHERE path=?1", [&path], |r| r.get(0))?;
         let main = (!force).then(|| memo(connection, id, &hash)).flatten();
         let (mut row, body) = if let Some((row, _)) = main {
             work.nodes_main_reused += 1;
@@ -539,7 +547,8 @@ fn refresh(
             (row, Some(body))
         };
         // A Markdown hash authorizes only its projected fields, never hierarchy.
-        row["children"] = json!(bytes_for_order(connection, &mut objects, id)?);
+        let order = crate::source_error::context(bytes_for_order(connection, &mut objects, id), Path::new(&path), None)?;
+        row["children"] = json!(order);
         connection.execute("INSERT INTO projected VALUES (?1,?2,?3)", params![id,serde_json::to_string(&row)?,body])?;
     }
     drop(objects);
@@ -551,6 +560,10 @@ fn refresh(
         put(&tx, "artifacts_ready", "0")?;
         put(&tx, "generation", &generation)?;
         tx.commit()?;
+    }
+    if let Some(pages) = checkpoint {
+        connection.pragma_update(None, "synchronous", "FULL")?;
+        connection.pragma_update(None, "wal_autocheckpoint", pages)?;
     }
     let writer = Instant::now();
     let result = (|| -> Result<bool> {
@@ -704,9 +717,9 @@ fn with_source<T>(
     let database_id = identity(&database)?;
     let donor = prepared.and_then(|p| donor(p).ok());
     let node_links = prepare_links || crate::node_links::enabled(&root)?;
-    let capture = || Snapshot::read(&root);
+    let mut save_checkpoint = cfg!(target_os = "macos") && prepare && meta(&connection, "version")?.is_none();
     for _ in 0..4 {
-        let snapshot = match capture() {
+        let snapshot = match Snapshot::read(&root, std::mem::take(&mut save_checkpoint)) {
             Ok(snapshot) => snapshot,
             Err(error) if super::Refusal::is_changed_source(error.as_ref()) => continue,
             Err(error) => return Err(error),
