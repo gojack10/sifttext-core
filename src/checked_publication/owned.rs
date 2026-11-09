@@ -507,7 +507,17 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
         if !entry.file_type()?.is_dir() { continue; }
         let parent = entry.path();
         let result = (|| -> Result<()> {
-            if !crate::scratch::inactive(&parent, now)? { return Ok(()); }
+            let legacy = root.file_name().is_some_and(|name| name == "sifttext-publications");
+            let view = parent.join("view");
+            let inactive = || -> Result<bool> {
+                if legacy {
+                    Ok(crate::scratch::inactive(&parent.join("owner.json"), now)?
+                        && (!view.try_exists()? || crate::scratch::inactive_legacy_draft(&view, &view, now)?))
+                } else {
+                    crate::scratch::inactive(&parent, now)
+                }
+            };
+            if !inactive()? { return Ok(()); }
             require(fs::symlink_metadata(parent.join("owner.json"))?.len() <= 4096,
                 "oversized ownership record")?;
             let bytes = crate::read_regular(&parent.join("owner.json"))?;
@@ -519,12 +529,10 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
                     || root == crate::scratch::publications(repo)?,
                 "foreign scratch root",
             )?;
-            let view = parent.join("view");
             let gate = crate::local::publication_gate(&view)?;
             let _custody = Custody::new(&[&gate])?;
-            let legacy = root == repo.join("sifttext-publications");
             let record = load_record(repo, &parent, legacy)?;
-            if !crate::scratch::inactive(&parent, now)? { return Ok(()); }
+            if !inactive()? { return Ok(()); }
             for entry in fs::read_dir(&parent)? {
                 require(matches!(entry?.file_name().to_str(), Some("view" | "owner.json")),
                     "unexpected operation file")?;
@@ -532,7 +540,8 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
             if registration(repo, &parent, &record)? {
                 if view.join(".git").try_exists()? {
                     let admin = PathBuf::from(git(&view, &["rev-parse", "--absolute-git-dir"])?);
-                    if admin.join("index.lock").try_exists()? || !crate::scratch::inactive(&admin, now)? {
+                    let activity = if legacy { admin.join("HEAD") } else { admin.clone() };
+                    if admin.join("index.lock").try_exists()? || !crate::scratch::inactive(&activity, now)? {
                         return Ok(());
                     }
                 }
