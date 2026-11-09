@@ -9,6 +9,8 @@ position: 10240
 ---
 Run `sifttext instructions [HOME]` before knowledge work. Read `onboarding-entry` and follow any `agent-instructions`. The appended grouped help index routes to guide nodes; `sifttext help` lists command forms from the same registry.
 
+Every successful receipt includes `utc-time`, `system-local-time`, and `system-time-zone`. The two times show the same instant in UTC and in the CLI process's local timezone, with its numeric offset. The zone name is `unknown` when the active timezone has no discoverable name. An unreadable clock or failed conversion gives `unavailable` for the affected time. A container or remote host reports its own configured timezone. Use an explicitly supplied user timezone for user-facing dates when it differs, and read the clock again when a later task needs the current time.
+
 `hosted-sync` reports retained transport state, not a fresh server inquiry. `last-sync-complete` describes the last recorded exchange; it does not establish current remote freshness. `not-configured`, disabled consent, pending delivery, local changes, stopped transport and `needs-repair` are different states. Use `sifttext sync status HOME` and its actual repair guide when directed.
 
 Session-start `instructions` does not collect semantic findings or assign their retrieval or repair. Saved results remain available through explicit `sifttext check-result ID` requests. A historical finding is not a session-start work assignment, and a later unrelated passing save does not clear it.

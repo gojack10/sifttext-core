@@ -186,7 +186,7 @@ fn supplied_onramp_preserves_authored_knowledge_through_checked_publish_and_reco
     let mut instruction_lines = instruction_output.lines();
     assert!(instruction_lines.next().unwrap().starts_with("onboarding-entry:"));
     assert!(instruction_lines.next().unwrap().starts_with("hosted-sync:"));
-    assert_eq!(instruction_lines.next(), Some("sifttext-help-output:"));
+    assert!(instruction_lines.any(|line| line == "sifttext-help-output:"));
     let pipeline = sifttext_file_graph::outlines::decode_lean(&format!("{}\n", instruction_output.lines().next().unwrap())).unwrap();
     assert_eq!(
         pipeline["onboarding-entry"].as_str().unwrap(),
