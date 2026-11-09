@@ -361,6 +361,51 @@ fn activate(root: &Path, path: &Path) -> Result<()> {
     fs::File::open(root)?.sync_all()?;
     Ok(())
 }
+/// Under the exclusive update lock, keep the current package and rollback.
+fn retire_releases(root: &Path, state: &State) {
+    let result = (|| -> Result<()> {
+        if state.pending.is_some() || root.join("activation.json").try_exists()?
+            || root.join("current.next").symlink_metadata().is_ok()
+        {
+            return Ok(());
+        }
+        let directory = root.join("releases");
+        crate::real_dir(&directory)?;
+        require(fs::canonicalize(root.join("current"))? == root.join(&state.application),
+            "current release differs from the recorded application")?;
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() { continue; }
+            let path = entry.path();
+            let relative = path.strip_prefix(root)?;
+            if relative == state.application
+                || state.previous.as_ref().is_some_and(|previous| relative == previous.application)
+            {
+                continue;
+            }
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Ok(info) = package(&path) else { continue };
+            if !identifier(&info.version) || !info.version.starts_with('v') { continue }
+            let official = name == info.version || load::<CachedApplication>(&path.join(".sifttext-cache.json"))
+                .is_ok_and(|receipt| receipt.version == info.version && receipt.source == info.source
+                    && receipt.format == info.format && digest(&receipt.asset_sha256)
+                    && name == format!("{}-{}", info.version, receipt.asset_sha256));
+            let patched = load::<crate::patch_build::BuildReceipt>(&path.join(".sifttext-build.json"))
+                .is_ok_and(|receipt| digest(&receipt.inputs)
+                    && name == format!("{}-patched-{}", info.version, receipt.inputs)
+                    && crate::patch_build::fingerprint(&path).is_ok_and(|inputs| inputs == receipt.inputs));
+            if official || patched {
+                fs::remove_dir_all(path)?;
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("Obsolete release cleanup deferred: {error}");
+    }
+}
+
 fn platform() -> Result<String> {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
@@ -693,6 +738,7 @@ fn rebuild_active(root: &Path, state: &mut State) -> Result<Value> {
     state.previous = Some(previous);
     persist(&root.join("state.json"), state)?;
     fs::remove_file(root.join("activation.json"))?;
+    retire_releases(root, state);
     Ok(json!({
         "status":"rebuilt",
         "application":info.version,
@@ -941,6 +987,7 @@ fn finish(
     state.pending = None;
     persist(&root.join("state.json"), state)?;
     fs::remove_file(root.join("activation.json"))?;
+    retire_releases(root, state);
     Ok(
         json!({"status":"updated","application":manifest.application.version,"knowledge":state.knowledge,"refresh_instruction_paths":changed}),
     )
@@ -1665,6 +1712,7 @@ pub fn update_with_submission_receipt(
         crate::node_links::prepare(&state.home)?;
         prepare_harness(root, &state.home, None, state.baseline.as_deref())?;
         migrate_update_policy(&state.home)?;
+        retire_releases(root, &state);
         return Ok(json!({"status":"prepared", "application":state.application, "views":views}));
     }
     if let Some(value) = mode.strip_prefix("--grant=") {
@@ -1765,6 +1813,7 @@ pub fn update_with_submission_receipt(
         state.pending = None;
         persist(&root.join("state.json"), &state)?;
         fs::remove_file(root.join("activation.json"))?;
+        retire_releases(root, &state);
     }
     if mode == "--recover" {
         if state
