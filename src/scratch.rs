@@ -128,6 +128,9 @@ pub(crate) fn cleanup_legacy_publications(common: &Path) {
             return Ok(());
         };
         crate::checked_publication::expire_scratch_views(&legacy, now)?;
+        if fs::read_dir(&legacy)?.next().is_none() {
+            fs::remove_dir(&legacy)?;
+        }
         gate.set_len(1)?;
         gate.set_modified(now)?;
         Ok(())

@@ -222,6 +222,15 @@ fn identity(path: &Path) -> Result<Identity> {
 pub fn prepare(policy: &Policy, path: &Path, donor: Option<&Path>) -> Result<Value> {
     let (version, nodes) = current::prepare(policy, path, donor)?;
     crate::git_snapshot::retire_facts(path);
+    if let Ok(home) = fs::canonicalize(path) {
+        let common = home.join(".git");
+        if fs::symlink_metadata(&common).is_ok_and(|entry| entry.is_dir()) {
+            crate::scratch::cleanup_legacy_publications(&common);
+            if let Err(error) = crate::local::expire_repository_drafts(&common, std::time::SystemTime::now()) {
+                eprintln!("Draft expiry deferred for {}: {error}", home.display());
+            }
+        }
+    }
     Ok(serde_json::json!({"status":"current", "version":version, "nodes":nodes}))
 }
 

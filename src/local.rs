@@ -1001,7 +1001,7 @@ pub fn advance(policy: &Policy, home: &Path) -> Result<Value> {
 mod submission;
 pub use submission::{submit, submit_received, submit_with_options};
 pub(crate) use submission::submit_migration;
-pub(crate) use submission::{expire_draft, retained_submission};
+pub(crate) use submission::{expire_draft, expire_repository_drafts, retained_submission};
 
 fn reader_repository(home: &Path) -> Result<()> {
     use std::path::Component;

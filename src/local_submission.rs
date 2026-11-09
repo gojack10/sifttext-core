@@ -80,36 +80,81 @@ fn save_root(repo: &Path) -> Result<PathBuf> {
     Ok(root)
 }
 
-/// Expire only an inactive, unsubmitted draft in the private temp namespace.
-/// Keep its branch and request journals: scratch removal is not history GC.
+/// Expire an inactive, unsubmitted draft in the private temp namespace.
 pub(crate) fn expire_draft(draft: &Path, now: std::time::SystemTime) -> Result<()> {
     require(draft.parent() == Some(crate::scratch::drafts()?.as_path()), "unsafe expired draft path")?;
-    crate::real_dir(draft)?;
-    let lifecycle = lifecycle_lock(draft, false)?;
     let common = PathBuf::from(reader_git(draft,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"])?);
-    let root = save_root(&common)?;
+    expire_registered_draft(&common, draft, now)
+}
+
+fn expire_registered_draft(common: &Path, draft: &Path, now: std::time::SystemTime) -> Result<()> {
+    let lifecycle = lifecycle_lock(draft, false)?;
+    let root = save_root(common)?;
     let key = draft_key(draft)?;
     let lease = lock(&root.join(format!("{key}.lock")), false)?;
     // Even a refused prepared request needs its original files for native retry.
     if root.join(format!("{key}.json")).try_exists()? { return Ok(()); }
     let name = draft.file_name().and_then(|s| s.to_str())
-        .and_then(|s| s.strip_prefix("sifttext-worktree-")).ok_or("unknown draft name")?;
-    require(crate::uuid(name)
-        && reader_git(draft, &["symbolic-ref", "--quiet", "HEAD"])? == format!("refs/heads/sifttext/{name}"),
-        "expired draft branch changed")?;
-    let admin = PathBuf::from(reader_git(draft, &["rev-parse", "--absolute-git-dir"])?);
-    let initializing = crate::read_regular(&admin.join("locked")).is_ok_and(|bytes| bytes == b"initializing\n");
-    if (admin.join("locked").try_exists()? && !initializing) || admin.join("index.lock").try_exists()?
-        || !crate::scratch::inactive(&admin, now)? || !crate::scratch::inactive(draft, now)?
-    {
+        .and_then(|s| s.strip_prefix("sifttext-worktree-"))
+        .filter(|name| crate::uuid(name)).ok_or("unknown draft name")?;
+    let branch = format!("refs/heads/sifttext/{name}");
+    let head = reader_git(common, &["rev-parse", "--verify", &branch])?;
+    let listed = reader_git(common, &["worktree", "list", "--porcelain", "-z"])?;
+    let wanted = format!("worktree {}", draft.to_str().ok_or("non-UTF-8 draft")?);
+    let Some(entry) = listed.split("\0\0").find(|entry| entry.split('\0').any(|field| field == wanted)) else {
         return Ok(());
-    }
+    };
+    require(entry.split('\0').any(|field| field == format!("branch {branch}"))
+        && entry.split('\0').any(|field| field == format!("HEAD {head}")), "expired draft branch changed")?;
+    let initializing = if draft.try_exists()? {
+        crate::real_dir(draft)?;
+        require(reader_git(draft, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?
+            == common.to_str().ok_or("non-UTF-8 Git metadata")?, "expired draft repository changed")?;
+        let admin = PathBuf::from(reader_git(draft, &["rev-parse", "--absolute-git-dir"])?);
+        let initializing = crate::read_regular(&admin.join("locked")).is_ok_and(|bytes| bytes == b"initializing\n");
+        if (admin.join("locked").try_exists()? && !initializing) || admin.join("index.lock").try_exists()?
+            || !crate::scratch::inactive(&admin, now)? || !crate::scratch::inactive(draft, now)?
+        {
+            return Ok(());
+        }
+        initializing
+    } else {
+        if !entry.split('\0').any(|field| field.starts_with("prunable"))
+            || entry.split('\0').any(|field| field.starts_with("locked"))
+        {
+            return Ok(());
+        }
+        false
+    };
     let _custody = checked_publication::Custody::new(&[&lifecycle, &lease])?;
     let mut args = vec!["worktree", "remove", "--force"];
     if initializing { args.push("--force"); }
     args.push(draft.to_str().ok_or("non-UTF-8 draft")?);
-    reader_git(&common, &args)?;
+    reader_git(common, &args)?;
+    reader_git(common, &["update-ref", "--no-deref", "-d", &branch, &head])?;
+    Ok(())
+}
+
+/// Older versions allocated drafts beside the knowledge home. Reuse the same
+/// expiry path for owned registrations in that location and missing temp drafts.
+pub(crate) fn expire_repository_drafts(common: &Path, now: std::time::SystemTime) -> Result<()> {
+    let legacy = common.parent().and_then(Path::parent);
+    let temp = crate::scratch::drafts()?;
+    let listing = reader_git(common, &["worktree", "list", "--porcelain", "-z"])?;
+    for record in listing.split("\0\0") {
+        let Some(draft) = record.split('\0').find_map(|field| field.strip_prefix("worktree ")) else { continue };
+        let draft = Path::new(draft);
+        let Some(id) = draft.file_name().and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("sifttext-worktree-")).filter(|id| crate::uuid(id)) else { continue };
+        if (draft.parent() == legacy || draft.parent() == Some(temp.as_path()))
+            && record.split('\0').any(|field| field == format!("branch refs/heads/sifttext/{id}"))
+            && (!draft.try_exists()? || crate::scratch::inactive(draft, now)?)
+            && let Err(error) = expire_registered_draft(common, draft, now)
+        {
+            eprintln!("Inactive draft retained at {}: {error}", draft.display());
+        }
+    }
     Ok(())
 }
 

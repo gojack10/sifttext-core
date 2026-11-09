@@ -1244,9 +1244,6 @@ fn execute(
     // Recovering unrelated historical views is not part of saving this draft.
     if !in_draft {
         owned::recover(&repo, &root, notes)?;
-        // Complete earlier disposable views without relocating their custody.
-        let legacy = common.join("sifttext-publications");
-        if legacy.try_exists()? { owned::recover(&repo, &legacy, notes)?; }
     }
     r.check = "owned_view_setup";
     let mut owned_reader = if reader.is_none() {

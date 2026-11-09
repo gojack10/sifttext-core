@@ -75,6 +75,10 @@ fn common(repo: &Path) -> Result<PathBuf> {
     Ok(p)
 }
 fn load(repo: &Path, parent: &Path) -> Result<Record> {
+    load_record(repo, parent, false)
+}
+
+fn load_record(repo: &Path, parent: &Path, legacy_expiry: bool) -> Result<Record> {
     let common = common(repo)?;
     require(
         (parent.parent() == Some(common.join("sifttext-publications").as_path())
@@ -92,11 +96,23 @@ fn load(repo: &Path, parent: &Path) -> Result<Record> {
     let bytes = crate::read_regular(&parent.join("owner.json"))?;
     require(bytes.len() <= 4096, "oversized ownership record")?;
     let r: Record = serde_json::from_slice(&bytes)?;
+    let repository = Identity::of(&common)?;
+    let owner = Identity::of(parent)?;
+    // A mounted volume can acquire a new device ID after a reboot. Only
+    // recognize that change for old repository-owned views during expiry.
+    let remounted = legacy_expiry
+        && parent.parent() == Some(common.join("sifttext-publications").as_path())
+        && r.repository.dev == r.parent.dev
+        && r.repository.dev == r.view.dev
+        && repository.dev == owner.dev;
+    let matches = |saved: &Identity, observed: &Identity| {
+        saved == observed || (remounted && observed.dev == repository.dev && saved.ino == observed.ino)
+    };
     require(
         r.version == 1
             && r.common == common
-            && r.repository == Identity::of(&common)?
-            && r.parent == Identity::of(parent)?
+            && matches(&r.repository, &repository)
+            && matches(&r.parent, &owner)
             && super::oid(&r.revision)
             && ["disposable", "retained"].contains(&r.disposition.as_str())
             && (r.disposition != "retained" || r.initialized),
@@ -104,7 +120,7 @@ fn load(repo: &Path, parent: &Path) -> Result<Record> {
     )?;
     if fs::symlink_metadata(parent.join("view")).is_ok() {
         require(
-            r.view == Identity::of(&parent.join("view"))?
+            matches(&r.view, &Identity::of(&parent.join("view"))?)
                 && fs::canonicalize(parent.join("view"))? == parent.join("view"),
             "owned view reused",
         )?;
@@ -506,8 +522,13 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
             let view = parent.join("view");
             let gate = crate::local::publication_gate(&view)?;
             let _custody = Custody::new(&[&gate])?;
-            let record = load(repo, &parent)?;
+            let legacy = root == repo.join("sifttext-publications");
+            let record = load_record(repo, &parent, legacy)?;
             if !crate::scratch::inactive(&parent, now)? { return Ok(()); }
+            for entry in fs::read_dir(&parent)? {
+                require(matches!(entry?.file_name().to_str(), Some("view" | "owner.json")),
+                    "unexpected operation file");
+            }
             if registration(repo, &parent, &record)? {
                 if view.join(".git").try_exists()? {
                     let admin = PathBuf::from(git(&view, &["rev-parse", "--absolute-git-dir"])?);
@@ -515,13 +536,19 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
                         return Ok(());
                     }
                 }
+                if legacy && record.initialized && view.try_exists()? {
+                    clean(&view, &record.revision)?;
+                }
                 let mut args = vec!["worktree", "remove", "--force"];
                 // Only the exact setup lock is eligible for stronger disposal.
                 if !record.initialized { args.push("--force"); }
                 args.push(view.to_str().ok_or("non-UTF-8 view")?);
                 git(repo, &args)?;
+            } else if view.try_exists()? {
+                fs::remove_dir(&view)?;
             }
-            fs::remove_dir_all(&parent)?;
+            fs::remove_file(parent.join("owner.json"))?;
+            fs::remove_dir(&parent)?;
             Ok(())
         })();
         if let Err(error) = result { eprintln!("scratch view retained at {}: {error}", parent.display()); }
