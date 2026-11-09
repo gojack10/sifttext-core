@@ -550,24 +550,27 @@ pub fn sync_publication(
     access: &mut SyncAccess,
 ) -> Value {
     let mut read = || -> Result<Value> {
-        let mut reader = GitReader::new(policy, repo)?;
-        let before = baseline.map(|sha| reader.view(sha)).transpose()?;
-        let after = reader.view(candidate)?;
+        policy.verify_stamp()?;
+        crate::git_snapshot::retire_facts(repo);
+        let tree = crate::local::reader_git(repo, &["rev-parse", "--verify", "--end-of-options", &format!("{candidate}^{{tree}}")])?;
         // This is advisory only. Exact tree identity lets own-account sync
         // carry the original review outcome without paying to review it again.
         let common = crate::local::reader_git(reviewed_home,
             &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-        let retained = Path::new(&common).join("sifttext-hosted-checks").join(format!("{}.json", after.tree));
+        let retained = Path::new(&common).join("sifttext-hosted-checks").join(format!("{}.json", tree));
         if retained.try_exists()? {
             let check = documentation_exempt_record(serde_json::from_slice(&crate::read_regular(&retained)?)?);
             let context = &check["results"][0]["response"]["context"];
             if check["waived"] == true || (context["review_mode"] == WORK_PACKET_MODE
-                && context["candidate_tree"] == after.tree
+                && context["candidate_tree"] == tree
                 && (check["status"] == "passed" || check["accepted_despite_findings"] == true))
             {
                 return Ok(check);
             }
         }
+        let mut reader = GitReader::new(policy, repo)?;
+        let before = baseline.map(|sha| reader.view(sha)).transpose()?;
+        let after = reader.view(candidate)?;
         if let Some(exemption) = documentation_only(before.as_deref(), &after) { return Ok(exemption) }
         let scope = ReviewScope {
             selected: after.nodes.keys().cloned().collect(),

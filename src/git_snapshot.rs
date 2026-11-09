@@ -5,11 +5,10 @@ use crate::{
     coherent_capture::{authored_path, node_markdown},
     require, source_error,
     source_version::{self, Part},
-    status::{State, Status},
+    status::State,
     uuid,
 };
-use rusqlite::{Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -19,15 +18,10 @@ use std::{
     sync::{Arc, Weak},
 };
 
-const FACT_PROCESSOR: &str = "git-node-facts-v3;authored-merkle-v2;native-markdown-v1";
-const TOKEN_PROCESSOR: &str = "tiktoken-rs/0.6.0;ordinary;content/v1";
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug)]
 pub(crate) struct NodeFacts {
     pub(crate) id: String,
     pub(crate) position: Option<u64>,
-    #[serde(with = "state_record")]
     pub(crate) state: State,
     pub(crate) body_nonblank: bool,
     pub(crate) raw_hash: [u8; 32],
@@ -39,23 +33,6 @@ pub(crate) struct NodeFacts {
     pub(crate) field_errors: u8,
     pub(crate) migration_size: bool,
 }
-mod state_record {
-    use super::*;
-    pub(super) fn serialize<S: serde::Serializer>(
-        state: &State,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        (&state.status, &state.reasons).serialize(serializer)
-    }
-    pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<State, D::Error> {
-        let (status, reasons): (Status, BTreeMap<String, String>) =
-            Deserialize::deserialize(deserializer)?;
-        Ok(State { status, reasons })
-    }
-}
-
 pub(crate) struct GitView {
     pub(crate) version: String,
     pub(crate) tree: String,
@@ -209,8 +186,7 @@ struct TreeEntry {
     len: u64,
 }
 
-// A separate private file, never the optional common-Git fact cache. Only
-// metadata is staged; SQLite's bounded page cache replaces the path inventory.
+// Only metadata is staged; SQLite's bounded page cache replaces the path inventory.
 pub(crate) struct TreeLedger {
     pub(crate) connection: Connection,
     _file: tempfile::NamedTempFile,
@@ -249,156 +225,36 @@ fn insert_entry(insert: &mut rusqlite::Statement<'_>, path: &str, kind: u8,
     Ok(())
 }
 
-// Optional derived facts. No transaction spans Git, Bend, parsing or tokenization.
-struct FactCache {
-    connection: Connection,
-    processor: String,
-    token_processor: String,
-}
-impl FactCache {
-    fn open(repo: &Path) -> Option<Self> {
-        (|| -> Result<Self> {
-            let common = crate::local::reader_git(repo,
-                &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-            let common = PathBuf::from(common);
-            crate::real_dir(&common)?;
-            let path = common.join("sifttext-git-facts.sqlite");
-            for suffix in ["", "-wal", "-shm", "-journal"] {
-                let file = common.join(format!("sifttext-git-facts.sqlite{suffix}"));
-                match std::fs::symlink_metadata(&file) {
-                    Ok(meta) => {
-                        require(meta.is_file(), "unsafe Git fact cache")?;
-                        #[cfg(unix)] { use std::os::unix::fs::MetadataExt;
-                            require(meta.nlink() == 1, "hard-linked Git fact cache")?; }
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                    Err(error) => return Err(error.into()),
+/// Retire the former persistent memo during reader preparation or sync.
+pub(crate) fn retire_facts(repo: &Path) {
+    let result = (|| -> Result<()> {
+        let common = crate::local::reader_git(repo,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+        let common = Path::new(&common);
+        crate::real_dir(common)?;
+        for name in [
+            "sifttext-git-facts.sqlite-journal",
+            "sifttext-git-facts.sqlite-wal",
+            "sifttext-git-facts.sqlite-shm",
+            "sifttext-git-facts.sqlite",
+        ] {
+            let file = common.join(name);
+            match std::fs::symlink_metadata(&file) {
+                Ok(metadata) => {
+                    use std::os::unix::fs::MetadataExt;
+                    require(metadata.is_file() && metadata.nlink() == 1,
+                        "unrecognized legacy Git facts file")?;
+                    std::fs::remove_file(file)?;
                 }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
             }
-            let connection = Connection::open_with_flags(path,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-                    | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
-                    | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW)?;
-            connection.busy_timeout(std::time::Duration::ZERO)?;
-            connection.execute_batch("PRAGMA cache_size=-256; PRAGMA synchronous=OFF;
-                CREATE TABLE IF NOT EXISTS node_facts_v1 (
-                    processor TEXT NOT NULL, oid TEXT NOT NULL, data BLOB NOT NULL, checksum BLOB NOT NULL,
-                    PRIMARY KEY(processor,oid)) WITHOUT ROWID;
-                CREATE TABLE IF NOT EXISTS body_tokens_v1 (
-                    processor TEXT NOT NULL, hash BLOB NOT NULL, count INTEGER NOT NULL, checksum BLOB NOT NULL,
-                    PRIMARY KEY(processor,hash)) WITHOUT ROWID;")?;
-            // Parsed headers and token counts are facts about their own inputs,
-            // not endorsements by a particular graph-law or unrelated renderer.
-            let parser = crate::sha256(concat!(include_str!("git_snapshot.rs"),
-                include_str!("lib.rs"), include_str!("coherent_capture.rs"),
-                include_str!("candidate_validation.rs"), include_str!("status.rs")).as_bytes());
-            let tokenizer = crate::sha256(concat!(include_str!("token_count.rs"),
-                include_str!("../Cargo.lock")).as_bytes());
-            Ok(Self { connection, processor: format!("{FACT_PROCESSOR};{parser}"),
-                token_processor: format!("{TOKEN_PROCESSOR};{tokenizer}") })
-        })().ok()
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("Legacy Git facts retained in {}: {error}", repo.display());
     }
-    fn node(&self, oid: &str, len: u64) -> Option<Arc<NodeFacts>> {
-        (|| -> Result<Arc<NodeFacts>> {
-            let record: Option<(Vec<u8>, Vec<u8>)> = self
-                .connection
-                .query_row(
-                    "SELECT data,checksum FROM node_facts_v1 WHERE processor=?1 AND oid=?2
-                 AND length(data)<=?3 AND length(checksum)=32",
-                    rusqlite::params![self.processor, oid, crate::LIMIT as i64 * 2],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-            let (data, checksum) = record.ok_or("missing Git node facts")?;
-            require(
-                fact_checksum(&self.processor, oid.as_bytes(), &data).as_slice() == checksum,
-                "damaged Git node facts",
-            )?;
-            let facts: NodeFacts = serde_json::from_slice(&data)?;
-            require(
-                facts.blob == oid
-                    && facts.len == len
-                    && uuid(&facts.id)
-                    && facts.field_errors <= 15
-                    && facts.reference_targets.iter().all(|id| uuid(id))
-                    && facts.state.reasons.len() <= 3
-                    && facts.state.reasons.keys().all(|key| {
-                        ["blocker", "deferred_reason", "discard_reason"].contains(&key.as_str())
-                    }),
-                "invalid Git node facts",
-            )?;
-            Ok(Arc::new(facts))
-        })()
-        .ok()
-    }
-    fn record_nodes(&mut self, nodes: &[Arc<NodeFacts>]) {
-        if nodes.is_empty() { return; }
-        let _ = (|| -> Result<()> {
-            let tx = self
-                .connection
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            {
-                let mut insert =
-                    tx.prepare_cached("INSERT OR REPLACE INTO node_facts_v1 VALUES (?1,?2,?3,?4)")?;
-                for node in nodes {
-                    let data = serde_json::to_vec(node.as_ref())?;
-                    let checksum = fact_checksum(&self.processor, node.blob.as_bytes(), &data);
-                    insert.execute(rusqlite::params![
-                        self.processor,
-                        node.blob,
-                        data,
-                        checksum.as_slice()
-                    ])?;
-                }
-            }
-            tx.commit()?;
-            Ok(())
-        })();
-    }
-    fn tokens(&self, hash: &[u8; 32]) -> Option<usize> {
-        (|| -> Result<usize> {
-            let (count, checksum): (i64, Vec<u8>) = self.connection.query_row(
-                "SELECT count,checksum FROM body_tokens_v1 WHERE processor=?1 AND hash=?2 AND length(checksum)=32",
-                rusqlite::params![self.token_processor, hash.as_slice()], |r| Ok((r.get(0)?, r.get(1)?)))?;
-            require(count >= 0 && count <= crate::LIMIT as i64, "invalid token fact")?;
-            require(fact_checksum(&self.token_processor, hash, &count.to_le_bytes()).as_slice() == checksum,
-                "damaged token fact")?;
-            Ok(count as usize)
-        })().ok()
-    }
-    fn record_tokens(&mut self, tokens: &BTreeMap<[u8; 32], usize>) {
-        let _ = (|| -> Result<()> {
-            let tx = self
-                .connection
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            {
-                let mut insert =
-                    tx.prepare_cached("INSERT OR IGNORE INTO body_tokens_v1 VALUES (?1,?2,?3,?4)")?;
-                for (hash, &count) in tokens {
-                    let count = count as i64;
-                    let checksum = fact_checksum(&self.token_processor, hash, &count.to_le_bytes());
-                    insert.execute(rusqlite::params![
-                        self.token_processor,
-                        hash.as_slice(),
-                        count,
-                        checksum.as_slice()
-                    ])?;
-                }
-            }
-            tx.commit()?;
-            Ok(())
-        })();
-    }
-}
-fn fact_checksum(processor: &str, key: &[u8], data: &[u8]) -> [u8; 32] {
-    let mut hash = Sha256::new();
-    hash.update(b"sifttext-derived-fact-v1\0");
-    hash.update((processor.len() as u64).to_le_bytes());
-    hash.update(processor.as_bytes());
-    hash.update((key.len() as u64).to_le_bytes());
-    hash.update(key);
-    hash.update(data);
-    hash.finalize().into()
 }
 
 pub(crate) struct GitReader {
@@ -408,7 +264,6 @@ pub(crate) struct GitReader {
     pub(crate) submitted_nodes: Option<std::collections::BTreeSet<String>>,
     batch: Option<Batch>,
     empty_blob: Option<String>,
-    cache: Option<FactCache>,
     nodes: HashMap<String, Weak<NodeFacts>>,
     views: HashMap<String, Arc<GitView>>,
     tokens: BTreeMap<[u8; 32], usize>,
@@ -423,7 +278,6 @@ impl GitReader {
             imported_baseline: None,
             submitted_nodes: None,
             empty_blob: None,
-            cache: FactCache::open(&repo),
             repo,
             policy_identity: identity,
             nodes: HashMap::new(),
@@ -583,8 +437,7 @@ impl GitReader {
                 path,'children',0,'040000','',0 FROM entries
             WHERE parent='nodes' AND kind=0", [])?;
         let mut nodes = BTreeMap::new();
-        let mut new_facts = Vec::new();
-        let (mut entry_count, mut memory_hits, mut fact_hits, mut misses) = (0usize, 0usize, 0usize, 0usize);
+        let (mut entry_count, mut memory_hits) = (0usize, 0usize);
         let mut children = BTreeMap::new();
         let mut roots: Vec<String> = Vec::new();
         let mut version = source_version::start();
@@ -629,8 +482,8 @@ impl GitReader {
                         parts.len() == 3 && parts[0] == "nodes" && parts[2] == "node.md";
                     let raw_hash = if node_file {
                         let id = parts[1];
-                        let (facts, reuse) = self.node(&entry, id, &mut new_facts)?;
-                        match reuse { 0 => misses += 1, 1 => memory_hits += 1, _ => fact_hits += 1 }
+                        let (facts, reused) = self.node(&entry, id)?;
+                        memory_hits += usize::from(reused);
                         let hash = facts.raw_hash;
                         nodes.insert(id.to_owned(), facts);
                         hash
@@ -752,14 +605,9 @@ impl GitReader {
             )?;
         }
         drop(ledger);
-        if let Some(cache) = &mut self.cache {
-            cache.record_nodes(&new_facts);
-        }
-        let staged_facts = new_facts.len();
-        drop(new_facts);
         crate::release_unused_memory();
         if std::env::var_os("SIFTTEXT_INDEX_PROFILE").is_some() {
-            eprintln!("git-view-work entries={entry_count} nodes={} memory_hits={memory_hits} fact_hits={fact_hits} misses={misses} staged_facts={staged_facts} elapsed_ms={}",
+            eprintln!("git-view-work entries={entry_count} nodes={} memory_hits={memory_hits} elapsed_ms={}",
                 nodes.len(), started.elapsed().as_millis());
         }
         let view = Arc::new(GitView {
@@ -773,13 +621,9 @@ impl GitReader {
         Ok(view)
     }
 
-    fn node(&mut self, entry: &TreeEntry, id: &str,
-        new_facts: &mut Vec<Arc<NodeFacts>>) -> Result<(Arc<NodeFacts>, u8)> {
-        let memory = self.nodes.get(&entry.oid).and_then(Weak::upgrade);
-        let reuse = if memory.is_some() { 1 } else { 2 };
-        let cached = memory.or_else(|| self.cache.as_ref()
-            .and_then(|cache| cache.node(&entry.oid, entry.len)));
-        let cache_miss = cached.is_none();
+    fn node(&mut self, entry: &TreeEntry, id: &str) -> Result<(Arc<NodeFacts>, bool)> {
+        let cached = self.nodes.get(&entry.oid).and_then(Weak::upgrade);
+        let reused = cached.is_some();
         let facts = match cached {
             Some(facts) => facts,
             None => {
@@ -820,11 +664,8 @@ impl GitReader {
             "src/lib.rs:Store.read_view/node_uuid_identity",
             "duplicate/mismatched node UUID",
         )?;
-        if cache_miss && self.cache.is_some() {
-            new_facts.push(Arc::clone(&facts));
-        }
         self.nodes.insert(entry.oid.clone(), Arc::downgrade(&facts));
-        Ok((facts, if cache_miss { 0 } else { reuse }))
+        Ok((facts, reused))
     }
 
     pub(crate) fn bytes(&mut self, view: &GitView, id: &str) -> Result<Vec<u8>> {
@@ -844,26 +685,10 @@ impl GitReader {
         if let Some(&count) = self.tokens.get(&facts.body_hash) {
             return Ok(count);
         }
-        if let Some(count) = self
-            .cache
-            .as_ref()
-            .and_then(|cache| cache.tokens(&facts.body_hash))
-        {
-            self.tokens.insert(facts.body_hash, count);
-            return Ok(count);
-        }
         let bytes = self.bytes(view, id)?;
         let parsed = node_markdown(&bytes, id)?;
         let count = crate::token_count::ordinary(&parsed.authored.content);
         self.tokens.insert(facts.body_hash, count);
         Ok(count)
-    }
-}
-impl Drop for GitReader {
-    fn drop(&mut self) {
-        self.suspend_objects();
-        if let Some(cache) = &mut self.cache {
-            cache.record_tokens(&self.tokens);
-        }
     }
 }
