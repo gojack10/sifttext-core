@@ -1238,7 +1238,7 @@ fn execute(
         )?;
         None
     };
-    crate::scratch::cleanup_legacy_publications(&common);
+    crate::scratch::cleanup_legacy_publications(&common, false);
     let root = crate::scratch::publications(&common)?;
     // Normal publication reads immutable Git objects, not retained view donors.
     // Recovering unrelated historical views is not part of saving this draft.

@@ -86,10 +86,10 @@ pub(crate) fn expire_draft(draft: &Path, now: std::time::SystemTime) -> Result<(
     crate::real_dir(draft)?;
     let common = PathBuf::from(reader_git(draft,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"])?);
-    expire_registered_draft(&common, draft, now)
+    expire_registered_draft(&common, draft, now, false)
 }
 
-fn expire_registered_draft(common: &Path, draft: &Path, now: std::time::SystemTime) -> Result<()> {
+fn expire_registered_draft(common: &Path, draft: &Path, now: std::time::SystemTime, legacy: bool) -> Result<()> {
     let lifecycle = lifecycle_lock(draft, false)?;
     let root = save_root(common)?;
     let key = draft_key(draft)?;
@@ -115,10 +115,21 @@ fn expire_registered_draft(common: &Path, draft: &Path, now: std::time::SystemTi
         let admin = PathBuf::from(reader_git(draft, &["rev-parse", "--absolute-git-dir"])?);
         let initializing = crate::read_regular(&admin.join("locked")).is_ok_and(|bytes| bytes == b"initializing\n");
         if (admin.join("locked").try_exists()? && !initializing) || admin.join("index.lock").try_exists()?
-            || !crate::scratch::inactive(&admin, now)? || !crate::scratch::inactive(draft, now)?
         {
             return Ok(());
         }
+        let inactive = if legacy {
+            let reflog = admin.join("logs/HEAD");
+            let index = admin.join("index");
+            crate::scratch::inactive(&admin.join("HEAD"), now)?
+                && (!reflog.try_exists()? || crate::scratch::inactive(&reflog, now)?)
+                && (!index.try_exists()? || crate::scratch::inactive(&index, now)?
+                    || reader_git(draft, &["diff", "--cached", "--name-only"])?.is_empty())
+                && crate::scratch::inactive_legacy_draft(draft, draft, now)?
+        } else {
+            crate::scratch::inactive(&admin, now)? && crate::scratch::inactive(draft, now)?
+        };
+        if !inactive { return Ok(()); }
         let nodes = draft.join("nodes");
         if nodes.try_exists()? {
             crate::real_dir(&nodes)?;
@@ -160,10 +171,10 @@ pub(crate) fn expire_repository_drafts(common: &Path, now: std::time::SystemTime
         let draft = Path::new(draft);
         let Some(id) = draft.file_name().and_then(|name| name.to_str())
             .and_then(|name| name.strip_prefix("sifttext-worktree-")).filter(|id| crate::uuid(id)) else { continue };
-        if (draft.parent() == legacy || draft.parent() == Some(temp.as_path()))
+        let is_legacy = draft.parent() == legacy;
+        if (is_legacy || draft.parent() == Some(temp.as_path()))
             && record.split('\0').any(|field| field == format!("branch refs/heads/sifttext/{id}"))
-            && (!draft.try_exists()? || crate::scratch::inactive(draft, now)?)
-            && let Err(error) = expire_registered_draft(common, draft, now)
+            && let Err(error) = expire_registered_draft(common, draft, now, is_legacy)
         {
             eprintln!("Inactive draft retained at {}: {error}", draft.display());
         }

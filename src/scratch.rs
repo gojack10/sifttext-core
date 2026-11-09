@@ -104,6 +104,29 @@ pub(crate) fn inactive(path: &Path, now: SystemTime) -> Result<bool> {
     Ok(true)
 }
 
+/// Reader upgrades refresh generated files even in abandoned legacy drafts.
+/// Use the working files and Git activity, ignoring only known generated paths.
+pub(crate) fn inactive_legacy_draft(root: &Path, path: &Path, now: SystemTime) -> Result<bool> {
+    let relative = path.strip_prefix(root)?;
+    let parts: Vec<_> = relative.iter().map(|part| part.to_str().unwrap_or_default()).collect();
+    if matches!(parts.as_slice(), [".sifttext"])
+        || matches!(parts.as_slice(), ["nodes", id,
+            "outline.lean" | "outline.full.lean" | "outline.lean.meta.json"
+                | "outline.full.lean.meta.json" | "links-to" | "linked-from" | "parent"]
+            if crate::uuid(id))
+    {
+        return Ok(true);
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_dir() {
+        return Ok(now.duration_since(metadata.modified()?).unwrap_or_default() >= EXPIRY);
+    }
+    for entry in fs::read_dir(path)? {
+        if !inactive_legacy_draft(root, &entry?.path(), now)? { return Ok(false); }
+    }
+    Ok(true)
+}
+
 fn cleanup_gate(path: &Path, now: SystemTime) -> Result<Option<fs::File>> {
     let gate = open_gate(path)?;
     if gate.try_lock().is_err()
@@ -118,14 +141,20 @@ fn cleanup_gate(path: &Path, now: SystemTime) -> Result<Option<fs::File>> {
 
 /// Repository discovery already belongs to publication. Reuse it rather than
 /// scanning homes or adding a second command-line dispatcher for old views.
-pub(crate) fn cleanup_legacy_publications(common: &Path) {
+pub(crate) fn cleanup_legacy_publications(common: &Path, immediate: bool) {
     let result = (|| -> Result<()> {
         let legacy = common.join("sifttext-publications");
         if !legacy.try_exists()? { return Ok(()); }
         crate::real_dir(&legacy)?;
         let now = SystemTime::now();
-        let Some(gate) = cleanup_gate(&publications(common)?.join("legacy-cleanup"), now)? else {
-            return Ok(());
+        let path = publications(common)?.join("legacy-cleanup");
+        let gate = if immediate {
+            let gate = open_gate(&path)?;
+            if gate.try_lock().is_err() { return Ok(()); }
+            gate
+        } else {
+            let Some(gate) = cleanup_gate(&path, now)? else { return Ok(()); };
+            gate
         };
         crate::checked_publication::expire_scratch_views(&legacy, now)?;
         if fs::read_dir(&legacy)?.next().is_none() {
@@ -177,7 +206,7 @@ pub fn retire_repository_worktrees(home: &Path) -> Result<()> {
     let home = fs::canonicalize(home)?;
     let common = home.join(".git");
     crate::real_dir(&common)?;
-    cleanup_legacy_publications(&common);
+    cleanup_legacy_publications(&common, true);
     crate::local::expire_repository_drafts(&common, SystemTime::now())
 }
 
