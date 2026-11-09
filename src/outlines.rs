@@ -8,7 +8,7 @@ pub enum Outline {
     Text(String),
     Suppressed(usize),
 }
-pub(crate) use indexed::{indexed_current, indexed_outline, refresh_indexed_from, selected_view};
+pub(crate) use indexed::{indexed_current, indexed_outline, refresh_indexed_from};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,

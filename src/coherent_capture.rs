@@ -254,7 +254,6 @@ pub(crate) fn from_inventory_mode(
 pub(crate) struct Residues {
     owners: BTreeSet<String>,
     cached: Option<(rusqlite::Connection, PathBuf)>,
-    files: Vec<PathBuf>,
     physical: BTreeMap<PathBuf, Identity>,
     head: String,
 }
@@ -279,15 +278,7 @@ impl Residues {
         }
         Ok(())
     }
-    fn cleanup(&self) -> Result<()> {
-        self.unchanged()?;
-        if let Some((connection, root)) = &self.cached {
-            for owner in &self.owners {
-                crate::index::residue::retire(connection, root, owner)?;
-            }
-        }
-        Ok(())
-    }
+
 }
 
 pub(crate) fn residues(path: &Path) -> Result<Residues> {
@@ -326,7 +317,6 @@ pub(crate) fn residues(path: &Path) -> Result<Residues> {
                         )?;
                         let m = fs::symlink_metadata(p)?;
                         require(m.is_file() && m.nlink() == 1, "unsafe residue resource")?;
-                        result.files.push(p.clone());
                         result
                             .physical
                             .insert(p.clone(), (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()));
@@ -625,18 +615,7 @@ impl Capture {
             "changed store bytes",
         )
     }
-    pub(crate) fn cleanup_residues(&mut self) -> Result<()> {
-        self.residues.cleanup()?;
-        for owner in &self.residues.owners {
-            let dir = self.store.path.join("nodes").join(owner);
-            self.physical.remove(&dir);
-        }
-        for path in &self.residues.files {
-            self.physical.remove(path);
-        }
-        self.residues = Residues::default();
-        Ok(())
-    }
+
 }
 
 /// Ephemeral reverse lookups preserve source UUID/reference order, not a second

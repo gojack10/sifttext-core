@@ -301,6 +301,7 @@ fn setup(connection: &Connection) -> Result<()> {
             id TEXT PRIMARY KEY, name TEXT NOT NULL, micro_summary TEXT NOT NULL,
             scope TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL,
             children TEXT NOT NULL, record TEXT NOT NULL);
+        DROP TABLE IF EXISTS outline_selected_views;
         CREATE TABLE IF NOT EXISTS links (source TEXT NOT NULL, target TEXT NOT NULL,
             reason TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(source,target));
         CREATE INDEX IF NOT EXISTS links_target ON links(target);
@@ -383,13 +384,14 @@ fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str)
 fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result<()> {
     let id = row["id"].as_str().ok_or("missing id")?;
     tx.execute(
-        "INSERT OR REPLACE INTO nodes VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        // Previous releases write this table positionally during rollback.
+        // The body remains in record JSON and in the projected search text.
+        "INSERT OR REPLACE INTO nodes VALUES (?1,?2,?3,?4,'',?5,?6,?7)",
         params![
             id,
             row["name"].as_str(),
             row["micro_summary"].as_str(),
             row["scope"].as_str().unwrap_or(""),
-            row["content"].as_str(),
             row["status"].as_str(),
             serde_json::to_string(&row["children"])?,
             serde_json::to_string(row)?
@@ -724,6 +726,22 @@ fn with_source<T>(
         for (p, expected) in [(&directory, directory_id), (&database, database_id)] {
             let actual = identity(p)?;
             require((actual.0, actual.1) == (expected.0, expected.1), "replaced cache identity")?;
+        }
+        if prepare {
+            // SQLite keeps released pages until compaction. Do this on explicit
+            // preparation only, and leave small gaps available for reuse.
+            let pages: i64 = connection.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+            let size: i64 = connection.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+            if pages * size >= 16 * 1024 * 1024 {
+                let compact = || -> Result<()> {
+                    let _gate = if refresh_lock.is_none() { Some(lock(&directory)?) } else { None };
+                    connection.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+                    Ok(())
+                };
+                if let Err(error) = compact() {
+                    eprintln!("Index compaction deferred for {}: {error}", root.display());
+                }
+            }
         }
         drop(refresh_lock);
         return Ok((version, result));

@@ -4,7 +4,7 @@ use crate::{Policy, Result, require, status::Status, tree_selection::{Action, Ru
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::{BTreeMap, BTreeSet}, io::Write, path::Path, sync::OnceLock};
+use std::{collections::{BTreeMap, BTreeSet}, io::Write, path::Path};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -340,14 +340,6 @@ fn render(reader: &Reader<'_>, view: &View) -> Result<String> {
     Ok(output)
 }
 
-fn processing() -> &'static str {
-    static ID: OnceLock<String> = OnceLock::new();
-    ID.get_or_init(|| crate::sha256(concat!(
-        include_str!("tree_render.rs"), include_str!("tree_render/proposal.rs"), include_str!("tree_selection.rs"),
-        include_str!("token_count.rs"), include_str!("../Cargo.lock"),
-    ).as_bytes()))
-}
-
 /// Render all requested static views at one accepted index version, then create fresh files.
 /// Temp files are not persisted until every selection has validated and rendered successfully.
 pub fn run(policy: &Policy, home: &Path, request: &Request) -> Result<Value> {
@@ -367,9 +359,9 @@ pub fn automatic(policy: &Policy, home: &Path, declarations: Option<&Path>) -> R
 }
 
 fn run_mode(policy: &Policy, home: &Path, request: &Request, automatic: bool) -> Result<Value> {
-    let (_, result) = crate::index::with_current(policy, home, |tx, version| {
+    let (_, result) = crate::index::with_current(policy, home, |tx, _| {
         if let Some(proposal) = &request.proposal {
-            return proposal::documents(tx, home, request, proposal, version, automatic);
+            return proposal::documents(tx, home, request, proposal, automatic);
         }
         let mut reader = Reader::new(tx);
         let errors = validate(&mut reader, request)?;
@@ -378,9 +370,9 @@ fn run_mode(policy: &Policy, home: &Path, request: &Request, automatic: bool) ->
         for selection in &request.trees {
             let mut reader = Reader::new(tx);
             let view = select(&mut reader, selection)?;
-            let key = crate::sha256(&serde_json::to_vec(selection)?);
-            let input = crate::sha256(&serde_json::to_vec(&(&reader.nodes, &reader.parents))?);
-            documents.push(crate::outlines::selected_view(tx, &key, &input, processing(), || render(&reader, &view))?);
+            let text = render(&reader, &view)?;
+            let tokens = crate::token_count::ordinary(&text);
+            documents.push((text, tokens));
         }
         Ok(Ok(documents))
     })?;

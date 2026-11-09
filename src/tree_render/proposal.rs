@@ -668,7 +668,7 @@ pub(super) fn allocation_base(home: &Path) -> Result<String> {
     Ok(base)
 }
 
-pub(super) fn documents(connection: &Connection, home: &Path, request: &Request, proposal: &Proposal, version: &str, automatic: bool) -> Result<std::result::Result<Vec<(String, usize)>, Vec<Value>>> {
+pub(super) fn documents(connection: &Connection, home: &Path, request: &Request, proposal: &Proposal, automatic: bool) -> Result<std::result::Result<Vec<(String, usize)>, Vec<Value>>> {
     let delta = capture(connection, home, proposal)?;
     let mut reader = Reader::new(connection);
     reader.delta = Some(&delta);
@@ -701,8 +701,7 @@ pub(super) fn documents(connection: &Connection, home: &Path, request: &Request,
         forest.named.extend(view.named);
     }
     let anchors = reveal_targets(&mut reader, &mut forest, request, &delta, proposal)?;
-    let key = crate::sha256(&serde_json::to_vec(&(&request.trees, &proposal.base))?);
-    let input = crate::sha256(&serde_json::to_vec(&(version, proposal))?);
-    let document = crate::outlines::selected_view(connection, &key, &input, processing(), || render_delta(&reader, &forest, &delta, proposal, &anchors))?;
-    Ok(Ok(vec![document]))
+    let text = render_delta(&reader, &forest, &delta, proposal, &anchors)?;
+    let tokens = crate::token_count::ordinary(&text);
+    Ok(Ok(vec![(text, tokens)]))
 }
