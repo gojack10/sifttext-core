@@ -373,12 +373,13 @@ fn retire_releases(root: &Path, state: &State) {
         crate::real_dir(&directory)?;
         require(fs::canonicalize(root.join("current"))? == root.join(&state.application),
             "current release differs from the recorded application")?;
+        let executable = std::env::current_exe()?;
         for entry in fs::read_dir(&directory)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() { continue; }
             let path = entry.path();
             let relative = path.strip_prefix(root)?;
-            if relative == state.application
+            if executable.parent() == Some(path.as_path()) || relative == state.application
                 || state.previous.as_ref().is_some_and(|previous| relative == previous.application)
             {
                 continue;

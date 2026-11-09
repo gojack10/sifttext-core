@@ -527,7 +527,7 @@ pub(super) fn expire(root: &Path, now: std::time::SystemTime) -> Result<()> {
             if !crate::scratch::inactive(&parent, now)? { return Ok(()); }
             for entry in fs::read_dir(&parent)? {
                 require(matches!(entry?.file_name().to_str(), Some("view" | "owner.json")),
-                    "unexpected operation file");
+                    "unexpected operation file")?;
             }
             if registration(repo, &parent, &record)? {
                 if view.join(".git").try_exists()? {
