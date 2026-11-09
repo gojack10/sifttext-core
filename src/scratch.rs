@@ -140,6 +140,15 @@ pub(crate) fn cleanup_legacy_publications(common: &Path) {
     }
 }
 
+/// Retire stale registrations belonging to this independent knowledge home.
+pub fn retire_repository_worktrees(home: &Path) -> Result<()> {
+    let home = fs::canonicalize(home)?;
+    let common = home.join(".git");
+    crate::real_dir(&common)?;
+    cleanup_legacy_publications(&common);
+    crate::local::expire_repository_drafts(&common, SystemTime::now())
+}
+
 /// Opportunistic startup maintenance, not a daemon or a publication preflight.
 /// One fixed bookkeeping file throttles scans to hourly; no per-run ledger grows.
 /// Failures retain the affected directory and are reported without blocking use.

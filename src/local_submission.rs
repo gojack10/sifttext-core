@@ -83,6 +83,7 @@ fn save_root(repo: &Path) -> Result<PathBuf> {
 /// Expire an inactive, unsubmitted draft in the private temp namespace.
 pub(crate) fn expire_draft(draft: &Path, now: std::time::SystemTime) -> Result<()> {
     require(draft.parent() == Some(crate::scratch::drafts()?.as_path()), "unsafe expired draft path")?;
+    crate::real_dir(draft)?;
     let common = PathBuf::from(reader_git(draft,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"])?);
     expire_registered_draft(&common, draft, now)
@@ -153,6 +154,36 @@ pub(crate) fn expire_repository_drafts(common: &Path, now: std::time::SystemTime
             && let Err(error) = expire_registered_draft(common, draft, now)
         {
             eprintln!("Inactive draft retained at {}: {error}", draft.display());
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn compact_completed_journals(common: &Path) -> Result<()> {
+    let root = common.join("sifttext-saves");
+    if !root.try_exists()? { return Ok(()); }
+    crate::real_dir(&root)?;
+    let home = common.parent().ok_or("missing knowledge home")?;
+    for entry in fs::read_dir(&root)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(key) = name.to_str().and_then(|name| name.strip_suffix(".json")) else { continue };
+        if key.len() != 64 || !key.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !entry.file_type()?.is_file()
+        {
+            continue;
+        }
+        let Ok(_lease) = lock(&root.join(format!("{key}.lock")), false) else { continue };
+        let path = entry.path();
+        let Ok(bytes) = crate::read_regular(&path) else { continue };
+        let Ok(mut pending) = serde_json::from_slice::<Pending>(&bytes) else { continue };
+        if pending.completed_head.is_some() && pending.home == home
+            && draft_key(&pending.draft).is_ok_and(|id| id == key)
+            && (!pending.authored_deltas.is_empty() || pending.prepared_heads.is_some())
+        {
+            pending.authored_deltas.clear();
+            pending.prepared_heads = None;
+            persist(&path, &pending)?;
         }
     }
     Ok(())
