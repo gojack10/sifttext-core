@@ -1564,7 +1564,6 @@ fn execute(
             let blocked = result["status"] == "unchecked" && result["waived"] != true
                 && !existing_knowledge && !review_only;
             if blocked { result["blocked"] = serde_json::json!(true); }
-            crate::hosted_checks::retain_results(&repo, &result)?;
             if result["prior_findings"] != true {
                 let mut file = tempfile::NamedTempFile::new_in(&records)?;
                 serde_json::to_writer(&mut file, &crate::hosted_checks::publication_record(&result))?;

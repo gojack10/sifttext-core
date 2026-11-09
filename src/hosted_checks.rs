@@ -505,10 +505,8 @@ fn review_packet(
     };
     let mut attempt = || -> Result<Value> {
         let mut nodes = Vec::new();
-        let mut node_hashes = serde_json::Map::new();
         for id in &scope.included {
             let markdown = scope.markdown(reader, after, id)?;
-            node_hashes.insert(id.clone(), json!(crate::sha256(crate::ordering::without_position(&markdown).as_bytes())));
             nodes.push(json!({"id":id,"markdown":markdown}));
         }
         let packet = json!({"work_record":work.work_record,"outline":work.outline,
@@ -533,7 +531,7 @@ fn review_packet(
         let status = if !completed(&reply) { "unchecked" }
             else if reply["passed"] == true { "passed" } else { "findings" };
         let reason = reply["error"].clone();
-        Ok(json!({"status":status,"reason":reason,"node_hashes":node_hashes,
+        Ok(json!({"status":status,"reason":reason,
             "results":[{"response":reply}]}))
     };
     attempt().unwrap_or_else(unavailable)
@@ -647,7 +645,6 @@ fn publication_with_access(
             let passed = completed(&value) && value["passed"] == true;
             let findings = has_findings(&value);
             results.push(json!({"node":id,"text_sha256":crate::sha256(text.as_bytes()),
-                "review_sha256":crate::sha256(crate::ordering::without_position(&text).as_bytes()),
                 "response":value}));
             if !passed && !findings {
                 return Ok(
@@ -708,42 +705,31 @@ pub fn publication_record(check: &Value) -> Value {
     record
 }
 
-/// Persist per-node, exact-review-text diagnostics in the existing check store.
-/// These records are never acceptance credentials and contain no submitted text.
-pub fn retain_results(home: &Path, check: &Value) -> Result<()> {
-    let common = crate::local::reader_git(home, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-    let root = Path::new(&common).join("sifttext-hosted-checks");
-    if !root.try_exists()? { fs::create_dir(&root)?; }
-    crate::real_dir(&root)?;
+/// Remove the former per-node copies. Exact-tree receipts remain authoritative.
+pub(crate) fn retire_node_results(common: &Path) -> Result<()> {
+    let root = common.join("sifttext-hosted-checks");
     let records = root.join("nodes");
-    if !records.try_exists()? { fs::create_dir(&records)?; }
+    if !records.try_exists()? { return Ok(()); }
+    crate::real_dir(&root)?;
     crate::real_dir(&records)?;
-    let record = publication_record(check);
-    let mut items = record["results"].as_array().cloned().unwrap_or_default();
-    if let Some(hashes) = check["node_hashes"].as_object()
-        && let Some(response) = items.first().map(|item| item["response"].clone())
-        && response["complete"] == true
-    {
-        for stage in check["results"][0]["response"]["result"]["stages"].as_array().into_iter().flatten() {
-            let Some(node) = stage["node_id"].as_str() else { continue };
-            let Some(hash) = hashes.get(node) else { continue };
-            if stage["complete"] != true { continue }
-            let mut response = response.clone();
-            response["passed"] = json!(stage["verdict"] == "PASS");
-            items.push(json!({"node":node,"review_sha256":hash,"response":response}));
+    for entry in std::fs::read_dir(&records)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some((id, hash)) = name.to_str().and_then(|name| name.strip_suffix(".json"))
+            .and_then(|name| name.rsplit_once('-')) else { continue };
+        if !entry.file_type()?.is_file() || !crate::uuid(id) || hash.len() != 64
+            || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            continue;
+        }
+        let record: Value = serde_json::from_slice(&crate::read_regular(&entry.path())?)?;
+        if record["node"] == id && record["review_sha256"] == hash
+            && record["response"]["complete"] == true
+        {
+            std::fs::remove_file(entry.path())?;
         }
     }
-    for item in &items {
-        // A technical failure cannot clear an earlier finding on the same text.
-        if !item["response"]["passed"].is_boolean() || item["response"]["complete"] != true { continue }
-        let (Some(node), Some(hash)) = (item["node"].as_str(), item["review_sha256"].as_str()) else { continue };
-        require(crate::uuid(node) && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid retained node check identity")?;
-        let mut file = tempfile::NamedTempFile::new_in(&records)?;
-        serde_json::to_writer(&mut file, item)?;
-        file.as_file().sync_all()?;
-        file.persist(records.join(format!("{node}-{hash}.json")))?;
-    }
-    fs::File::open(&records)?.sync_all()?;
+    if std::fs::read_dir(&records)?.next().is_none() { std::fs::remove_dir(&records)?; }
     Ok(())
 }
 

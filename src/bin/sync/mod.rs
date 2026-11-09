@@ -677,7 +677,6 @@ fn upload(
     let check = sifttext_file_graph::hosted_checks::sync_publication(
         &super::checked_policy(runtime)?, &store.home, consent_home, remote, commit, &mut exchange.auth,
     );
-    sifttext_file_graph::hosted_checks::retain_results(consent_home, &check)?;
     let mut metadata = sifttext_file_graph::hosted_checks::publication_record(&check);
     metadata["publication"] = json!(commit);
     metadata["replication"] = json!(true);
