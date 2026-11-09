@@ -29,6 +29,8 @@ If the source cannot be recovered, record that limitation and continue the knowl
 
 When SiftText Commit is invoked, associate materially supported nodes with the relevant source sessions.
 
+For a new node, cite the existing session source during review. Follow [Associate External Artifact Directories](../de7cea55-c93d-48db-a4f6-58368bf6c36f/node.md) before creating its durable copy or links.
+
 For **Codex, Claude Code and Pi**:
 
 - **First copy:** use `rsync` to copy the native transcript into the evidence owner's durable `artifacts/chats/` directory.

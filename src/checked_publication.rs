@@ -539,7 +539,9 @@ pub(crate) fn protect_local_artifacts(root: &Path) -> Result<()> {
         for entry in fs::read_dir(&artifacts)? {
             require(
                 entry?.file_name() == "chats",
-                "draft-local artifacts are not disposable; preserve them and deliberately move them to the owning node in the durable home before submitting",
+                "draft contains local artifacts. Preserve them outside this worktree. \
+                 Read Associate External Artifact Directories at \
+                 nodes/de7cea55-c93d-48db-a4f6-58368bf6c36f/node.md in the knowledge home before retrying",
             )?;
         }
     }

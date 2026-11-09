@@ -24,7 +24,7 @@ Core allocates new private drafts and internal publication views beneath the pla
 
 Before ordinary knowledge and sync commands, Core attempts cleanup at most once per hour. Temporary workspaces become eligible after 48 hours without file or directory modifications. Reads alone do not renew that period.
 
-Expiry can delete uncommitted files in an inactive, unsubmitted draft. Keep task artifacts in the durable `artifact_home`, not solely in the draft.
+Expiry can delete uncommitted files in an inactive, unsubmitted draft. Keep artifact sources outside the disposable worktree. Follow [Associate External Artifact Directories](../de7cea55-c93d-48db-a4f6-58368bf6c36f/node.md) to attach them once their owners are accepted.
 
 Keep worktrees short-lived. Read SiftText, do the work, save through SiftText Commit, and start the next chat from SiftText.
 
