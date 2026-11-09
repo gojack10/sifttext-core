@@ -6,18 +6,94 @@ use std::{fs, io::Read, os::unix::fs::{MetadataExt, OpenOptionsExt}, path::Path}
 
 const NAMES: [&str; 4] = ["outline.lean", "outline.lean.meta.json", "outline.full.lean", "outline.full.lean.meta.json"];
 
+pub(crate) fn table_exists(connection: &Connection, name: &str) -> Result<bool> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+        [name], |row| row.get(0),
+    )?)
+}
+
 fn directory(path: &Path) -> Result<(u64, u64)> {
     let m = fs::symlink_metadata(path)?;
     require(m.is_dir(), "unsafe residue directory")?;
     Ok((m.dev(), m.ino()))
 }
 fn known(connection: &Connection, id: &str) -> Result<()> {
-    let table: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='outline_cache')", [], |r| r.get(0))?;
-    require(table, "preserved source-less node: no native outline_cache ownership proof; restore authored files or migrate the legacy cache")?;
+    require(table_exists(connection, "outline_cache")?, "preserved source-less node: no native outline_cache ownership proof; restore authored files or migrate the legacy cache")?;
     let owner: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM outline_cache WHERE node_id=?1 AND path IN (?2,?3,?4,?5))", params![id,
         format!("nodes/{id}/{}", NAMES[0]), format!("nodes/{id}/{}", NAMES[1]),
         format!("nodes/{id}/{}", NAMES[2]), format!("nodes/{id}/{}", NAMES[3])], |r| r.get(0))?;
     require(owner, "preserved source-less node: no cached owner proof")
+}
+
+/// One-time retirement of files claimed by the old outline index. Paths with
+/// no matching proof are left alone, including modified files and linked owners.
+pub(crate) fn retire_legacy_outlines(connection: &Connection, root: &Path) -> Result<()> {
+    let mut preserved = 0;
+    if table_exists(connection, "outline_cache")? {
+        let nodes = root.join("nodes");
+        let root_id = directory(root)?;
+        let nodes_id = directory(&nodes)?;
+        let mut query = connection.prepare(
+            "SELECT DISTINCT node_id FROM outline_cache WHERE path GLOB 'nodes/*' ORDER BY node_id",
+        )?;
+        let mut proofs = connection.prepare(
+            "SELECT path FROM outline_cache WHERE node_id=?1 AND path GLOB 'nodes/*'",
+        )?;
+        for id in query.query_map([], |row| row.get::<_, String>(0))? {
+            let id = id?;
+            require(crate::uuid(&id), "invalid legacy outline owner")?;
+            let owner = nodes.join(&id);
+            let owner_id = match fs::symlink_metadata(&owner) {
+                Ok(metadata) if metadata.is_dir() => (metadata.dev(), metadata.ino()),
+                Ok(_) => { preserved += 1; continue; }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            if fs::symlink_metadata(owner.join("node.md"))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            {
+                if verify(connection, root, &id).is_ok() {
+                    retire(connection, root, &id)?;
+                } else {
+                    preserved += 1;
+                }
+                continue;
+            }
+            for path in proofs.query_map([&id], |row| row.get::<_, String>(0))? {
+                let path = path?;
+                let Some(name) = NAMES.into_iter().find(|name| path == format!("nodes/{id}/{name}")) else {
+                    preserved += 1;
+                    continue;
+                };
+                let target = owner.join(name);
+                if fs::symlink_metadata(&target).is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) {
+                    continue;
+                }
+                if directory(root)? == root_id && directory(&nodes)? == nodes_id
+                    && directory(&owner)? == owner_id && file(connection, root, &id, name).is_ok()
+                    && directory(&owner)? == owner_id
+                {
+                    fs::remove_file(target)?;
+                } else {
+                    preserved += 1;
+                }
+            }
+        }
+    }
+    connection.execute_batch("
+        DROP TABLE IF EXISTS outline_cache;
+        DROP TABLE IF EXISTS outline_documents;
+        DROP TABLE IF EXISTS outline_state;
+        DROP TABLE IF EXISTS outline_inputs;
+        DROP TABLE IF EXISTS outline_parents;
+        DROP TABLE IF EXISTS outline_dependencies;
+        DELETE FROM metadata WHERE key='outlines';
+    ")?;
+    if preserved > 0 {
+        eprintln!("Preserved {preserved} legacy outline files or directories without a matching ownership proof.");
+    }
+    Ok(())
 }
 
 // Paths are constructed from validated source enumeration, never selected by cache text.

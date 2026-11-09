@@ -25,6 +25,6 @@ Session-start `instructions` can activate a cached available release under stand
 
 Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md) during extended work and routine maintenance. Its synthetic examples illustrate how to stay informative without making every receipt a user interruption.
 
-Knowledge lives at `nodes/<id>/node.md`. Generated `nodes/<id>/outline.lean` shows the node and its direct children; `nodes/<id>/outline.full.lean` shows the whole subtree. Prefer ordinary file tools on these views when present. The outline command generates or selects its view and prepends `outline-file` with the full absolute path.
+Knowledge lives at `nodes/<id>/node.md`. Use `sifttext outline STORE UUID` for the node and its direct children. Add `full` for the whole subtree.
 
 Prefer rg and fd for search when available, without restricting a better task-specific method. Check tool availability in an unfamiliar installation.

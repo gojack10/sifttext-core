@@ -143,6 +143,12 @@ fn index<'a>(nodes: &'a [Node], publication: bool) -> Result<Forest<'a>, String>
 }
 
 impl<'a> Forest<'a> {
+    pub(crate) fn indexed_rows(&self) -> impl Iterator<Item = (&'a Node, Option<&'a str>, Row<'a>)> + '_ {
+        self.preorder.iter().map(|&(node, depth)| {
+            (node, self.parents.get(node.id.as_str()).copied(), row(node, depth, &self.descendants))
+        })
+    }
+
     /// Validate the complete forest once. Root walks are iterative and every subtree occupies
     /// one contiguous preorder range. A node not reached from a root belongs to a cycle because
     /// all references resolve and each child has at most one parent.

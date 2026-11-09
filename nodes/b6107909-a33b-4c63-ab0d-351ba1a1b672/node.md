@@ -24,8 +24,6 @@ nodes/UUID/children/UUID
 nodes/UUID/parent
 nodes/UUID/links-to/UUID
 nodes/UUID/linked-from/UUID
-nodes/UUID/outline.lean
-nodes/UUID/outline.full.lean
 nodes/UUID/artifacts/NAME
 trees/ROOT_UUID
 .sifttext/index.sqlite
@@ -44,7 +42,7 @@ Write body references as normal Markdown links. Resolve a relative target from t
 
 The normal knowledge home generates three navigation paths. `parent` opens the parent node. `links-to/` and `linked-from/` show cross-references from relative Markdown node links and `see_also`. These shortcuts are local and rebuildable. Edit the source node or its authored child links to change a relationship. Managed updates prepare the shortcuts once and record `node_links_format_version` in `.sifttext/config.json`.
 
-Generated views live at `nodes/<id>/outline.lean` (the node and its direct children) and `nodes/<id>/outline.full.lean` (the whole subtree). Prefer ordinary file tools on them. The outline command fast-tracks the same files and prepends `outline-file` with the selected file's full absolute path. These rebuildable views may need generation before they exist.
+Use `sifttext outline STORE UUID` for the node and its direct children. Add `full` for the whole subtree. The command reads the derived SQLite index and returns LEAN.
 
 Accepted knowledge belongs to one rooted tree.
 
@@ -74,7 +72,7 @@ Use [Status](../17c42051-88c0-4e41-a151-5d1bab4be83b/node.md) to choose a status
 
 ## Local state
 
-Use the installed commands to rebuild `.sifttext/index.sqlite` and generated outline files from the knowledge files.
+Run `sifttext index STORE` to prepare `.sifttext/index.sqlite` from the knowledge files. During conversion from a file-backed index, this removes old outline files whose bytes match the recorded hashes.
 
 Preserve `.sifttext/config.json` during cache repairs because it stores the user's update permissions and sharing choices.
 

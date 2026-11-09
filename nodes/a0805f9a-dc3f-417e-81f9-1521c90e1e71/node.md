@@ -32,7 +32,7 @@ Later exclusions take effect in the current server copy, while earlier uploaded 
 
 Clone it or copy it while preserving symlinks.
 
-Generated SQLite and outline files are rebuildable views.
+The generated SQLite index can be rebuilt from the knowledge files.
 
 Sharing a repository requires the owner's permission and a privacy review.
 

@@ -214,7 +214,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         return Ok(());
     }
     if args.first().is_some_and(|command| matches!(command.as_str(),
-        "outline" | "search" | "sql" | "index" | "worktree" | "advance" | "accepted" | "submit" | "prepare-home"))
+        "outline" | "search" | "index" | "worktree" | "advance" | "accepted" | "submit" | "prepare-home"))
         && let Some(home) = args.get(1)
     {
         sifttext_file_graph::home_format::ensure(&policy, Path::new(home))?;
@@ -485,8 +485,12 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 [full, force] if full == "full" && force == "-y" => (true, true),
                 _ => return Err("usage: sifttext outline STORE UUID [full] [-y]".into()),
             };
-            let output = sifttext_file_graph::index::outline(&policy, Path::new(path), id, full)?;
-            print_large_return(&output, force)?;
+            use sifttext_file_graph::outlines::Outline;
+            let limit = (!force && full).then_some(LARGE_RETURN_LIMIT);
+            match sifttext_file_graph::index::outline_with_limit(&policy, Path::new(path), id, full, limit)? {
+                Outline::Text(text) => print_large_return(&text, force || full)?,
+                Outline::Suppressed(tokens) => return Err(LargeReturnSuppressed { tokens, command: cmd.clone() }.into()),
+            }
             return Ok(());
         }
         [cmd, path, query, rest @ ..] if cmd == "search" => {
@@ -529,11 +533,6 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 .map_err(std::io::Error::other)?
                 + "\n";
             print_large_return(&rendered, force)?;
-            return Ok(());
-        }
-        [cmd, path, sql, rest @ ..] if cmd == "sql" && (rest.is_empty() || rest == ["-y"]) => {
-            let rendered = local::sql_lean(&policy, Path::new(path), sql)?;
-            print_large_return(&rendered, !rest.is_empty())?;
             return Ok(());
         }
         _ => return Err("unknown command or arguments; run sifttext -h".into()),
@@ -838,7 +837,6 @@ mod tests {
             "normalize",
             "session-attach",
             "update",
-            "sql",
         ] {
             let notice = LargeReturnSuppressed {
                 tokens: 15_001,

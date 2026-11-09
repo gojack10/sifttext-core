@@ -19,11 +19,10 @@ const POINTER_RULE: &str = "/AGENTS.md";
 const CHAT_ARTIFACTS_RULE: &str = "/nodes/*/artifacts/chats/";
 const ARTIFACTS_RULE: &str = "/nodes/*/artifacts/";
 /// The entrypoint's direct children in authored order, not a second hierarchy.
-const PIPELINE: [&str; 8] = [
+const PIPELINE: [&str; 7] = [
     "6e9f23b3-3fbe-4dbd-9b58-6842438d2d01",
     "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
     "b6107909-a33b-4c63-ab0d-351ba1a1b672",
-    "4cc0b396-4b55-415e-bb26-b51c97e6ca78",
     "fb1e0c9f-8c04-4baf-91e6-4688856a14af",
     "a472e05c-9bbf-48f2-89d7-6c6092c339ed",
     "31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8",
@@ -2532,49 +2531,4 @@ pub fn sql(policy: &Policy, path: &Path, sql: &str) -> Result<Value> {
     }).collect()).collect();
     Ok(json!({"status":"current","version":result.version,"version_scope":"authored_store",
         "result":{"columns":result.columns,"rows":rows}}))
-}
-
-/// Public SQL LEAN uses positional keys so duplicate/arbitrary names remain lossless.
-/// Decimal strings with storage-class tags also survive IEEE-754-only LEAN decoders.
-pub fn sql_lean(policy: &Policy, path: &Path, sql: &str) -> Result<String> {
-    let result = query_sql(policy, path, sql)?;
-    let mut document = json!({"status":"current","version":result.version});
-    let numeric_kind = |value: &rusqlite::types::Value| match value {
-        rusqlite::types::Value::Integer(_) => Some("integer"),
-        rusqlite::types::Value::Real(_) => Some("real"),
-        _ => None,
-    };
-    let mut column_types = Vec::new();
-    for (i, name) in result.columns.into_iter().enumerate() {
-        document[format!("column_{i}")] = json!(name);
-        let mut values = result.rows.iter().map(|row| &row[i])
-            .filter(|value| !matches!(value, rusqlite::types::Value::Null));
-        let kind = values.next().and_then(numeric_kind).filter(|kind| {
-            values.all(|value| numeric_kind(value) == Some(*kind))
-        });
-        if let Some(kind) = kind {
-            document[format!("c{i}_type")] = json!(kind);
-        }
-        column_types.push(kind);
-    }
-    let rows: Vec<Value> = result.rows.into_iter().map(|values| {
-        let mut row = serde_json::Map::new();
-        for (i, value) in values.into_iter().enumerate() {
-            use rusqlite::types::Value as Sql;
-            let (value, kind) = match value {
-                Sql::Null => (Value::Null, None),
-                Sql::Text(s) => (json!(s), None),
-                Sql::Integer(n) => (json!(n.to_string()), Some("integer")),
-                Sql::Real(n) => (json!(n.to_string()), Some("real")),
-                Sql::Blob(_) => unreachable!(),
-            };
-            row.insert(format!("c{i}"), value);
-            if let Some(kind) = kind.filter(|_| column_types[i].is_none()) {
-                row.insert(format!("c{i}_type"), json!(kind));
-            }
-        }
-        Value::Object(row)
-    }).collect();
-    document["rows"] = json!(rows);
-    Ok(crate::lean_render::render(&document)? + "\n")
 }

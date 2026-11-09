@@ -94,7 +94,7 @@ Follow [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) to 
 
 Logged-out and free offline work remains available.
 
-`worktree HOME` allocates a sparse draft without a full checkout. Expand an existing or new node with `git -C WORKTREE sparse-checkout add nodes/UUID`; this does not pull a newer version. Read the selected node with ordinary file tools, for example `cat WORKTREE/nodes/UUID/node.md`. `sifttext create` selects its new node and parent automatically. Then edit and stage ordinary authored files in that draft. For manually created files outside the selection, select their directory first (or deliberately stage with `git add --sparse`). SQL, search, outlines and submit use the complete logical version, including omitted Git content and valid uncommitted changes; missing sparse paths are not deletions. Submit materializes only nodes requiring status patches. `git -C WORKTREE sparse-checkout disable` is the full-draft fallback. The normal home stays complete; keep durable task artifacts there, not in the disposable draft.
+`worktree HOME` allocates a sparse draft without a full checkout. Expand an existing or new node with `git -C WORKTREE sparse-checkout add nodes/UUID`; this does not pull a newer version. Read the selected node with ordinary file tools, for example `cat WORKTREE/nodes/UUID/node.md`. `sifttext create` selects its new node and parent automatically. Then edit and stage ordinary authored files in that draft. For manually created files outside the selection, select their directory first (or deliberately stage with `git add --sparse`). Search, outlines and submit use the complete logical version, including omitted Git content and valid uncommitted changes; missing sparse paths are not deletions. Submit materializes only nodes requiring status patches. `git -C WORKTREE sparse-checkout disable` is the full-draft fallback. The normal home stays complete; keep durable task artifacts there, not in the disposable draft.
 
 Leaves may omit `nodes/UUID/children`; absence means zero children. `sifttext create` creates a parent's relationship directory for its first child and does not create empty leaf directories or `children/.keep` markers. Existing empty markers remain accepted without a cleanup migration. Earlier releases require the directories, so update all readers of shared knowledge before publishing marker-free leaves. Root containers and their markers are unchanged.
 
@@ -131,7 +131,7 @@ Use `sifttext accepted HOME` to read a separate checked view while finishing is 
 
 Reading the checked view leaves the save unfinished. To finish it, preserve the blocking work with its owner's permission and clean the normal home. Then retry the original `submit HOME DRAFT COMMIT BASE` arguments. `advance HOME` changes the reader only, leaving draft cleanup for the original submit.
 
-Core's generated retrieval index is `.sifttext/index.sqlite`. A root-level `sifttext.db` has unknown ownership and stays in place.
+Use `rg` to search node text, `fd` to find files, and `sifttext outline STORE UUID [full]` to navigate the tree. Outlines come from the derived `.sifttext/index.sqlite` index. A root-level `sifttext.db` has unknown ownership and stays in place.
 
 Use the checked reading view while the file's owner decides what to do. Do not delete, move or ignore that database merely to clear publication.
 
@@ -169,7 +169,7 @@ Source-build and installed workflows were qualified on macOS 26.4/arm64 and Ubun
 
 Keep pinned builds, frozen-law verification, Bend formal checks and source/runtime stamps enabled. The build checks include the input-normalization proof in `Shape.bend`; formal assurance concerns the modeled graph, not all Rust, filesystem behavior or security. Body token counting retains the pinned `o200k_base` vocabulary, regex and upstream BPE semantics.
 
-Use the public CLI in disposable homes to exercise the changed workflow, refusals and recovery. Use ad hoc inspection, a native debugger and native CPU/RSS/process measurements as needed; preserve exact argv, source/runtime identity and outputs. Do not substitute a test-suite run or a text walkthrough for ordinary-use evidence. Current full-submit and warm-SQL measurements do not meet the resource/latency targets; no universal 50 MB or instant-query claim is made.
+Use the public CLI in disposable homes to exercise the changed workflow, refusals and recovery. Use ad hoc inspection, a native debugger and native CPU/RSS/process measurements as needed; preserve exact argv, source/runtime identity and outputs. Do not substitute a test-suite run or a text walkthrough for ordinary-use evidence. Earlier full-submit and warm retrieval measurements do not meet the resource/latency targets; no universal 50 MB or instant-query claim is made.
 
 For operations and flags, use the built or installed `sifttext -h`.
 

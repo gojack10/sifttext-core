@@ -1,7 +1,7 @@
 ---
 id: "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8"
 name: "Retrieve SiftText Knowledge"
-micro_summary: "Finds relevant source nodes efficiently with files, rg, fd, bounded outlines and indexed queries."
+micro_summary: "Finds relevant source nodes efficiently with direct file reads, rg, fd and bounded outlines."
 status: "resolved"
 see_also: []
 scope: "Guide a fresh agent from an unfamiliar question to source-grounded understanding without unnecessary scanning or unbounded outline reads."
@@ -19,7 +19,7 @@ Prefer rg and fd when available; ordinary file tools or a better task-specific m
 
 Read a shallow outline to choose a relevant branch.
 
-Query the derived index for relationships and counts.
+Use the outline command for tree structure.
 
 ## Install the tools
 
@@ -50,13 +50,11 @@ Exclude attached datasets unless they are relevant.
 
 Account for ignore rules and symlinks before treating an empty result as absent.
 
-Prefer ordinary file tools on `nodes/<id>/outline.lean` for the node and direct children, or `nodes/<id>/outline.full.lean` for the whole subtree. If a generated file is absent or stale, `sifttext outline STORE UUID [full]` selects it and prepends its full absolute path as `outline-file`.
+Run `sifttext outline STORE UUID` for a node and its direct children. Add `full` to read the whole subtree. The command returns LEAN.
 
 Read a shallow outline first and expand only the branches the question needs.
 
 State the displayed depth and any omitted pages.
-
-Use [SQLite Queries](../4cc0b396-4b55-415e-bb26-b51c97e6ca78/node.md) for a direct-child listing when an outline returns too much.
 
 ## Stop and return
 

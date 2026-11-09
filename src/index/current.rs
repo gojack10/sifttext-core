@@ -566,7 +566,7 @@ fn refresh(
         if force || force_artifact_verification { changes.clear(); }
         // Project/render from the complete logical overlay. git_sources retains
         // only immutable baseline metadata in this same rebuildable SQLite cache.
-        work.outline_rows_written += crate::outlines::refresh_indexed_from(&tx, root, &version, &changes, force || force_artifact_verification, donor)?;
+        work.outline_rows_written += crate::outlines::refresh_indexed_from(&tx, root, &changes, force || force_artifact_verification)?;
         if node_links {
             let started = Instant::now();
             work.node_link_writes += if rebuild_links {

@@ -32,7 +32,6 @@ When inspecting conversation history, prefer retained sources under SiftText `ar
 
 If a specific requested chat or needed portion is missing, try to locate an available original or export and inspect it there. Retain the relevant source when SiftText Commit is invoked.
 
-Before querying SiftText's knowledge index with SQL, read [SQLite Queries](../4cc0b396-4b55-415e-bb26-b51c97e6ca78/node.md).
 
 When you need guidance on using the SiftText CLI, read [CLI Operations](../a472e05c-9bbf-48f2-89d7-6c6092c339ed/node.md).
 
