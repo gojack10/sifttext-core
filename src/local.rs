@@ -1233,7 +1233,7 @@ fn advance_checked(
             if let Err(error) = index::retire_host_index(home) {
                 eprintln!("Unused host index retained: {error}");
             }
-            crate::git_snapshot::retire_facts(home);
+            crate::scratch::retire_legacy_facts(home);
             version
         } else {
             index::refresh_current(home, prepared, version.map(|version| (tree.as_str(), version)))?

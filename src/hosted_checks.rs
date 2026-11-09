@@ -549,7 +549,6 @@ pub fn sync_publication(
 ) -> Value {
     let mut read = || -> Result<Value> {
         policy.verify_stamp()?;
-        crate::git_snapshot::retire_facts(repo);
         let tree = crate::local::reader_git(repo, &["rev-parse", "--verify", "--end-of-options", &format!("{candidate}^{{tree}}")])?;
         // This is advisory only. Exact tree identity lets own-account sync
         // carry the original review outcome without paying to review it again.

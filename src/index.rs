@@ -221,7 +221,7 @@ fn identity(path: &Path) -> Result<Identity> {
 /// Ordinary reads only refresh Git-detected edits against an already compatible cache.
 pub fn prepare(policy: &Policy, path: &Path, donor: Option<&Path>) -> Result<Value> {
     let (version, nodes) = current::prepare(policy, path, donor)?;
-    crate::git_snapshot::retire_facts(path);
+    crate::scratch::retire_legacy_facts(path);
     if let Ok(home) = fs::canonicalize(path) {
         let common = home.join(".git");
         if fs::symlink_metadata(&common).is_ok_and(|entry| entry.is_dir()) {

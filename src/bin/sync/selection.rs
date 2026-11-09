@@ -402,6 +402,7 @@ pub(super) fn repository(store: &Store) -> Result<Store> {
     {
         return Err("unsafe publication repository".into());
     }
+    sifttext_file_graph::scratch::retire_legacy_facts(&home);
     Ok(Store {
         home,
         root: store.root.clone(),

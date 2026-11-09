@@ -225,38 +225,6 @@ fn insert_entry(insert: &mut rusqlite::Statement<'_>, path: &str, kind: u8,
     Ok(())
 }
 
-/// Retire the former persistent memo during reader preparation or sync.
-pub(crate) fn retire_facts(repo: &Path) {
-    let result = (|| -> Result<()> {
-        let common = crate::local::reader_git(repo,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
-        let common = Path::new(&common);
-        crate::real_dir(common)?;
-        for name in [
-            "sifttext-git-facts.sqlite-journal",
-            "sifttext-git-facts.sqlite-wal",
-            "sifttext-git-facts.sqlite-shm",
-            "sifttext-git-facts.sqlite",
-        ] {
-            let file = common.join(name);
-            match std::fs::symlink_metadata(&file) {
-                Ok(metadata) => {
-                    use std::os::unix::fs::MetadataExt;
-                    require(metadata.is_file() && metadata.nlink() == 1,
-                        "unrecognized legacy Git facts file")?;
-                    std::fs::remove_file(file)?;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                Err(error) => return Err(error.into()),
-            }
-        }
-        Ok(())
-    })();
-    if let Err(error) = result {
-        eprintln!("Legacy Git facts retained in {}: {error}", repo.display());
-    }
-}
-
 pub(crate) struct GitReader {
     pub(crate) repo: PathBuf,
     pub(crate) policy_identity: String,

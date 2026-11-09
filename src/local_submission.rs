@@ -119,6 +119,18 @@ fn expire_registered_draft(common: &Path, draft: &Path, now: std::time::SystemTi
         {
             return Ok(());
         }
+        let nodes = draft.join("nodes");
+        if nodes.try_exists()? {
+            crate::real_dir(&nodes)?;
+            for node in fs::read_dir(nodes)? {
+                let node = node?;
+                if node.file_type()?.is_dir()
+                    && fs::symlink_metadata(node.path().join("artifacts")).is_ok()
+                {
+                    return Err("node artifacts require their own retention decision".into());
+                }
+            }
+        }
         initializing
     } else {
         if !entry.split('\0').any(|field| field.starts_with("prunable"))
