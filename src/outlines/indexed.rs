@@ -149,6 +149,11 @@ pub(crate) fn refresh_indexed_from(
             |row| row.get(0),
         )
         .optional()?;
+    // Older updaters can publish once with their outgoing reader after the
+    // incoming reader has already built this projection during conversion.
+    if previous.is_none() || crate::index::residue::table_exists(connection, "outline_cache")? {
+        crate::index::residue::retire_legacy_outlines(connection, root)?;
+    }
     let all = force || previous != Some(None);
     connection.execute_batch("DELETE FROM outline_selected; DELETE FROM outline_changed;")?;
     let mut affected = BTreeSet::new();
@@ -228,9 +233,6 @@ pub(crate) fn refresh_indexed_from(
             )?;
             written += write_tree(connection, &tree)?;
         }
-    }
-    if previous.is_none() {
-        crate::index::residue::retire_legacy_outlines(connection, root)?;
     }
     connection.execute(
         "INSERT OR REPLACE INTO outline_projection VALUES (1,?1,?2)",
