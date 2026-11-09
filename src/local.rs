@@ -1167,7 +1167,7 @@ impl std::error::Error for ReaderAdvanceError {
 }
 
 fn advance_checked(
-    _policy: &Policy,
+    policy: &Policy,
     home: &Path,
     before: &str,
     target: &str,
@@ -1220,7 +1220,24 @@ fn advance_checked(
             "reader changed during advance",
         )?;
         let tree = reader_git(home, &["rev-parse", "--verify", &format!("{target}^{{tree}}")])?;
-        let refreshed = index::refresh_current(home, prepared, version.map(|version| (tree.as_str(), version)))?;
+        let host_storage = std::env::var("SIFTTEXT_HOST_STORAGE_ONLY").as_deref() == Ok("1")
+            || (crate::account::managed()
+                && std::env::var("SIFTTEXT_HOSTED_ACCEPTANCE").as_deref() == Ok("1"));
+        let refreshed = if host_storage {
+            let version = if let Some(version) = version {
+                version.to_owned()
+            } else {
+                crate::git_snapshot::GitReader::new(policy, home)?.view(target)?.version.clone()
+            };
+            require(reader_state(home)? == target, "host checkout changed during advance")?;
+            if let Err(error) = index::retire_host_index(home) {
+                eprintln!("Unused host index retained: {error}");
+            }
+            crate::git_snapshot::retire_facts(home);
+            version
+        } else {
+            index::refresh_current(home, prepared, version.map(|version| (tree.as_str(), version)))?
+        };
         require(version.is_none_or(|expected| refreshed == expected), "reader source changed during refresh; retry")?;
         require(
             reader_git(home, &["rev-parse", "HEAD"])? == target,

@@ -29,6 +29,20 @@ fn known(connection: &Connection, id: &str) -> Result<()> {
 /// One-time retirement of files claimed by the old outline index. Paths with
 /// no matching proof are left alone, including modified files and linked owners.
 pub(crate) fn retire_legacy_outlines(connection: &Connection, root: &Path) -> Result<()> {
+    retire_legacy_outline_files(connection, root)?;
+    connection.execute_batch("
+        DROP TABLE IF EXISTS outline_cache;
+        DROP TABLE IF EXISTS outline_documents;
+        DROP TABLE IF EXISTS outline_state;
+        DROP TABLE IF EXISTS outline_inputs;
+        DROP TABLE IF EXISTS outline_parents;
+        DROP TABLE IF EXISTS outline_dependencies;
+        DELETE FROM metadata WHERE key='outlines';
+    ")?;
+    Ok(())
+}
+
+pub(super) fn retire_legacy_outline_files(connection: &Connection, root: &Path) -> Result<usize> {
     let mut preserved = 0;
     if table_exists(connection, "outline_cache")? {
         let nodes = root.join("nodes");
@@ -81,19 +95,10 @@ pub(crate) fn retire_legacy_outlines(connection: &Connection, root: &Path) -> Re
             }
         }
     }
-    connection.execute_batch("
-        DROP TABLE IF EXISTS outline_cache;
-        DROP TABLE IF EXISTS outline_documents;
-        DROP TABLE IF EXISTS outline_state;
-        DROP TABLE IF EXISTS outline_inputs;
-        DROP TABLE IF EXISTS outline_parents;
-        DROP TABLE IF EXISTS outline_dependencies;
-        DELETE FROM metadata WHERE key='outlines';
-    ")?;
     if preserved > 0 {
         eprintln!("Preserved {preserved} legacy outline files or directories without a matching ownership proof.");
     }
-    Ok(())
+    Ok(preserved)
 }
 
 // Paths are constructed from validated source enumeration, never selected by cache text.
