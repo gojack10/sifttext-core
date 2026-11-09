@@ -232,6 +232,7 @@ pub fn prepare(policy: &Policy, path: &Path, donor: Option<&Path>) -> Result<Val
             if let Err(error) = crate::hosted_checks::retire_node_results(&common) {
                 eprintln!("Duplicate check receipts retained in {}: {error}", home.display());
             }
+            crate::local::maintain_git(&home);
             if let Err(error) = crate::local::expire_repository_drafts(&common, std::time::SystemTime::now()) {
                 eprintln!("Draft expiry deferred for {}: {error}", home.display());
             }

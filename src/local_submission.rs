@@ -24,10 +24,10 @@ struct Pending {
     explicit: BTreeSet<String>,
     // Original submitted paths plus explicit descendant repairs. Core's own
     // merge/status preparation must never enlist an untouched oversized node.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     authored_deltas: Vec<(String, String)>,
     // Exact Core-created transition; never permission for arbitrary draft edits.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     prepared_heads: Option<(String, String)>,
     // Exact checked attempt, recorded before the conditional ref update. This
     // is custody, not acceptance: consumers must establish Git ancestry anew.
@@ -718,6 +718,8 @@ fn submit_with_status(
         finishing_stage = "draft_cleanup";
         if !recovering_cleanup {
             pending.completed_head = Some(target.to_owned());
+            pending.authored_deltas.clear();
+            pending.prepared_heads = None;
             // Persist acceptance custody before deleting anything. A retry
             // finishes this exact draft even if .git or the root is already gone.
             persist(&journal, &pending)?;
@@ -767,10 +769,9 @@ fn submit_with_status(
             let identity = fs::symlink_metadata(receipt.view.as_ref().ok_or("missing recovery view")?)?;
             checked_publication::remove_owned_view(home, &receipt, &identity)?;
         }
-        // ponytail: retain completed journals; GC needs an explicit retry-retention contract.
-        // Retain completed custody as an idempotency tombstone. Losing stdout after
-        // cleanup must not make the original request unrecoverable; retries still
-        // validate current accepted history rather than trust this record as proof.
+        // Keep exact retry arguments and the publication delta for updater
+        // recovery. The working journal's intermediate inputs are retired.
+        super::maintain_git(home);
         let mut output = serde_json::to_value(&receipt)?;
         if recovering_cleanup {
             output["published"] = json!(false);

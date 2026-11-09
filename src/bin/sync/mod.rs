@@ -724,7 +724,9 @@ fn upload(
     delivery::acknowledge(&response, commit)?;
     state.uploaded = Some(commit.into());
     state.remote_pending = response["pending"].clone();
-    store.save(state)
+    store.save(state)?;
+    local::maintain_git(&store.home);
+    Ok(())
 }
 fn receive(
     store: &Store,
