@@ -108,21 +108,20 @@ fn checked_output(command: std::process::Command) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-fn native_monitor_enabled(root: &Path) -> bool {
+pub(super) fn native_monitor_enabled(root: &Path) -> bool {
     cfg!(target_os = "macos")
         && fs::symlink_metadata(root.join(".git")).is_ok_and(|entry| entry.is_dir())
         && crate::local::reader_git(root, &["config", "--local", "--no-includes", "--get-all", "core.fsmonitor"])
             .is_ok_and(|value| value == "true")
 }
 
-fn changed_paths(root: &Path, cold: bool, save_checkpoint: bool) -> Result<Vec<u8>> {
+fn changed_paths(root: &Path, native_monitor: bool, save_checkpoint: bool) -> Result<Vec<u8>> {
     let args = ["-c", "core.untrackedCache=true", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--", "nodes", "trees"];
     let mut command = crate::local::reader_command(root, &[]);
-    let opted_in = cold && native_monitor_enabled(root);
-    let running = opted_in && crate::local::reader_git(root, &["fsmonitor--daemon", "status"]).is_ok();
-    if opted_in {
+    let running = native_monitor && crate::local::reader_git(root, &["fsmonitor--daemon", "status"]).is_ok();
+    if native_monitor {
         // An inactive monitor makes Git start a daemon from inside status.
-        // Keep that startup off the cold path and use a full scan instead.
+        // Keep daemon startup outside retrieval and use a full scan instead.
         command.args(["-c", if running { "core.fsmonitor=true" } else { "core.fsmonitor=false" }]);
         if running && save_checkpoint {
             command.env("GIT_OPTIONAL_LOCKS", "1");
@@ -133,7 +132,7 @@ fn changed_paths(root: &Path, cold: bool, save_checkpoint: bool) -> Result<Vec<u
     // The daemon can stop between the availability check and status. Retry
     // read-only after a settled timeout, with fsmonitor disabled.
     if result.as_ref().is_err_and(|error| crate::checked_publication::failure_kind(error) == "timeout")
-        && (running || (!cold && native_monitor_enabled(root)))
+        && running
     {
         let mut command = crate::local::reader_command(root, &["-c", "core.fsmonitor=false"]);
         command.args(args);
@@ -147,16 +146,16 @@ pub(super) struct Snapshot {
     pub repo: PathBuf,
     tree: String,
     changes: BTreeMap<PathBuf, Option<Source>>,
-    cold: bool,
+    native_monitor: bool,
 }
 impl Snapshot {
-    pub fn read(root: &Path, cold: bool, save_checkpoint: bool) -> Result<Self> {
+    pub fn read(root: &Path, native_monitor: bool, save_checkpoint: bool) -> Result<Self> {
         let discovery = crate::local::reader_git(root, &["rev-parse", "--show-toplevel", "HEAD^{tree}"])?;
         let (top, tree) = discovery.split_once('\n').ok_or("missing Git source root")?;
         require(fs::canonicalize(top)? == root, "knowledge view must be its Git root")?;
         require(valid_oid(tree), "invalid Git tree identity")?;
         let tree = tree.to_owned();
-        let status = changed_paths(root, cold, save_checkpoint)?;
+        let status = changed_paths(root, native_monitor, save_checkpoint)?;
         let mut changes = BTreeMap::new();
         let mut hash = Sha256::new();
         hash.update(tree.as_bytes());
@@ -180,14 +179,14 @@ impl Snapshot {
         if crate::local::reader_git(root, &["rev-parse", "--verify", "HEAD^{tree}"])? != tree {
             return Err(super::Refusal::changed_source().into());
         }
-        Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), tree, changes, cold })
+        Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), tree, changes, native_monitor })
     }
     pub fn accepted_version<'a>(&self, accepted: Option<(&str, &'a str)>) -> Option<&'a str> {
         accepted.filter(|(tree, _)| *tree == self.tree && self.changes.is_empty())
             .map(|(_, version)| version)
     }
     pub fn unchanged(&self) -> Result<bool> {
-        match Self::read(&self.repo, self.cold, false) {
+        match Self::read(&self.repo, self.native_monitor, false) {
             Ok(after) => Ok(after.identity == self.identity),
             Err(error) if super::Refusal::is_changed_source(error.as_ref()) => Ok(false),
             Err(error) => Err(error),

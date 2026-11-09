@@ -1,5 +1,5 @@
 //! Git discovers working changes; immutable objects and unchanged derived rows are reused.
-use super::git::{Objects, Snapshot, Source};
+use super::git::{Objects, Snapshot, Source, native_monitor_enabled};
 use super::{identity, processing_identity, working_path};
 use crate::{Policy, Result, require};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params, types::ValueRef};
@@ -717,10 +717,10 @@ fn with_source<T>(
     let database_id = identity(&database)?;
     let donor = prepared.and_then(|p| donor(p).ok());
     let node_links = prepare_links || crate::node_links::enabled(&root)?;
-    let cold = cfg!(target_os = "macos") && prepare && meta(&connection, "version")?.is_none();
-    let mut save_checkpoint = cold;
+    let native_monitor = native_monitor_enabled(&root);
+    let mut save_checkpoint = native_monitor && prepare && meta(&connection, "version")?.is_none();
     for _ in 0..4 {
-        let snapshot = match Snapshot::read(&root, cold, std::mem::take(&mut save_checkpoint)) {
+        let snapshot = match Snapshot::read(&root, native_monitor, std::mem::take(&mut save_checkpoint)) {
             Ok(snapshot) => snapshot,
             Err(error) if super::Refusal::is_changed_source(error.as_ref()) => continue,
             Err(error) => return Err(error),

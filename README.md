@@ -122,7 +122,7 @@ setup and re-prime deliberately allow an index write without staging user files.
 During a cold SiftText index build, an already enabled and running built-in
 monitor can save its checkpoint in the first status pass. The final status
 pass can reuse it with optional writes disabled. If the monitor is stopped,
-cold preparation scans the worktree directly. This setting does not affect
+SiftText scans the worktree directly. This setting does not affect
 Core's isolated checked-publication helpers.
 
 ## Recover an incomplete save
