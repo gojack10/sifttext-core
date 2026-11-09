@@ -717,9 +717,10 @@ fn with_source<T>(
     let database_id = identity(&database)?;
     let donor = prepared.and_then(|p| donor(p).ok());
     let node_links = prepare_links || crate::node_links::enabled(&root)?;
-    let mut save_checkpoint = cfg!(target_os = "macos") && prepare && meta(&connection, "version")?.is_none();
+    let cold = cfg!(target_os = "macos") && prepare && meta(&connection, "version")?.is_none();
+    let mut save_checkpoint = cold;
     for _ in 0..4 {
-        let snapshot = match Snapshot::read(&root, std::mem::take(&mut save_checkpoint)) {
+        let snapshot = match Snapshot::read(&root, cold, std::mem::take(&mut save_checkpoint)) {
             Ok(snapshot) => snapshot,
             Err(error) if super::Refusal::is_changed_source(error.as_ref()) => continue,
             Err(error) => return Err(error),
