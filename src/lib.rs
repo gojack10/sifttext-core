@@ -935,55 +935,48 @@ fn graph_cache_dir(store: &Path) -> Result<PathBuf> {
     Ok(directory)
 }
 
-fn graph_cache_marker(key: &str) -> String {
-    format!("sifttext-valid-graph-v1 {key}\n")
-}
-
-enum GraphCacheResult {
-    Legacy,
-    Native,
-}
-
-// Cooperative provenance for a native executed full-law or checked delta
-// success. This is not authentication against unmanaged same-user writes.
-// An old or imported same-input marker never bootstraps a different shape.
+// Cooperative provenance for one native full-law or checked delta success.
+// Concurrent publications may replace the memo, which can only cause a miss.
 fn native_graph_marker(key: &str) -> String {
     format!("sifttext-native-graph-v2 {key}\n")
 }
 
-fn graph_cache_hit(directory: &Path, key: &str) -> Result<Option<GraphCacheResult>> {
-    real_dir(directory)?;
-    let path = directory.join(key);
-    let meta = fs::symlink_metadata(&path)?;
-    let legacy = graph_cache_marker(key);
-    let native = native_graph_marker(key);
-    let limit = legacy.len().max(native.len());
-    require(meta.is_file() && meta.len() <= limit as u64, "unsafe graph cache marker")?;
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-        require(meta.nlink() == 1, "hard-linked graph cache marker")?;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    let file = options.open(path)?;
-    require(file.metadata()?.is_file(), "unsafe graph cache marker")?;
-    let mut bytes = Vec::new();
-    file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
-    Ok(if bytes == native.as_bytes() { Some(GraphCacheResult::Native) }
-        else if bytes == legacy.as_bytes() { Some(GraphCacheResult::Legacy) }
-        else { None })
+fn graph_cache_hit(directory: &Path, key: &str) -> bool {
+    let path = directory.join("latest");
+    let expected = native_graph_marker(key);
+    fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file() && meta.len() == expected.len() as u64)
+        && read_regular(&path).is_ok_and(|bytes| bytes == expected.as_bytes())
 }
 
 fn graph_cache_record(directory: &Path, key: &str) -> Result<()> {
     real_dir(directory)?;
     let mut marker = tempfile::NamedTempFile::new_in(directory)?;
     marker.write_all(native_graph_marker(key).as_bytes())?;
-    // Atomic no-clobber: concurrent success for this key is harmless. Never
-    // overwrite a malformed/symlink entry; it simply remains a cache miss.
-    marker.persist_noclobber(directory.join(key))?;
-    // ponytail: one tiny marker per successful structural graph, no GC yet.
+    marker.persist(directory.join("latest"))?;
+    Ok(())
+}
+
+pub(crate) fn retire_graph_markers(common: &Path) -> Result<()> {
+    let directory = common.join("sifttext-valid-graphs");
+    if !directory.try_exists()? { return Ok(()); }
+    real_dir(&directory)?;
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(key) = name.to_str() else { continue };
+        if key.len() != 64 || !key.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !entry.file_type()?.is_file()
+        {
+            continue;
+        }
+        let file = entry.path();
+        if read_regular(&file).is_ok_and(|bytes| {
+            bytes == native_graph_marker(key).as_bytes()
+                || bytes == format!("sifttext-valid-graph-v1 {key}\n").as_bytes()
+        }) {
+            fs::remove_file(file)?;
+        }
+    }
     Ok(())
 }
 
@@ -1266,13 +1259,13 @@ impl Policy {
         let key = graph_validation_key(graph, &predicate);
         let directory = graph_cache_dir(cache_root).ok();
         let hit = directory.as_ref().is_some_and(|directory|
-            graph_cache_hit(directory, &key).ok().flatten().is_some());
+            graph_cache_hit(directory, &key));
         let mut mode = if hit { "same_input" } else { "full_law" };
         let mut reason = if hit { "successful exact normalized input under the same law" }
             else { "no native same-law valid base is available" };
         let delta_words = if !hit && let (Some(directory), Some((before, candidate))) = (&directory, delta) {
             let base_key = graph_validation_key(&before.graph(), &predicate);
-            if matches!(graph_cache_hit(directory, &base_key), Ok(Some(GraphCacheResult::Native))) {
+            if graph_cache_hit(directory, &base_key) {
                 let frontier = candidate.placement_frontier(before);
                 let mut words = reserved(graph_word_count(graph)?.checked_add(frontier.len())
                     .and_then(|count| count.checked_add(2)).ok_or("graph size overflow")?)?;

@@ -226,6 +226,9 @@ pub fn prepare(policy: &Policy, path: &Path, donor: Option<&Path>) -> Result<Val
         let common = home.join(".git");
         if fs::symlink_metadata(&common).is_ok_and(|entry| entry.is_dir()) {
             crate::scratch::cleanup_legacy_publications(&common);
+            if let Err(error) = crate::retire_graph_markers(&common) {
+                eprintln!("Old graph markers retained in {}: {error}", home.display());
+            }
             if let Err(error) = crate::hosted_checks::retire_node_results(&common) {
                 eprintln!("Duplicate check receipts retained in {}: {error}", home.display());
             }
