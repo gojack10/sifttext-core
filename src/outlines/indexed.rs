@@ -2,7 +2,7 @@
 use super::format::{full_outline_header, write_full_outline_row};
 use crate::{
     Result, lean_render,
-    outline_rows::{Forest, Node, PATH_TEMPLATE},
+    outline_rows::{Coverage, Forest, Node, PATH_TEMPLATE},
     require, sha256, token_count,
 };
 use rusqlite::{Connection, OptionalExtension, params};
@@ -332,7 +332,7 @@ impl Branch {
 pub(crate) fn indexed_outline(
     connection: &Connection,
     prefix: &str,
-    full: bool,
+    coverage: Coverage,
     version: &str,
     limit: Option<usize>,
 ) -> Result<super::Outline> {
@@ -354,19 +354,43 @@ pub(crate) fn indexed_outline(
         "UUID prefix absent or ambiguous",
     )?;
     let id = &ids[0];
-    let coverage = if full { "full" } else { "shallow" };
+    let label = match coverage {
+        Coverage::Shallow => "shallow",
+        Coverage::Full => "full",
+        Coverage::Asc => "asc",
+    };
     let diagnostic: Option<String> = connection.query_row(
         "SELECT diagnostic FROM outline_projection WHERE singleton=1",
         [],
         |row| row.get(0),
     )?;
     if let Some(diagnostic) = diagnostic {
-        let document = json!({"coverage":"invalid_draft","requested_coverage":coverage,
+        let document = json!({"coverage":"invalid_draft","requested_coverage":label,
             "status":"invalid_draft","owner":id,"structural_diagnostic":diagnostic,
             "version":version,"path_template":PATH_TEMPLATE,"rows":[]});
         return Ok(super::Outline::Text(lean_render::render(&document)? + "\n"));
     }
-    if full {
+    if coverage == Coverage::Asc {
+        let mut query = connection.prepare(
+            "WITH RECURSIVE ancestors(id,parent,fields,hops) AS (
+                SELECT id,parent,fields,0 FROM outline_rows WHERE id=?1
+                UNION ALL
+                SELECT r.id,r.parent,r.fields,a.hops+1
+                FROM outline_rows r JOIN ancestors a ON r.id=a.parent
+            ) SELECT fields,hops FROM ancestors ORDER BY hops",
+        )?;
+        let mut rows = query.query([id])?;
+        let mut projected = Vec::new();
+        while let Some(row) = rows.next()? {
+            let mut fields: Value = serde_json::from_str(row.get_ref(0)?.as_str()?)?;
+            fields["depth"] = json!(row.get::<_, i64>(1)?);
+            projected.push(fields);
+        }
+        require(!projected.is_empty(), "missing outline row; run sifttext index STORE --repair")?;
+        let document = json!({"coverage":label,"version":version,"path_template":PATH_TEMPLATE,"rows":projected});
+        return Ok(super::Outline::Text(lean_render::render(&document)? + "\n"));
+    }
+    if coverage == Coverage::Full {
         let branch = connection.query_row(
             "SELECT tree,preorder,depth,descendants,subtree_tokens FROM outline_rows WHERE id=?1",
             [id],
@@ -413,6 +437,6 @@ pub(crate) fn indexed_outline(
         !projected.is_empty(),
         "missing outline row; run sifttext index STORE --repair",
     )?;
-    let document = json!({"coverage":coverage,"version":version,"path_template":PATH_TEMPLATE,"rows":projected});
+    let document = json!({"coverage":label,"version":version,"path_template":PATH_TEMPLATE,"rows":projected});
     Ok(super::Outline::Text(lean_render::render(&document)? + "\n"))
 }

@@ -25,6 +25,7 @@ pub const TOKEN_ENCODING: &str = "o200k_base";
 pub enum Coverage {
     Shallow,
     Full,
+    Asc,
 }
 
 /// One complete logical node record. Only the fields a row can carry are typed; every other
@@ -237,6 +238,18 @@ impl<'a> Forest<'a> {
                 .iter()
                 .map(|(node, depth)| row(node, depth - base_depth, &self.descendants))
                 .collect(),
+            Coverage::Asc => {
+                let mut rows = Vec::new();
+                let mut current = owner;
+                loop {
+                    rows.push(row(self.nodes[current], rows.len(), &self.descendants));
+                    match self.parents.get(current) {
+                        Some(parent) => current = parent,
+                        None => break,
+                    }
+                }
+                rows
+            }
             Coverage::Shallow => std::iter::once(row(node, 0, &self.descendants))
                 .chain(
                     node.children

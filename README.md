@@ -135,7 +135,7 @@ Use `sifttext accepted HOME` to read a separate checked view while finishing is 
 
 Reading the checked view leaves the save unfinished. To finish it, preserve the blocking work with its owner's permission and clean the normal home. Then retry the original `submit HOME DRAFT COMMIT BASE` arguments. `advance HOME` changes the reader only, leaving draft cleanup for the original submit.
 
-Use `rg` to search node text, `fd` to find files, and `sifttext outline STORE UUID [full]` to navigate the tree. Outlines come from the derived `.sifttext/index.sqlite` index. A root-level `sifttext.db` has unknown ownership and stays in place.
+Use `rg` to search node text, `fd` to find files, and `sifttext outline STORE UUID [full|asc]` to navigate the tree. The default shows the node and direct children; `full` expands its subtree, while `asc` returns only the selected node and its complete parent chain through the root, with `depth` counting upward hops from zero. Outlines come from the derived `.sifttext/index.sqlite` index. A root-level `sifttext.db` has unknown ownership and stays in place.
 
 Use the checked reading view while the file's owner decides what to do. Do not delete, move or ignore that database merely to clear publication.
 

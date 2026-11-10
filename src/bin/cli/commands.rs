@@ -52,7 +52,7 @@ const GROUPS: &[Group] = &[
         name: "retrieve",
         guide: "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
         commands: &[
-            command("outline STORE UUID [full] [-y]", "Read a shallow or full outline").guide(READ_GUIDE),
+            command("outline STORE UUID [full|asc] [-y]", "Read direct children, a full subtree or the complete ancestor chain").guide(READ_GUIDE),
             command("search STORE QUERY [UNDER_UUID] [-y]", "Search with ancestor context"),
             command("index STORE [--repair]", "Refresh the retrieval index"),
             command("tree-render STORE SELECTION.json", "Render selected trees or proposals").guide("5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f").full_help_only(),

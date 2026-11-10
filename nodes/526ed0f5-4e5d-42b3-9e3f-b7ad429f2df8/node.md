@@ -50,7 +50,9 @@ Exclude attached datasets unless they are relevant.
 
 Account for ignore rules and symlinks before treating an empty result as absent.
 
-Run `sifttext outline STORE UUID` for a node and its direct children. Add `full` to read the whole subtree. The command returns LEAN.
+Run `sifttext outline STORE UUID` for a node and its direct children. Add `full` to read the whole subtree, or `asc` to read the selected node, its parent and every ancestor through the root in one call. The modes are alternatives; do not combine `full` and `asc`.
+
+The command returns LEAN. With `asc`, `coverage:asc` identifies the complete upward chain; rows start at the selected node and `depth` counts parent hops from zero. Ancestor rows do not expand siblings or descendants, and child counts still describe the actual nodes. Node bodies require separate reads. If a large return is suppressed, add `-y` to receive it in full rather than truncated.
 
 Read a shallow outline first and expand only the branches the question needs.
 

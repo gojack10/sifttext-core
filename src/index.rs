@@ -259,17 +259,18 @@ pub fn repair(policy: &Policy, path: &Path) -> Result<Value> {
 
 /// Project the requested native outline from the current working-view transaction.
 pub fn outline(policy: &Policy, path: &Path, id: &str, full: bool) -> Result<String> {
-    match outline_with_limit(policy, path, id, full, None)? {
+    let coverage = if full { crate::outline_rows::Coverage::Full } else { crate::outline_rows::Coverage::Shallow };
+    match outline_with_limit(policy, path, id, coverage, None)? {
         crate::outlines::Outline::Text(text) => Ok(text),
         crate::outlines::Outline::Suppressed(_) => unreachable!("outline without a limit"),
     }
 }
 
 pub fn outline_with_limit(
-    policy: &Policy, path: &Path, id: &str, full: bool, limit: Option<usize>,
+    policy: &Policy, path: &Path, id: &str, coverage: crate::outline_rows::Coverage, limit: Option<usize>,
 ) -> Result<crate::outlines::Outline> {
     Ok(with_current(policy, path, |tx, version| {
-        crate::outlines::indexed_outline(tx, id, full, version, limit)
+        crate::outlines::indexed_outline(tx, id, coverage, version, limit)
     })?.1)
 }
 

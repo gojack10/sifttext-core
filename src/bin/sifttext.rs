@@ -478,16 +478,18 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             return if output["status"] == "render-success" { Ok(()) } else { Err(ReportedRenderFailure.into()) };
         }
         [cmd, path, id, rest @ ..] if cmd == "outline" => {
-            let (full, force) = match rest {
-                [] => (false, false),
-                [flag] if flag == "full" => (true, false),
-                [flag] if flag == "-y" => (false, true),
-                [full, force] if full == "full" && force == "-y" => (true, true),
-                _ => return Err("usage: sifttext outline STORE UUID [full] [-y]".into()),
+            use sifttext_file_graph::{outline_rows::Coverage, outlines::Outline};
+            let force = rest.last().is_some_and(|arg| arg == "-y");
+            let rest = if force { &rest[..rest.len() - 1] } else { rest };
+            let coverage = match rest {
+                [] => Coverage::Shallow,
+                [flag] if flag == "full" => Coverage::Full,
+                [flag] if flag == "asc" => Coverage::Asc,
+                _ => return Err("usage: sifttext outline STORE UUID [full|asc] [-y]".into()),
             };
-            use sifttext_file_graph::outlines::Outline;
+            let full = coverage == Coverage::Full;
             let limit = (!force && full).then_some(LARGE_RETURN_LIMIT);
-            match sifttext_file_graph::index::outline_with_limit(&policy, Path::new(path), id, full, limit)? {
+            match sifttext_file_graph::index::outline_with_limit(&policy, Path::new(path), id, coverage, limit)? {
                 Outline::Text(text) => print_large_return(&text, force || full)?,
                 Outline::Suppressed(tokens) => return Err(LargeReturnSuppressed { tokens, command: cmd.clone() }.into()),
             }

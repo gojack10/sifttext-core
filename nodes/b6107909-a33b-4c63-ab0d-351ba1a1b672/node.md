@@ -42,7 +42,7 @@ Write body references as normal Markdown links. Resolve a relative target from t
 
 The normal knowledge home generates three navigation paths. `parent` opens the parent node. `links-to/` and `linked-from/` show cross-references from relative Markdown node links and `see_also`. These shortcuts are local and rebuildable. Edit the source node or its authored child links to change a relationship. Managed updates prepare the shortcuts once and record `node_links_format_version` in `.sifttext/config.json`.
 
-Use `sifttext outline STORE UUID` for the node and its direct children. Add `full` for the whole subtree. The command reads the derived SQLite index and returns LEAN.
+Use `sifttext outline STORE UUID` for the node and its direct children. Add `full` for the whole subtree, or `asc` for the complete selected-node-to-root chain without expanding siblings. The command reads the derived SQLite index and returns LEAN; `asc` rows use `depth` for parent hops from the selected node.
 
 Accepted knowledge belongs to one rooted tree.
 

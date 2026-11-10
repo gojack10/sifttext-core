@@ -27,6 +27,6 @@ Session-start `instructions` can activate a cached available release under stand
 
 Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md) during extended work and routine maintenance. Its synthetic examples illustrate how to stay informative without making every receipt a user interruption.
 
-Knowledge lives at `nodes/<id>/node.md`. Use `sifttext outline STORE UUID` for the node and its direct children. Add `full` for the whole subtree.
+Knowledge lives at `nodes/<id>/node.md`. Use `sifttext outline STORE UUID` for the node and its direct children. Add `full` for the whole subtree, or `asc` for the selected node and its complete parent chain through the root, without sibling expansion.
 
 Prefer rg and fd for search when available, without restricting a better task-specific method. Check tool availability in an unfamiliar installation.
