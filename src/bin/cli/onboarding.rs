@@ -109,6 +109,31 @@ fn clock_fields(lines: &mut Vec<String>) -> Result<()> {
     )
 }
 
+/// Where each retrieval tool resolves on PATH, so an agent need not probe before using it.
+fn retrieval_tool_fields(lines: &mut Vec<String>) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let executable = |path: &PathBuf| {
+        fs::metadata(path)
+            .is_ok_and(|file| file.is_file() && file.permissions().mode() & 0o111 != 0)
+    };
+    // Debian and Ubuntu package fd as fdfind.
+    for (key, names) in [("rg", &["rg"][..]), ("fd", &["fd", "fdfind"][..])] {
+        let found = env::var_os("PATH").and_then(|paths| {
+            names.iter().find_map(|name| {
+                env::split_paths(&paths)
+                    .map(|directory| directory.join(name))
+                    .find(executable)
+            })
+        });
+        field(
+            lines,
+            key,
+            json!(found.map_or("missing".into(), |path| path.to_string_lossy().into_owned())),
+        )?;
+    }
+    Ok(())
+}
+
 fn references(lines: &mut Vec<String>, key: &str, values: &BTreeSet<String>) -> Result<()> {
     if values.len() == 1 {
         field(lines, key, json!(values.first().unwrap()))?;
@@ -146,6 +171,7 @@ pub(super) fn render(home: &Path, entry: &Value) -> Result<String> {
         &transport
     }))?;
     clock_fields(&mut lines)?;
+    retrieval_tool_fields(&mut lines)?;
     references(&mut lines, "repair-guide", &guides)?;
     if !guides.is_empty() {
         actions.push("Read repair-guide (each row if several). Resolve it for the user, and keep other work moving while you do. Only something genuinely significant goes to the user.".to_owned());
