@@ -9,7 +9,7 @@ use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
 use std::{
     collections::BTreeSet,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -481,6 +481,14 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             use sifttext_file_graph::{outline_rows::Coverage, outlines::Outline};
             let force = rest.last().is_some_and(|arg| arg == "-y");
             let rest = if force { &rest[..rest.len() - 1] } else { rest };
+            if id == "-" {
+                if !rest.is_empty() { return Err("usage: sifttext outline STORE - [-y]".into()); }
+                let mut input = String::new();
+                std::io::stdin().read_to_string(&mut input)?;
+                let text = sifttext_file_graph::outlines::producer_outline(&policy, Path::new(path), &input)?;
+                print_large_return(&text, true)?;
+                return Ok(());
+            }
             let coverage = match rest {
                 [] => Coverage::Shallow,
                 [flag] if flag == "full" => Coverage::Full,
@@ -508,7 +516,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 return Err("usage: sifttext search STORE QUERY... [--under UUID] [-y]".into());
             }
             let queries: Vec<&str> = queries.iter().map(String::as_str).collect();
-            let result = sifttext_file_graph::search::local_search_phrasings(
+            let rendered = sifttext_file_graph::search::local_packet(
                 &policy,
                 Path::new(path),
                 &queries,
@@ -527,20 +535,6 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                     e.as_ref(),
                 )
             })?;
-            if result.status != "current" {
-                return Err(result
-                    .refusal
-                    .unwrap_or(sifttext_file_graph::index::Refusal {
-                        stage: "search",
-                        kind: "unknown",
-                        problem: None,
-                    })
-                    .into());
-            }
-            let output = result.cli_value();
-            let rendered = sifttext_file_graph::lean_render::render(&output)
-                .map_err(std::io::Error::other)?
-                + "\n";
             print_large_return(&rendered, force)?;
             return Ok(());
         }

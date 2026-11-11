@@ -79,6 +79,18 @@ fn compact_node(row: &rusqlite::Row<'_>) -> Result<Node> {
     )?;
     Ok(node)
 }
+/// Minimal discovery cards from the already-prepared outline projection.
+/// Keep the same optional warnings and active status reasons as normal outlines.
+pub(crate) fn selected_rows(connection: &Connection, ids: &[String]) -> Result<Vec<Value>> {
+    let mut query = connection.prepare("SELECT fields FROM outline_rows WHERE id=?1")?;
+    ids.iter().map(|id| {
+        let fields: String = query.query_row([id], |row| row.get(0))?;
+        let mut row: Value = serde_json::from_str(&fields)?;
+        row.as_object_mut().ok_or("invalid outline row")?.remove("children");
+        Ok(row)
+    }).collect()
+}
+
 fn compact_nodes(connection: &Connection) -> Result<Vec<Node>> {
     let mut query = connection.prepare(&format!(
         "{COMPACT} WHERE id IN (SELECT id FROM outline_selected) ORDER BY id"

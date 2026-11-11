@@ -53,7 +53,8 @@ const GROUPS: &[Group] = &[
         guide: "526ed0f5-4e5d-42b3-9e3f-b7ad429f2df8",
         commands: &[
             command("outline STORE UUID [full|asc] [-y]", "Read direct children, a full subtree or the complete ancestor chain").guide(READ_GUIDE),
-            command("search STORE QUERY... [--under UUID] [-y]", "Search with ancestor context; several queries merge by rank"),
+            command("outline STORE - [-y]", "Name producer paths or IDs from stdin, once each in input order").guide(READ_GUIDE),
+            command("search STORE QUERY... [--under UUID] [-y]", "Rank notes, return 3 source bodies and 17 cards; merge several phrasings"),
             command("index STORE [--repair]", "Refresh the retrieval index"),
             command("tree-render STORE SELECTION.json", "Render selected trees or proposals").guide("5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f").full_help_only(),
             command("tree-render WORKTREE --auto [PROPOSAL.json]", "Derive draft selection; declare artifact links yourself").guide("5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f").full_help_only(),

@@ -3,12 +3,30 @@ mod format;
 mod indexed;
 use crate::{Result, outline_artifacts, require, sha256};
 
+/// Project IDs or producer paths from stdin as named rows, once each in input order.
+/// These are local filesystem lookups; filtered callers retain their existing APIs.
+pub fn producer_outline(policy: &crate::Policy, store: &std::path::Path, input: &str) -> Result<String> {
+    let mut ids = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for line in input.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        // Accept rg paths, path:line:hit records, folder links and bare full UUIDs.
+        let location = line.split(':').next().unwrap();
+        let id = location.split('/').rev().find(|part| crate::uuid(part))
+            .ok_or("outline input must contain a full node UUID or node path")?;
+        if seen.insert(id.to_owned()) {
+            ids.push(id.to_owned());
+        }
+    }
+    let (_, rows) = crate::index::with_current(policy, store, |tx, _| selected_rows(tx, &ids))?;
+    Ok(crate::lean_render::render(&serde_json::json!({"rows":rows}))? + "\n")
+}
+
 /// Result of an outline read with an optional output token limit.
 pub enum Outline {
     Text(String),
     Suppressed(usize),
 }
-pub(crate) use indexed::{indexed_current, indexed_outline, refresh_indexed_from};
+pub(crate) use indexed::{indexed_current, indexed_outline, refresh_indexed_from, selected_rows};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,

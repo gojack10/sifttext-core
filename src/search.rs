@@ -1,4 +1,6 @@
 //! Ranked lexical retrieval from the native current working-view index.
+mod packet;
+
 use crate::leviathan_search;
 use crate::{Policy, Result, index, require};
 use serde::{Deserialize, Serialize};
@@ -87,6 +89,26 @@ pub fn local_search_phrasings(
     queries: &[&str],
     under: Option<&str>,
 ) -> Result<Outcome> {
+    local_search_with(policy, store, queries, under, |out, _| Ok(out))
+}
+
+/// Local source bodies and navigation assembled inside the same capture as ranking.
+pub fn local_packet(
+    policy: &Policy,
+    store: &Path,
+    queries: &[&str],
+    under: Option<&str>,
+) -> Result<String> {
+    local_search_with(policy, store, queries, under, |out, tx| out.packet(tx))
+}
+
+fn local_search_with<T>(
+    policy: &Policy,
+    store: &Path,
+    queries: &[&str],
+    under: Option<&str>,
+    project: impl FnMut(Outcome, &rusqlite::Transaction<'_>) -> Result<T>,
+) -> Result<T> {
     require(!queries.is_empty(), "search requires a query")?;
     let mut seen = BTreeSet::new();
     let queries: Vec<_> = queries.iter().map(|q| q.trim()).filter(|q| seen.insert(*q)).collect();
@@ -105,19 +127,21 @@ pub fn local_search_phrasings(
         },
         &queries,
         true,
+        project,
     )
 }
 
 pub fn search(policy: &Policy, request: &Request<'_>) -> Result<Outcome> {
-    search_with(policy, request, &[request.query], false)
+    search_with(policy, request, &[request.query], false, |out, _| Ok(out))
 }
 
-fn search_with(
+fn search_with<T>(
     policy: &Policy,
     request: &Request<'_>,
     queries: &[&str],
     local: bool,
-) -> Result<Outcome> {
+    project: impl FnMut(Outcome, &rusqlite::Transaction<'_>) -> Result<T>,
+) -> Result<T> {
     require(
         queries.iter().map(|query| query.len()).sum::<usize>() <= 65_536
             && request.offset <= 1_000_000,
@@ -150,7 +174,7 @@ fn search_with(
         request.pause_before_accept.is_none(),
         "unsupported old retrieval pause adapter; use a complete worktree without a pause",
     )?;
-    indexed_search(policy, request, queries, local)
+    indexed_search(policy, request, queries, local, project)
 }
 
 /// Standard reciprocal-rank fusion (k=60) over each phrasing's first 50 hits.
@@ -227,14 +251,14 @@ fn retrieve_phrasings(
     Ok((total, cards))
 }
 
-fn indexed_search(
+fn indexed_search<T>(
     policy: &Policy,
     request: &Request<'_>,
     queries: &[&str],
     local: bool,
-) -> Result<Outcome> {
-    let (version, (total_matches, cards, hits, rows, path_template)) =
-        index::with_current(policy, request.store, |tx, _version| {
+    mut project: impl FnMut(Outcome, &rusqlite::Transaction<'_>) -> Result<T>,
+) -> Result<T> {
+    Ok(index::with_current(policy, request.store, |tx, version| {
             // Compact hierarchy only; bodies/record JSON are decoded for results
             // and requested ancestor context, never the complete corpus.
             let children: BTreeMap<String, Vec<String>> = tx
@@ -346,18 +370,17 @@ fn indexed_search(
                 .to_str()
                 .ok_or("non-UTF-8 store path")?
                 .to_owned();
-            Ok((total, cards, hits, rows, path_template))
-        })?;
-    Ok(Outcome {
-        refusal: None,
-        status: "current",
-        version: Some(version),
-        total_matches,
-        path_template,
-        hits,
-        rows,
-        cards,
-    })
+            project(Outcome {
+                refusal: None,
+                status: "current",
+                version: Some(version.to_owned()),
+                total_matches: total,
+                path_template,
+                hits,
+                rows,
+                cards,
+            }, tx)
+        })?.1)
 }
 
 impl Outcome {
