@@ -190,9 +190,10 @@ sifttext login
 Production login connects both your account and Workspace in one command.
 It uses browser authorization with PKCE and local callbacks, reusing your
 existing SiftText browser session when available. The command completes the
-account authorization, then opens Workspace authorization in the same browser.
+account authorization, then redirects the same tab through Workspace authorization.
 Both grants must identify the same SiftText account before they are saved.
-If the browser stays closed, open each authorization URL printed in the terminal.
+The tab confirms completion after both grants are verified and saved.
+If the browser stays closed, open the authorization URL printed in the terminal.
 An interrupted connection can be resumed by running `sifttext login` again.
 Use `sifttext login --resource https://workspace.sifttext.com/mcp` only when
 you deliberately want to authorize Workspace separately.

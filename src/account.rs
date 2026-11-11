@@ -868,6 +868,7 @@ fn authorize(
     provider: &provider::Provider,
     resource: &str,
     combined: bool,
+    browser_callback: &mut Option<TcpStream>,
 ) -> Result<(Credentials, Value)> {
     let origin = &store.origin;
     let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -908,12 +909,20 @@ fn authorize(
             ("resource", resource),
         ])
     );
-    writeln!(
-        std::io::stdout(),
-        "Open this URL to sign in (Ctrl-C cancels):\n{url}"
-    )?;
-    std::io::stdout().flush()?;
-    open_browser(&url);
+    if let Some(mut stream) = browser_callback.take() {
+        // Continue from the verified callback in the tab that started login.
+        write!(
+            stream,
+            "HTTP/1.1 303 See Other\r\nLocation: {url}\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+        )?;
+    } else {
+        writeln!(
+            std::io::stdout(),
+            "Open this URL to sign in (Ctrl-C cancels):\n{url}"
+        )?;
+        std::io::stdout().flush()?;
+        open_browser(&url);
+    }
     let seconds = std::env::var("SIFTTEXT_AUTH_TIMEOUT_SECONDS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -936,22 +945,8 @@ fn authorize(
                     if provider.verify_callback_issuer { Some(&provider.issuer) } else { None },
                     deadline.saturating_duration_since(Instant::now()),
                 );
-                let (status, body) = if result.is_ok() {
-                    (
-                        "200 OK",
-                        "Authorization received. Return to your terminal for account/payment verification.",
-                    )
-                } else {
-                    (
-                        "400 Bad Request",
-                        "Invalid sign-in callback. Return to your terminal and retry.",
-                    )
-                };
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
-                    body.len()
-                );
+                // Reply after account verification, or redirect to the next resource.
+                *browser_callback = Some(stream);
                 break result?;
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -988,47 +983,64 @@ fn authorize(
 }
 
 fn login(store: &Store, provider: &provider::Provider, resource: &str, combined: bool) -> Result<()> {
-    let (credentials, account) = authorize(store, provider, resource, combined)?;
-    if combined {
-        let workspace_resource = format!("{WORKSPACE_ORIGIN}/mcp");
-        let workspace_store = Store {
-            dir: store.dir.clone(),
-            filename: grant_filename(&store.origin, &store.issuer, &workspace_resource)?,
-            origin: store.origin.clone(),
-            issuer: store.issuer.clone(),
-            _lock: store._lock.try_clone()?,
-        };
-        writeln!(std::io::stdout(), "Connecting Workspace using your browser session.")?;
-        let (workspace_credentials, workspace_account) =
-            authorize(&workspace_store, provider, &workspace_resource, true)?;
-        if text(&workspace_account, "id")? != text(&account, "id")? {
-            return Err("Account and Workspace sign-ins selected different SiftText accounts. Run sifttext login and use the same account throughout.".into());
+    let mut browser_callback = None;
+    let result: Result<()> = (|| {
+        let (credentials, account) =
+            authorize(store, provider, resource, combined, &mut browser_callback)?;
+        if combined {
+            let workspace_resource = format!("{WORKSPACE_ORIGIN}/mcp");
+            let workspace_store = Store {
+                dir: store.dir.clone(),
+                filename: grant_filename(&store.origin, &store.issuer, &workspace_resource)?,
+                origin: store.origin.clone(),
+                issuer: store.issuer.clone(),
+                _lock: store._lock.try_clone()?,
+            };
+            writeln!(std::io::stdout(), "Connecting Workspace in the same browser tab.")?;
+            let (workspace_credentials, workspace_account) =
+                authorize(&workspace_store, provider, &workspace_resource, true, &mut browser_callback)?;
+            if text(&workspace_account, "id")? != text(&account, "id")? {
+                return Err("Account and Workspace sign-ins selected different SiftText accounts. Run sifttext login and use the same account throughout.".into());
+            }
+            workspace_store.save(&workspace_credentials)?;
         }
-        workspace_store.save(&workspace_credentials)?;
+        if provider.issuer == provider::PRODUCTION_ISSUER {
+            store.save(&credentials)?;
+        }
+        store.activate()?;
+        show_account(&account)?;
+        if combined {
+            writeln!(std::io::stdout(), "Authentication successful. Account and Workspace connected.")?;
+            Ok(())
+        } else if !provider.issuer.is_empty() {
+            writeln!(std::io::stdout(), "Authentication successful. Service entitlements are enforced separately.")?;
+            Ok(())
+        } else if account["paid"] == true {
+            writeln!(std::io::stdout(), "Authentication successful.")?;
+            Ok(())
+        } else {
+            writeln!(
+                std::io::stdout(),
+                "Payment pending or subscription inactive. Complete payment on Platform, then run sifttext login again.\n{}/",
+                store.origin,
+            )?;
+            open_browser(&format!("{}/", store.origin));
+            Err("paid activation has not been confirmed; offline knowledge remains available".into())
+        }
+    })();
+    if let Some(mut stream) = browser_callback {
+        let (status, body) = if result.is_ok() {
+            ("200 OK", "Sign-in complete. You can close this tab and return to your terminal.")
+        } else {
+            ("400 Bad Request", "Sign-in could not be completed. Return to your terminal for the error and retry.")
+        };
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
     }
-    if provider.issuer == provider::PRODUCTION_ISSUER {
-        store.save(&credentials)?;
-    }
-    store.activate()?;
-    show_account(&account)?;
-    if combined {
-        writeln!(std::io::stdout(), "Authentication successful. Account and Workspace connected.")?;
-        Ok(())
-    } else if !provider.issuer.is_empty() {
-        writeln!(std::io::stdout(), "Authentication successful. Service entitlements are enforced separately.")?;
-        Ok(())
-    } else if account["paid"] == true {
-        writeln!(std::io::stdout(), "Authentication successful.")?;
-        Ok(())
-    } else {
-        writeln!(
-            std::io::stdout(),
-            "Payment pending or subscription inactive. Complete payment on Platform, then run sifttext login again.\n{}/",
-            store.origin,
-        )?;
-        open_browser(&format!("{}/", store.origin));
-        Err("paid activation has not been confirmed; offline knowledge remains available".into())
-    }
+    result
 }
 
 pub fn guide_path() -> Result<PathBuf> {
