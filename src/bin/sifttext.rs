@@ -34,9 +34,9 @@ impl std::error::Error for LargeReturnSuppressed {}
 
 const HELP: &str = "SiftText — local Markdown knowledge, Git history, derived retrieval
 
-sifttext login                            Open browser sign-in and verify paid Platform activation
-sifttext account                          Show server-confirmed account/subscription (refreshes login)
-sifttext logout                           Revoke remote login; always remove local credentials offline
+sifttext login [--resource URL]           Browser sign-in (separate resource grant in OIDC mode)
+sifttext account [--resource URL]         Show server-confirmed account/subscription for this grant
+sifttext logout [--resource URL]          Remove selected grant locally and request remote revocation
                                           Credentials: ~/.config/sifttext/account (outside knowledge)
 sifttext source-code                      Check out matching Core source and maintenance guidance
 sifttext runtime-check                     Verify executable assets without reading a knowledge store
@@ -120,10 +120,12 @@ fn run() -> Result<()> {
     if let Some(command) = args.first()
         && account::is_command(command)
     {
-        if args.len() != 1 {
-            return Err(format!("usage: sifttext {command}").into());
-        }
-        return account::run(command);
+        let resource = match args.as_slice() {
+            [_] => None,
+            [_, flag, value] if flag == "--resource" => Some(value.as_str()),
+            _ => return Err(format!("usage: sifttext {command} [--resource URL]").into()),
+        };
+        return account::run(command, resource);
     }
     if args
         .as_slice()
