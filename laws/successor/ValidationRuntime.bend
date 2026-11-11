@@ -2,13 +2,15 @@ import Base
 import ../Spec.bend as S
 import ../Runtime.bend as R
 import ./validation/ParentTableGraph.bend as G
+import ./validation/IndexedValidation.bend as I
 import ./validation/Frontier.bend as F
 
 # Only validation changes computation; parser and mutations keep frozen meaning.
 def dispatch(kind: Nat, x: Nat, y: Nat, g: S.Graph) -> IO(Unit):
   match kind:
     case 0n:
-      R.validate_answer(G.valid(g))
+      -equivalence = {I.valid_equivalent(g) : {I.valid(g) == S.valid(g) : Bool}}
+      R.validate_answer(I.valid(g))
     case other:
       R.dispatch(other, x, y, g)
 

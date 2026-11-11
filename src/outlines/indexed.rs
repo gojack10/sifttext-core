@@ -191,17 +191,25 @@ pub(crate) fn refresh_indexed_from(
                 }
             }
         }
-        let roots_changed: bool = connection.query_row(
-            "SELECT EXISTS(SELECT id FROM tree_roots EXCEPT SELECT id FROM outline_rows WHERE parent IS NULL)
-                OR EXISTS(SELECT id FROM outline_rows WHERE parent IS NULL EXCEPT SELECT id FROM tree_roots)
-                OR EXISTS(SELECT 1 FROM relationship_mismatches)",
-            [], |row| row.get(0),
+        // A root may move without its own row fingerprint changing. Clear its
+        // old tree before another root writes the same IDs, and build new roots
+        // even when their own metadata was untouched.
+        let mut roots = connection.prepare(
+            "SELECT id FROM (SELECT id FROM tree_roots EXCEPT SELECT id FROM outline_rows WHERE parent IS NULL)
+             UNION ALL
+             SELECT id FROM (SELECT id FROM outline_rows WHERE parent IS NULL EXCEPT SELECT id FROM tree_roots)",
+        )?;
+        for root in roots.query_map([], |row| row.get::<_, String>(0))? {
+            affected.insert(root?);
+        }
+        let mismatches: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM relationship_mismatches)", [], |row| row.get(0),
         )?;
         let relevant: bool =
             connection.query_row("SELECT EXISTS(SELECT 1 FROM outline_changed)", [], |row| {
                 row.get(0)
             })?;
-        if !roots_changed && !relevant {
+        if affected.is_empty() && !mismatches && !relevant {
             return Ok(0);
         }
     }

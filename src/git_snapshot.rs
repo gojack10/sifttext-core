@@ -24,6 +24,7 @@ pub(crate) struct NodeFacts {
     pub(crate) position: Option<u64>,
     pub(crate) state: State,
     pub(crate) body_nonblank: bool,
+    pub(crate) body_len: usize,
     pub(crate) raw_hash: [u8; 32],
     pub(crate) text_hash: [u8; 32],
     pub(crate) body_hash: [u8; 32],
@@ -203,8 +204,7 @@ impl TreeLedger {
                 path TEXT PRIMARY KEY, ordering BLOB NOT NULL UNIQUE,
                 parent TEXT NOT NULL, name TEXT NOT NULL, kind INTEGER NOT NULL,
                 mode TEXT NOT NULL, oid TEXT NOT NULL, len INTEGER NOT NULL
-            ) WITHOUT ROWID;
-            CREATE INDEX entry_members ON entries(parent,name);")?;
+            ) WITHOUT ROWID;")?;
         Ok(Self { connection, _file: file, _operation: operation })
     }
     fn has(&self, path: &str, kind: u8) -> Result<bool> {
@@ -234,7 +234,7 @@ pub(crate) struct GitReader {
     empty_blob: Option<String>,
     nodes: HashMap<String, Weak<NodeFacts>>,
     views: HashMap<String, Arc<GitView>>,
-    tokens: BTreeMap<[u8; 32], usize>,
+    tokens: BTreeMap<[u8; 32], Option<usize>>,
 }
 impl GitReader {
     pub(crate) fn new(policy: &Policy, repo: &Path) -> Result<Self> {
@@ -406,7 +406,7 @@ impl GitReader {
             WHERE parent='nodes' AND kind=0", [])?;
         let mut nodes = BTreeMap::new();
         let (mut entry_count, mut memory_hits) = (0usize, 0usize);
-        let mut children = BTreeMap::new();
+        let mut children: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut roots: Vec<String> = Vec::new();
         let mut version = source_version::start();
         let mut entries = ledger.connection.prepare(
@@ -441,6 +441,9 @@ impl GitReader {
             }
             match entry.kind {
                 0 => {
+                    if let ["nodes", id] = parts.as_slice() {
+                        children.insert((*id).to_owned(), Vec::new());
+                    }
                     if authored_path(path) {
                         source_version::add(&mut version, path, Part::Directory)?;
                     }
@@ -511,7 +514,10 @@ impl GitReader {
                         "src/lib.rs:safe_link",
                         "unsafe child/root link target",
                     )?;
-                    if root {
+                    if let Some(parent) = parent {
+                        children.get_mut(parent).ok_or("missing Git node directory")?
+                            .push((*id).into());
+                    } else {
                         roots.push((*id).into());
                     }
                     let hash = Sha256::digest(&bytes).into();
@@ -534,35 +540,19 @@ impl GitReader {
         }
         drop(rows);
         drop(entries);
-        for id in nodes.keys() {
-            require(ledger.has(&format!("nodes/{id}"), 0)?, "missing Git node directory")?;
-        }
-        let mut members = ledger.connection.prepare(
-            "SELECT name FROM entries WHERE parent=?1 AND kind=2 ORDER BY name")?;
-        for id in nodes.keys() {
-            require(nodes[id].position.is_some(), "missing Git display position")?;
-            let names = members.query_map([format!("nodes/{id}/children")], |row| row.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (id, facts) in &nodes {
+            let names = children.get_mut(id).ok_or("missing Git node directory")?;
+            require(facts.position.is_some(), "missing Git display position")?;
             // Establish membership before asking for a child's position. A
             // dangling link has no node, not merely a missing display rank.
-            for child in &names {
+            for child in names.iter() {
                 structural_guard(nodes.contains_key(child), Some(id), Some(child),
                     "src/lib.rs:Store.read_view/child_membership", "unknown child UUID")?;
             }
-            let order = crate::ordering::sort(names, |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
-            children.insert(id.clone(), order);
+            *names = crate::ordering::sort(std::mem::take(names),
+                |child| Ok(nodes.get(child).and_then(|node| node.position)))?;
         }
-        drop(members);
-        require(children.len() == nodes.len(), "unknown Git relationship parent")?;
-        let mut owners = ledger.connection.prepare(
-            "SELECT name FROM entries WHERE parent='nodes' AND name<>'.keep'")?;
-        let mut rows = owners.query([])?;
-        while let Some(row) = rows.next()? {
-            let id: String = row.get(0)?;
-            require(nodes.contains_key(&id), "missing Git node.md")?;
-        }
-        drop(rows);
-        drop(owners);
+        require(children.len() == nodes.len(), "missing Git node.md")?;
         for id in &roots {
             structural_guard(
                 nodes.contains_key(id),
@@ -609,6 +599,7 @@ impl GitReader {
                     position: parsed.fields.get("position").map(|raw| serde_json::from_str(raw)).transpose()?,
                     state,
                     body_nonblank: !parsed.authored.content.trim().is_empty(),
+                    body_len: parsed.authored.content.len(),
                     raw_hash: Sha256::digest(&bytes).into(),
                     text_hash: Sha256::digest(crate::ordering::without_position(std::str::from_utf8(&bytes)?).as_bytes()).into(),
                     body_hash: Sha256::digest(parsed.authored.content.as_bytes()).into(),
@@ -647,15 +638,21 @@ impl GitReader {
         Ok(bytes)
     }
 
+    pub(crate) fn tokenized_body_count(&self) -> usize {
+        self.tokens.values().filter(|count| count.is_some()).count()
+    }
+
     /// Call only after the graph helper exits: cold BPE and Bend must not overlap.
-    pub(crate) fn tokens(&mut self, view: &GitView, id: &str) -> Result<usize> {
+    pub(crate) fn ceiling_count(&mut self, view: &GitView, id: &str) -> Result<Option<usize>> {
         let facts = view.nodes.get(id).ok_or("unknown Git node UUID")?;
         if let Some(&count) = self.tokens.get(&facts.body_hash) {
             return Ok(count);
         }
         let bytes = self.bytes(view, id)?;
         let parsed = node_markdown(&bytes, id)?;
-        let count = crate::token_count::ordinary(&parsed.authored.content);
+        let count = crate::token_count::count_if_needed(
+            &parsed.authored.content, crate::candidate_validation::CEILING,
+        );
         self.tokens.insert(facts.body_hash, count);
         Ok(count)
     }

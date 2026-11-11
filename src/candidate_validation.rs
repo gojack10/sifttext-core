@@ -554,9 +554,9 @@ fn field_rows(report: &mut Report, id: &str, errors: u8) {
 }
 
 fn intrinsic_node_rows(report: &mut Report, id: &str, field_errors: u8,
-    references: impl Iterator<Item = impl AsRef<str>>, state: Option<&State>, body_nonblank: bool, tokens: usize, allowance: bool) {
+    references: impl Iterator<Item = impl AsRef<str>>, state: Option<&State>, body_nonblank: bool, tokens: Option<usize>, allowance: bool) {
     field_rows(report, id, field_errors);
-    if tokens > CEILING && !allowance {
+    if let Some(tokens) = tokens && tokens > CEILING && !allowance {
         report.reject(Some(id), "content_over_limit", CEILING_RULE, Some(tokens));
     }
     let mut targets = BTreeSet::new();
@@ -804,7 +804,7 @@ fn check(
         intrinsic_node_rows(report, id, intrinsic_fields(&fields.iter()
             .map(|(key, value)| (key.as_str(), value.as_str())).collect()),
             node.see_also.iter().map(|reference| &reference.target), requested.as_ref().ok(),
-            !parsed.authored.content.trim().is_empty(), tokens, allowance);
+            !parsed.authored.content.trim().is_empty(), Some(tokens), allowance);
         let requested = match requested {
             Ok(s) => s,
             Err(_) => {
@@ -933,11 +933,18 @@ fn check(
     }))
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum GitValidation {
+    Standard,
+    ImportedBase,
+    ReceivedFastForward { reuse_ceiling: bool },
+}
+
 /// Exact immutable Git inputs: no mutable filesystem capture or source sweep.
 pub(crate) fn validate_git(
     policy: &Policy, reader: &mut crate::git_snapshot::GitReader,
     before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
-    explicit: &BTreeSet<String>, exact_before: bool,
+    explicit: &BTreeSet<String>, validation: GitValidation,
 ) -> Report {
     let mut report = Report {
         status: "current", version: Some(candidate.version.clone()),
@@ -947,7 +954,7 @@ pub(crate) fn validate_git(
             reason: "complete structural law on immutable Git shape (same-input cache eligible)",
             base_version: Some(before.version.clone()), candidate_version: Some(candidate.version.clone()) },
     };
-    if let Err(error) = check_git(policy, reader, before, candidate, explicit, exact_before, &mut report) {
+    if let Err(error) = check_git(policy, reader, before, candidate, explicit, validation, &mut report) {
         if let Some(issue) = error.downcast_ref::<StructuralIssue>() {
             report.structural(issue.source.as_deref(), issue.target.as_deref(), issue.law);
             report.problem = Some(issue.problem());
@@ -969,18 +976,24 @@ pub(crate) fn validate_git(
 fn check_git(
     policy: &Policy, reader: &mut crate::git_snapshot::GitReader,
     before: &crate::git_snapshot::GitView, candidate: &crate::git_snapshot::GitView,
-    explicit: &BTreeSet<String>, exact_before: bool, report: &mut Report,
+    explicit: &BTreeSet<String>, validation: GitValidation, report: &mut Report,
 ) -> Result<()> {
     let identity = report.observe("policy_identity", policy.validation_identity())?;
     report.observe("policy_identity", require(reader.policy_identity == identity, "validated capture policy changed"))?;
     require(explicit.iter().all(|id| crate::uuid(id) && candidate.nodes.contains_key(id)), "invalid explicit requests")?;
     reader.suspend_objects();
-    // Only native full-law/checked-delta success for the exact same-law base
-    // enables the Bend frontier law. Physical Git interpretation remains here.
-    let graph = report.observe("graph_policy", policy.graph_valid_git(before, candidate,
-        &reader.repo, &identity, exact_before))?;
+    // The indexed full law avoids the frontier law's collection-wide
+    // reference scans during catch-up. Authored submissions keep their delta path.
+    let graph_base = matches!(validation, GitValidation::Standard).then_some(before);
+    let graph = report.observe("graph_policy", policy.graph_valid_git(
+        graph_base, candidate, &reader.repo, &identity,
+    ))?;
     report.graph.mode = graph.mode;
-    report.graph.reason = graph.reason;
+    report.graph.reason = match (graph.mode, validation) {
+        ("full_law", GitValidation::ImportedBase) => "imported baseline is not the exact accepted-before tree",
+        ("full_law", GitValidation::ReceivedFastForward { .. }) => "indexed full law for a received fast-forward",
+        _ => graph.reason,
+    };
     let valid = graph.valid;
     if !valid {
         graph_diagnostics(candidate.nodes.iter().map(|(id, facts)|
@@ -989,17 +1002,44 @@ fn check_git(
         if report.rows.is_empty() { report.reject(None, "graph_invalid", CANDIDATE_RULE, None); }
         return Ok(());
     }
+    let reuse_ceiling = matches!(validation, GitValidation::ReceivedFastForward { reuse_ceiling: true });
+    let ceiling_started = Instant::now();
+    let mut inherited = 0;
+    let mut within_byte_ceiling = 0;
     for (id, facts) in &candidate.nodes {
-        let tokens = report.observe("candidate_tokens", reader.tokens(candidate, id))?;
-        let allowance = if facts.migration_size {
-            let bytes = reader.bytes(candidate, id)?;
-            report.observe("migration_size", crate::migration_size::permitted(std::str::from_utf8(&bytes)?))?
-        } else { false };
-        if facts.len > crate::LIMIT as u64 && !allowance {
-            report.reject(Some(id), "file_over_limit", CEILING_RULE, None);
-        }
+        // Both Git views verified the note path and regular-file mode. Blob
+        // equality preserves the parsed body, byte length and allowance evidence.
+        let (tokens, allowance) = if reuse_ceiling
+            && before.nodes.get(id).is_some_and(|prior| prior.blob == facts.blob)
+        {
+            inherited += 1;
+            (None, false)
+        } else {
+            // Ordinary BPE merges bytes, so every token consumes at least
+            // one byte. An exact count is needed only if the body could exceed the limit.
+            let tokens = if facts.body_len <= CEILING {
+                within_byte_ceiling += 1;
+                None
+            } else {
+                report.observe("candidate_tokens", reader.ceiling_count(candidate, id))?
+            };
+            let allowance = if facts.migration_size {
+                let bytes = reader.bytes(candidate, id)?;
+                report.observe("migration_size", crate::migration_size::permitted(std::str::from_utf8(&bytes)?))?
+            } else { false };
+            if facts.len > crate::LIMIT as u64 && !allowance {
+                report.reject(Some(id), "file_over_limit", CEILING_RULE, None);
+            }
+            (tokens, allowance)
+        };
         intrinsic_node_rows(report, id, facts.field_errors, facts.reference_targets.iter(),
             Some(&facts.state), facts.body_nonblank, tokens, allowance);
+    }
+    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+        eprintln!(
+            "ceiling-work reused_base={reuse_ceiling} inherited={inherited} within_byte_ceiling={within_byte_ceiling} count_requests={} tokenized_bodies={} elapsed_ms={}",
+            candidate.nodes.len() - inherited - within_byte_ceiling, reader.tokenized_body_count(), ceiling_started.elapsed().as_millis(),
+        );
     }
     reader.suspend_objects();
     crate::token_count::release();

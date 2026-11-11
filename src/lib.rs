@@ -1229,15 +1229,11 @@ impl Policy {
     }
 
     pub(crate) fn graph_valid_git(
-        &self, before: &git_snapshot::GitView, candidate: &git_snapshot::GitView,
-        cache_root: &Path, expected_identity: &str, exact_before: bool,
+        &self, before: Option<&git_snapshot::GitView>, candidate: &git_snapshot::GitView,
+        cache_root: &Path, expected_identity: &str,
     ) -> Result<GraphEvaluation> {
-        let mut result = self.graph_evaluation(&candidate.graph(), cache_root, Some(expected_identity),
-            exact_before.then_some((before, candidate)))?;
-        if !exact_before && result.mode == "full_law" {
-            result.reason = "imported baseline is not the exact accepted-before tree";
-        }
-        Ok(result)
+        self.graph_evaluation(&candidate.graph(), cache_root, Some(expected_identity),
+            before.map(|before| (before, candidate)))
     }
 
     fn graph_evaluation(

@@ -1,9 +1,9 @@
 //! Git owns discovery. SQLite retains immutable object inputs; only dirty paths need native reads.
 use crate::{Result, require};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, ffi::OsStr, fs::{self, OpenOptions}, io::Read,
+use std::{collections::{BTreeMap, BTreeSet}, ffi::OsStr, fs::{self, OpenOptions}, io::Read,
     os::unix::{ffi::OsStrExt, fs::{MetadataExt, OpenOptionsExt}}, path::{Path, PathBuf}};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,7 +244,8 @@ impl Snapshot {
             Err(error) => Err(error),
         }
     }
-    pub fn stage(&self, connection: &mut Connection, root: &Path) -> Result<()> {
+    pub fn stage(&self, connection: &mut Connection, root: &Path, indexed_working: Option<&str>) -> Result<bool> {
+        let started = std::time::Instant::now();
         connection.execute_batch("CREATE TABLE IF NOT EXISTS git_sources (
             path TEXT PRIMARY KEY, signature BLOB NOT NULL, content_hash TEXT, oid TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS git_sources_known_hash ON git_sources(oid,content_hash) WHERE content_hash IS NOT NULL;")?;
@@ -252,13 +253,22 @@ impl Snapshot {
         // still unknown. Index only known hashes so each miss does not rescan
         // those rows; the covering key also avoids fetching their source data.
         let previous: Option<String> = connection.query_row("SELECT value FROM metadata WHERE key='git_tree'", [], |r| r.get(0)).optional()?;
+        let mut owners = None;
         if previous.as_deref() != Some(&self.tree) {
             let tx = connection.transaction()?;
             let mut objects = Objects::new(root);
-            if let Some(previous) = previous.filter(|p| valid_oid(p)) {
-                let delta = output(root, &["diff-tree", "-r", "--no-renames", "--name-only", "-z", &previous, &self.tree, "--", "nodes", "trees"])?;
+            if let Some(previous) = previous.as_deref().filter(|p| valid_oid(p)) {
+                let delta = output(root, &["diff-tree", "-r", "--no-renames", "--name-only", "-z", previous, &self.tree, "--", "nodes", "trees"])?;
                 let paths = delta.split(|b| *b == 0).filter(|p| !p.is_empty())
                     .map(std::str::from_utf8).collect::<std::result::Result<Vec<_>, _>>()?;
+                if indexed_working.is_some_and(|identity| identity == crate::sha256(previous.as_bytes())) {
+                    let mut affected = paths.iter().filter_map(|path| {
+                        let (id, _) = path.strip_prefix("nodes/")?.split_once('/')?;
+                        crate::uuid(id).then(|| id.to_owned())
+                    }).collect();
+                    include_parents(&tx, &mut affected)?;
+                    owners = Some(affected);
+                }
                 for path in &paths {
                     tx.execute("DELETE FROM git_sources WHERE path=?1", [path])?;
                 }
@@ -290,8 +300,17 @@ impl Snapshot {
             tx.execute("INSERT INTO metadata VALUES('git_tree',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [&self.tree])?;
             tx.commit()?;
         }
+        let materialize = std::time::Instant::now();
         let tx = connection.transaction()?;
-        tx.execute("INSERT INTO expected_sources(path,signature,content_hash,ordering) SELECT path,signature,content_hash,replace(path,'/',char(0)) FROM git_sources", [])?;
+        let copied = if let Some(owners) = &owners {
+            let mut copied = stage_prefix(&tx, "trees")? + stage_prefix(&tx, "nodes/.keep")?;
+            for id in owners {
+                copied += stage_prefix(&tx, &format!("nodes/{id}"))?;
+            }
+            copied
+        } else {
+            tx.execute("INSERT INTO expected_sources(path,signature,content_hash,ordering) SELECT path,signature,content_hash,replace(path,'/',char(0)) FROM git_sources", [])?
+        };
         for (path, source) in &self.changes {
             let path = path.to_str().ok_or("non-UTF-8 authored path")?;
             tx.execute("DELETE FROM expected_sources WHERE path=?1", [path])?;
@@ -310,9 +329,43 @@ impl Snapshot {
             SELECT substr(path,1,42)||'/children',?1,replace(substr(path,1,42)||'/children','/',char(0)) FROM expected_sources
             WHERE path GLOB 'nodes/*' AND length(path)=42", [&directory])?;
         tx.commit()?;
-        Ok(())
+        let scoped = owners.is_some();
+        if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+            eprintln!(
+                "index-source-stage git_us={} materialize_us={} copied_rows={copied} scoped={scoped}",
+                materialize.duration_since(started).as_micros(), materialize.elapsed().as_micros(),
+            );
+        }
+        Ok(scoped)
     }
 }
+
+pub(super) fn include_parents(connection: &Connection, owners: &mut BTreeSet<String>) -> Result<()> {
+    let children: Vec<_> = owners.iter().cloned().collect();
+    let mut parents = connection.prepare("SELECT source FROM child_links WHERE target=?1")?;
+    for child in children {
+        for parent in parents.query_map([child], |row| row.get::<_, String>(0))? {
+            owners.insert(parent?);
+        }
+    }
+    Ok(())
+}
+
+// The next ASCII byte after '/' bounds both the owner and its descendants.
+fn stage_prefix(tx: &Transaction<'_>, prefix: &str) -> Result<usize> {
+    let end = format!("{prefix}0");
+    tx.execute(
+        "INSERT INTO prior_source_paths SELECT path FROM sources WHERE path>=?1 AND path<?2",
+        params![prefix, end],
+    )?;
+    Ok(tx.execute(
+        "INSERT INTO expected_sources(path,signature,content_hash,ordering)
+         SELECT path,signature,content_hash,replace(path,'/',char(0)) FROM git_sources
+         WHERE path>=?1 AND path<?2",
+        params![prefix, end],
+    )?)
+}
+
 fn insert_git(connection: &Connection, objects: &mut Objects<'_>, path: &str, source: &Source) -> Result<()> {
     // Relationship targets are checked against object bytes, not inferred from names.
     let hash = if source.kind == 2 {

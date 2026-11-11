@@ -1,6 +1,7 @@
 //! Cooperative local Git publication. Git merges authored files; caches never merge.
 //! The accepted branch must not be checked out. `save` checks the submitted draft;
 //! the low-level `submit` retains its detached-view recovery/observer contract.
+mod ceiling;
 mod lifetime;
 mod owned;
 use crate::{Policy, Result, candidate_validation as gate, index, require};
@@ -1496,7 +1497,21 @@ fn execute(
     r.check = "candidate_validation_rejected";
     // Bind the actual accepted-before and final normalized candidate. The
     // imported ordering alias cannot qualify as the raw accepted-before tree.
-    let checked = gate::validate_git(policy, &mut reader, &before, &final_view, &q.explicit, exact_before);
+    let ceiling = ceiling::AcceptedCeiling::open(&common, &reader.policy_identity);
+    let validation = if !exact_before {
+        gate::GitValidation::ImportedBase
+    } else if received && q.base.as_ref() == Some(&main) && q.commit.as_ref() == Some(&sha) {
+        gate::GitValidation::ReceivedFastForward {
+            reuse_ceiling: ceiling.as_ref().is_some_and(|memo| {
+                memo.matches(&main, &before.tree, &before.version)
+            }),
+        }
+    } else {
+        gate::GitValidation::Standard
+    };
+    let checked = gate::validate_git(
+        policy, &mut reader, &before, &final_view, &q.explicit, validation,
+    );
     r.graph_checks.push(checked.graph.clone());
     r.version = checked.version.clone();
     let valid = checked.status == "current";
@@ -1697,6 +1712,11 @@ fn execute(
     } else {
         candidate.ok_or("missing candidate")?.retain(&sha)?
     });
+    if let (Some(memo), Some(tree), Some(version)) = (ceiling, &r.tree, &r.version) {
+        // A lost memo is a full check on the next receive. A published result
+        // must remain recoverable even if the optional local write fails.
+        let _ = memo.record(&sha, tree, version);
+    }
     r.status = "current";
     r.check = if already {
         "accepted_revision_recovered"

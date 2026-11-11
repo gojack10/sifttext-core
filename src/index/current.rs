@@ -1,5 +1,5 @@
 //! Git discovers working changes; immutable objects and unchanged derived rows are reused.
-use super::git::{Objects, Snapshot, Source, native_monitor_enabled};
+use super::git::{Objects, Snapshot, Source, include_parents, native_monitor_enabled};
 use super::{identity, processing_identity, working_path};
 use crate::{Policy, Result, require};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params, types::ValueRef};
@@ -30,6 +30,9 @@ struct Work {
     node_link_refresh_us: u128,
     refresh_lock_wait_us: u128,
     sql_writer_held_us: u128,
+    source_diff_us: u128,
+    source_publish_us: u128,
+    outline_refresh_us: u128,
 }
 impl Drop for Work {
     fn drop(&mut self) {
@@ -45,7 +48,9 @@ impl Drop for Work {
                 "nodes_donor_reused":self.nodes_donor_reused,"outline_rows_written":self.outline_rows_written,
                 "node_link_writes":self.node_link_writes,"node_link_extract_us":self.node_link_extract_us,
                 "node_link_refresh_us":self.node_link_refresh_us,
-                "refresh_lock_wait_us":self.refresh_lock_wait_us,"sql_writer_held_us":self.sql_writer_held_us
+                "refresh_lock_wait_us":self.refresh_lock_wait_us,"sql_writer_held_us":self.sql_writer_held_us,
+                "source_diff_us":self.source_diff_us,"source_publish_us":self.source_publish_us,
+                "outline_refresh_us":self.outline_refresh_us
             }));
         }
     }
@@ -75,10 +80,11 @@ fn version(
     snapshot: &Snapshot,
     reuse: bool,
     accepted_version: Option<&str>,
+    indexed_working: Option<&str>,
     work: &mut Work,
-) -> Result<String> {
+) -> Result<(String, bool)> {
     use crate::source_version::{self, Part};
-    snapshot.stage(connection, &snapshot.repo)?;
+    let scoped = snapshot.stage(connection, &snapshot.repo, indexed_working)?;
     let mut version = source_version::start();
     let mut objects = Objects::new(&snapshot.repo);
     let tx = connection.transaction()?;
@@ -153,8 +159,9 @@ fn version(
     drop(known);
     drop(update);
     tx.commit()?;
-    Ok(accepted_version.map(str::to_owned)
-        .unwrap_or_else(|| format!("{:x}", version.finalize())))
+    let version = accepted_version.map(str::to_owned)
+        .unwrap_or_else(|| format!("{:x}", version.finalize()));
+    Ok((version, scoped))
 }
 
 fn safe_regular(path: &Path) -> Result<()> {
@@ -339,7 +346,9 @@ fn setup(connection: &Connection) -> Result<()> {
         DELETE FROM projected;
         CREATE TEMP TABLE IF NOT EXISTS expected_sources (path TEXT PRIMARY KEY, signature BLOB NOT NULL, content_hash TEXT, ordering TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS temp.expected_source_order ON expected_sources(ordering);
-        DELETE FROM expected_sources;")?;
+        DELETE FROM expected_sources;
+        CREATE TEMP TABLE IF NOT EXISTS prior_source_paths (path TEXT PRIMARY KEY) WITHOUT ROWID;
+        DELETE FROM prior_source_paths;")?;
     Ok(())
 }
 
@@ -389,15 +398,23 @@ fn project(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Resu
         None,
     )
 }
-fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Result<Vec<String>> {
+fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str, scoped: bool) -> Result<Vec<String>> {
     let own = bytes(connection, objects, &PathBuf::from(format!("nodes/{id}/node.md")))?;
     require(crate::ordering::position(std::str::from_utf8(&own)?)?.is_some(), "missing display position")?;
     let prefix = format!("nodes/{id}/children/");
     let names = connection.prepare("SELECT substr(path,length(?1)+1) FROM expected_sources WHERE path>=?1 AND path<?2 AND substr(signature,1,2)=x'0102'")?
         .query_map(params![prefix, format!("nodes/{id}/children0")], |row| row.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    // A scoped refresh still needs the positions of unchanged children.
+    let mut child_source = connection.prepare(if scoped {
+        "SELECT signature FROM git_sources WHERE path=?1"
+    } else {
+        "SELECT signature FROM expected_sources WHERE path=?1"
+    })?;
     crate::ordering::sort(names, |child| {
-        let text = bytes(connection, objects, &PathBuf::from(format!("nodes/{child}/node.md")))?;
+        let path = format!("nodes/{child}/node.md");
+        let encoded: Vec<u8> = child_source.query_row([&path], |row| row.get(0))?;
+        let text = objects.source_bytes(Path::new(&path), &Source::decode(&encoded)?)?;
         crate::ordering::position(std::str::from_utf8(&text)?)
     })
 }
@@ -500,13 +517,28 @@ fn refresh(
     } else {
         None
     };
-    let version = version(connection, snapshot, !force, snapshot.accepted_version(accepted), work)?;
+    let accepted_version = snapshot.accepted_version(accepted);
+    // Only the last fully published, clean Git source can back a partial
+    // refresh. If staging already moved git_tree and then stopped, the prior
+    // git_working identity will differ and the complete inventory is rebuilt.
+    let indexed_working = if accepted_version.is_some() && !force && !force_artifact_verification && !rebuild_links {
+        meta(connection, "git_working")?
+    } else {
+        None
+    };
+    let (version, scoped) = version(connection, snapshot, !force, accepted_version, indexed_working.as_deref(), work)?;
     let mut objects = Objects::new(&snapshot.repo);
+    let source_diff = Instant::now();
     let present = ids(connection)?;
     // Compute the actual path diff once. Only affected owners are projected;
     // main remains the starting point and all unrelated rows stay in place.
     let mut changes = BTreeSet::new();
-    let mut delta = connection.prepare("SELECT e.path FROM expected_sources e LEFT JOIN sources s ON e.path=s.path WHERE s.path IS NULL OR e.signature<>s.signature OR e.content_hash IS NOT s.content_hash UNION SELECT s.path FROM sources s LEFT JOIN expected_sources e ON e.path=s.path WHERE e.path IS NULL")?;
+    let prior = if scoped { "prior_source_paths" } else { "sources" };
+    let mut delta = connection.prepare(&format!(
+        "SELECT e.path FROM expected_sources e LEFT JOIN sources s ON e.path=s.path
+         WHERE s.path IS NULL OR e.signature<>s.signature OR e.content_hash IS NOT s.content_hash
+         UNION SELECT p.path FROM {prior} p LEFT JOIN expected_sources e ON e.path=p.path WHERE e.path IS NULL",
+    ))?;
     for path in delta.query_map([], |r| r.get::<_, String>(0))? {
         work.source_rows_changed += 1;
         let path = PathBuf::from(path?);
@@ -518,14 +550,10 @@ fn refresh(
         }
     }
     drop(delta);
+    work.source_diff_us += source_diff.elapsed().as_micros();
     let link_changes = if node_links && !rebuild_links { changes.clone() } else { BTreeSet::new() };
     // A child's position belongs to that child, but changes its parent's view.
-    let changed: Vec<_> = changes.iter().cloned().collect();
-    for child in changed {
-        let mut parents = connection.prepare("SELECT source FROM child_links WHERE target=?1")?;
-        changes.extend(parents.query_map([child], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?);
-    }
+    include_parents(connection, &mut changes)?;
     if force {
         changes.extend(present.iter().cloned());
         changes.extend(connection.prepare("SELECT id FROM nodes")?.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<BTreeSet<_>>>()?);
@@ -547,7 +575,7 @@ fn refresh(
             (row, Some(body))
         };
         // A Markdown hash authorizes only its projected fields, never hierarchy.
-        let order = crate::source_error::context(bytes_for_order(connection, &mut objects, id), Path::new(&path), None)?;
+        let order = crate::source_error::context(bytes_for_order(connection, &mut objects, id, scoped), Path::new(&path), None)?;
         row["children"] = json!(order);
         connection.execute("INSERT INTO projected VALUES (?1,?2,?3)", params![id,serde_json::to_string(&row)?,body])?;
     }
@@ -603,7 +631,9 @@ fn refresh(
         if force || force_artifact_verification { changes.clear(); }
         // Project/render from the complete logical overlay. git_sources retains
         // only immutable baseline metadata in this same rebuildable SQLite cache.
+        let outlines = Instant::now();
         work.outline_rows_written += crate::outlines::refresh_indexed_from(&tx, root, &changes, force || force_artifact_verification)?;
+        work.outline_refresh_us += outlines.elapsed().as_micros();
         if node_links {
             let started = Instant::now();
             work.node_link_writes += if rebuild_links {
@@ -620,8 +650,17 @@ fn refresh(
         // Git reconciles tracked, staged, untracked and deleted inputs, including
         // sparse omissions. Generated-output retirement cannot change this identity.
         if !snapshot.unchanged()? { return Ok(false) }
-        tx.execute("DELETE FROM sources WHERE path NOT IN (SELECT path FROM expected_sources)", [])?;
+        let source_publish = Instant::now();
+        tx.execute(if scoped {
+            "DELETE FROM sources WHERE path IN (
+                SELECT p.path FROM prior_source_paths p LEFT JOIN expected_sources e ON e.path=p.path
+                WHERE e.path IS NULL
+            )"
+        } else {
+            "DELETE FROM sources WHERE path NOT IN (SELECT path FROM expected_sources)"
+        }, [])?;
         tx.execute("INSERT INTO sources SELECT path,signature,content_hash FROM expected_sources WHERE true ON CONFLICT(path) DO UPDATE SET signature=excluded.signature,content_hash=excluded.content_hash WHERE signature<>excluded.signature OR content_hash IS NOT excluded.content_hash", [])?;
+        work.source_publish_us += source_publish.elapsed().as_micros();
         let count: i64 = tx.query_row("SELECT count(*) FROM sources", [], |r| r.get(0))?;
         put(&tx, "source_count", &count.to_string())?;
         put(&tx, "schema", SCHEMA)?;
