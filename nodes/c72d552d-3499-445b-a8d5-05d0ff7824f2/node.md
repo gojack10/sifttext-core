@@ -11,6 +11,12 @@ position: 7168
 
 Prepare a source-grounded proposal that leaves the affected understanding usable for the next reader. Observations made during the task may change what that reader should believe or do. Reconcile those changes in the affected knowledge, preserving historical context and making unresolved questions explicit. The user’s stated scope and approval govern what is saved.
 
+### Recover work after compaction
+
+If the current conversation has been compacted, use [Session Evidence](../3651b9b0-fc21-4c67-9d79-84ef3af963ce/node.md) to query its original transcript before drafting or continuing the commit. Recover every work item in the user's scope from the messages, tool calls and results. Preserve the decisions and corrections that shaped the work, evidence of what was completed, and what remains open. Record any gaps in the source and continue with the available evidence.
+
+Keep each node focused on one work item. Update the existing node when it already owns that item.
+
 ### Example of updating affected recovery instructions
 
 The user asks to save machine details. While drafting, the agent discovers that the same recovery note still instructs a reader to restore an archived automation. The incident is reported in [GitHub issue #36](https://github.com/gojack10/sifttext-core/issues/36).
