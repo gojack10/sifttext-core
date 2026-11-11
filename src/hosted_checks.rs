@@ -352,6 +352,15 @@ pub fn run(args: &[String]) -> Result<()> {
             if let Some(end) = value["period_end"].as_str() {
                 writeln!(std::io::stdout().lock(), "Monthly credits renew: {end}")?;
             }
+            let trial = &value["trial"];
+            if trial.is_object() {
+                let time = |field: &str| trial[field].as_str().unwrap_or("not yet");
+                let mut out = std::io::stdout().lock();
+                writeln!(out, "Introductory credits: remaining {} of {}", trial["remaining"], trial["allowance"])?;
+                writeln!(out, "Introductory Pro: {} | lead-in started {} | lead-in ends {} | started {} | expires {}",
+                    trial["status"].as_str().unwrap_or("unknown"), time("lead_in_started_at"),
+                    time("lead_in_ends_at"), time("started_at"), time("expires_at"))?;
+            }
             writeln!(std::io::stdout().lock(), "{}", credit(&json!({"balance":value,"credits_used":0})))?;
             return Ok(());
         }
@@ -392,7 +401,7 @@ pub(crate) fn publication(
             Err(error) => unavailable(error),
             Ok(true) => match SyncAccess::checks() {
                 Ok(mut access) if replication => publication_with_access(reader, after, &scope, &mut access, true),
-                Ok(mut access) => match paid_account(&mut access) {
+                Ok(mut access) => match pro_account(&mut access) {
                     Ok(true) => review_packet(reader, after, &scope, options.work_packet, &mut access),
                     Ok(false) => json!({"status":"not_required","reason":"free_account"}),
                     Err(error) => unavailable(error),
@@ -469,7 +478,8 @@ fn unavailable(error: Box<dyn std::error::Error>) -> Value {
     json!({"status":"unchecked","reason":"service_unavailable","detail":error.to_string(),"uncertain_usage":true})
 }
 
-fn paid_account(access: &mut SyncAccess) -> Result<bool> {
+/// Subscribers and accounts with introductory Pro access get publication review.
+fn pro_account(access: &mut SyncAccess) -> Result<bool> {
     let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
     require(
         status == 200 && account["paid"].is_boolean(),
@@ -477,7 +487,8 @@ fn paid_account(access: &mut SyncAccess) -> Result<bool> {
             account["error"].as_str().unwrap_or("invalid_account_response"),
             account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
     )?;
-    Ok(account["paid"] == true)
+    // Checkers without introductory access report only the subscription.
+    Ok(account["pro_access"].as_bool().unwrap_or(account["paid"] == true))
 }
 
 fn read_work_packet(path: &Path) -> Result<WorkPacket> {
@@ -537,17 +548,18 @@ fn review_packet(
     attempt().unwrap_or_else(unavailable)
 }
 
-/// Gate only the already-selected independent publication repository. The caller
-/// owns this auth lease and must restore its sync resource and reverify home.
+/// Gate only the already-selected independent publication repository. Checks use
+/// the account grant; with the legacy single login this rotates the sync audience,
+/// so the caller must restore its sync resource and reverify home.
 pub fn sync_publication(
     policy: &crate::Policy,
     repo: &Path,
     reviewed_home: &Path,
     baseline: Option<&str>,
     candidate: &str,
-    access: &mut SyncAccess,
+    workspace: &SyncAccess,
 ) -> Value {
-    let mut read = || -> Result<Value> {
+    let read = || -> Result<Value> {
         policy.verify_stamp()?;
         let tree = crate::local::reader_git(repo, &["rev-parse", "--verify", "--end-of-options", &format!("{candidate}^{{tree}}")])?;
         // This is advisory only. Exact tree identity lets own-account sync
@@ -579,7 +591,7 @@ pub fn sync_publication(
             &mut reader,
             &after,
             &scope,
-            access,
+            &mut SyncAccess::checks_for_sync(workspace)?,
             true,
         ))
     };
@@ -613,7 +625,7 @@ fn publication_with_access(
 ) -> Value {
     let mut results = Vec::new();
     let mut attempt = || -> Result<Value> {
-        if subscription_only && !paid_account(access)? {
+        if subscription_only && !pro_account(access)? {
             return Ok(json!({"status":"not_required","reason":"free_account"}));
         }
         for id in &scope.included {

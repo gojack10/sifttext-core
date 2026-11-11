@@ -130,8 +130,28 @@ pub(super) fn status(home: &Path) -> Value {
         Err(error) => json!({"scheduled":false,"error":error.to_string()}),
     }
 }
+// Explicit OIDC builds must retain their routing and isolated credential HOME
+// when the native scheduler starts a fresh process. Never persist bearer tokens.
+fn routing_environment() -> Result<Vec<(&'static str, String)>> {
+    if std::env::var_os("SIFTTEXT_AUTH_ISSUER").is_none() {
+        return Ok(Vec::new());
+    }
+    let mut values = Vec::new();
+    for key in ["HOME", "XDG_CONFIG_HOME", "SIFTTEXT_AUTH_ORIGIN", "SIFTTEXT_AUTH_ISSUER",
+                "SIFTTEXT_AUTH_CLIENT_ID", "SIFTTEXT_SYNC_ORIGIN"] {
+        if let Some(value) = std::env::var_os(key) {
+            let value = value.into_string().map_err(|_| "runner environment must be UTF-8")?;
+            if value.chars().any(char::is_control) {
+                return Err("control character in runner environment".into());
+            }
+            values.push((key, value));
+        }
+    }
+    Ok(values)
+}
 pub(super) fn install(home: &Path) -> Result<()> {
     let (label, service, timer) = paths(home)?;
+    let routing = routing_environment()?;
     let launcher = launcher()?;
     let home_text = text(home)?;
     let launcher_text = text(&launcher)?;
@@ -143,8 +163,13 @@ pub(super) fn install(home: &Path) -> Result<()> {
         return Err("control character in runner path".into());
     }
     if let Some(timer) = &timer {
+        // Environment= does not perform ExecStart's dollar expansion.
+        let environment = routing.iter().map(|(key, value)| format!(
+            "Environment=\"{}={}\"\n", key,
+            value.replace('\\', "\\\\").replace('"', "\\\"").replace('%', "%%")
+        )).collect::<String>();
         let definition = format!(
-            "[Unit]\nDescription=SiftText knowledge sync\n[Service]\nType=oneshot\nExecStart={} sync tick {}\nStandardOutput=null\nStandardError=null\n",
+            "[Unit]\nDescription=SiftText knowledge sync\n[Service]\nType=oneshot\nExecStart={} sync tick {}\n{environment}StandardOutput=null\nStandardError=null\n",
             unit(launcher_text)?,
             unit(home_text)?
         );
@@ -171,8 +196,14 @@ pub(super) fn install(home: &Path) -> Result<()> {
             )?;
         }
     } else {
+        let mut environment = routing.iter().map(|(key, value)| format!(
+            "<key>{key}</key><string>{}</string>", xml(value)
+        )).collect::<String>();
+        if !environment.is_empty() {
+            environment = format!("<key>EnvironmentVariables</key><dict>{environment}</dict>");
+        }
         let definition = format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{}</string><string>sync</string><string>tick</string><string>{}</string></array><key>StartInterval</key><integer>15</integer><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{}</string><string>sync</string><string>tick</string><string>{}</string></array><key>StartInterval</key><integer>15</integer>{environment}<key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n",
             xml(launcher_text),
             xml(home_text)
         );
