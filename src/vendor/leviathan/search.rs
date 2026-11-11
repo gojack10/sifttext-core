@@ -186,12 +186,13 @@ pub(crate) fn retrieve_indexed(
     limit: usize,
     offset: usize,
     title_weight: f64,
+    restrict_ranking: bool,
 ) -> Result<(i64, Vec<Card>)> {
-    let permitted = serde_json::to_string(scope)?;
     let parsed = Query::parse(query);
     let limit = limit.clamp(1, relevance::MAX_LIMIT);
     let mut total = 0;
     let page = if parsed.is_empty() {
+        let permitted = serde_json::to_string(scope)?;
         total = tx.query_row(
             "SELECT count(*) FROM search_ids WHERE id IN (SELECT value FROM json_each(?1))",
             [&permitted],
@@ -210,15 +211,24 @@ pub(crate) fn retrieve_indexed(
             expr = format!("({expr}) NOT ({negative})");
         }
         let overfetch = ((offset + limit) * 10).max(100) as i64;
+        let permitted = restrict_ranking.then(|| serde_json::to_string(scope)).transpose()?;
+        let scope_filter = if permitted.is_some() {
+            "AND rowid IN (SELECT rowid FROM search_ids WHERE id IN (SELECT value FROM json_each(?4)))"
+        } else {
+            ""
+        };
+        let parameters: [&dyn rusqlite::ToSql; 3] = [&expr, &overfetch, &title_weight];
+        let parameters = rusqlite::params_from_iter(
+            parameters.into_iter().chain(permitted.as_ref().map(|ids| ids as &dyn rusqlite::ToSql)),
+        );
         let candidates = tx
-            .prepare(
+            .prepare(&format!(
                 "WITH hits AS MATERIALIZED (
-            SELECT rowid,bm25(search_fts,?4,1.0,0.5,0.0) AS score FROM search_fts
-            WHERE search_fts MATCH ?1 AND rowid IN (
-                SELECT rowid FROM search_ids WHERE id IN (SELECT value FROM json_each(?3))))
+            SELECT rowid,bm25(search_fts,?3,1.0,0.5,0.0) AS score FROM search_fts
+            WHERE search_fts MATCH ?1 {scope_filter})
             SELECT rowid,score,count(*) OVER () FROM hits ORDER BY score LIMIT ?2",
-            )?
-            .query_map(params![expr, overfetch, permitted, title_weight], |r| {
+            ))?
+            .query_map(parameters, |r| {
                 total = r.get(2)?;
                 Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
             })?

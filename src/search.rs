@@ -185,6 +185,7 @@ fn retrieve_phrasings(
     scope: &BTreeSet<String>,
     request: &Request<'_>,
     queries: &[&str],
+    restrict_ranking: bool,
 ) -> Result<(i64, Vec<leviathan_search::Card>)> {
     let retrieve = |query: &str, limit: usize, offset: usize| {
         leviathan_search::retrieve_indexed(
@@ -195,6 +196,7 @@ fn retrieve_phrasings(
             limit,
             offset,
             request.ranking.title_weight,
+            restrict_ranking,
         )
     };
     if let [query] = queries {
@@ -296,7 +298,9 @@ fn indexed_search<T>(
             if !local {
                 scope.retain(|id| request.readable_ids.contains(id));
             }
-            let (total, cards) = retrieve_phrasings(tx, &scope, request, queries)?;
+            // Only unrestricted local callers can rank the entire index directly.
+            let restrict_ranking = !local || request.under_node_id.is_some();
+            let (total, cards) = retrieve_phrasings(tx, &scope, request, queries, restrict_ranking)?;
             let mut parents = BTreeMap::new();
             for (parent, children) in &children {
                 for child in children {
