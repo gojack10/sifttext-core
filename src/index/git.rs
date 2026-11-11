@@ -3,8 +3,8 @@ use crate::{Result, require};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, fs::{self, OpenOptions}, io::Read,
-    os::unix::fs::{MetadataExt, OpenOptionsExt}, path::{Path, PathBuf}};
+use std::{collections::BTreeMap, ffi::OsStr, fs::{self, OpenOptions}, io::Read,
+    os::unix::{ffi::OsStrExt, fs::{MetadataExt, OpenOptionsExt}}, path::{Path, PathBuf}};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Native {
@@ -115,30 +115,82 @@ pub(super) fn native_monitor_enabled(root: &Path) -> bool {
             .is_ok_and(|value| value == "true")
 }
 
-fn changed_paths(root: &Path, native_monitor: bool, save_checkpoint: bool) -> Result<Vec<u8>> {
-    let args = ["-c", "core.untrackedCache=true", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--", "nodes", "trees"];
+fn discovery_command(root: &Path, monitor: Option<bool>) -> std::process::Command {
     let mut command = crate::local::reader_command(root, &[]);
-    let running = native_monitor && crate::local::reader_git(root, &["fsmonitor--daemon", "status"]).is_ok();
-    if native_monitor {
-        // An inactive monitor makes Git start a daemon from inside status.
-        // Keep daemon startup outside retrieval and use a full scan instead.
+    if let Some(running) = monitor {
         command.args(["-c", if running { "core.fsmonitor=true" } else { "core.fsmonitor=false" }]);
-        if running && save_checkpoint {
-            command.env("GIT_OPTIONAL_LOCKS", "1");
+    }
+    command
+}
+
+fn cached_changed_paths(root: &Path, monitor: Option<bool>, save_checkpoint: bool) -> Result<Vec<u8>> {
+    let mut command = discovery_command(root, monitor);
+    if save_checkpoint {
+        command.env("GIT_OPTIONAL_LOCKS", "1");
+    }
+    // Git only reuses its untracked cache with whole-worktree status in normal mode.
+    command.args(["-c", "core.untrackedCache=true", "status", "--porcelain=v1", "-z",
+        "--untracked-files=normal", "--no-renames"]);
+    let status = checked_output(command)?;
+    let mut scoped = Vec::new();
+    let mut untracked = Vec::new();
+    let mut directories = Vec::new();
+    for record in status.split(|byte| *byte == 0).filter(|record| !record.is_empty()) {
+        require(record.len() > 3 && record[2] == b' ', "malformed Git status")?;
+        let path = &record[3..];
+        if !(path == b"nodes" || path == b"trees" || path.starts_with(b"nodes/") || path.starts_with(b"trees/")) {
+            continue;
+        }
+        if record.starts_with(b"?? ") {
+            if path.ends_with(b"/") {
+                directories.push(OsStr::from_bytes(path));
+            } else {
+                untracked.push(path);
+            }
+        } else {
+            scoped.extend_from_slice(record);
+            scoped.push(0);
         }
     }
-    command.args(args);
-    let result = checked_output(command);
-    // The daemon can stop between the availability check and status. Retry
-    // read-only after a settled timeout, with fsmonitor disabled.
-    if result.as_ref().is_err_and(|error| crate::checked_publication::failure_kind(error) == "timeout")
-        && running
-    {
-        let mut command = crate::local::reader_command(root, &["-c", "core.fsmonitor=false"]);
-        command.args(args);
-        return checked_output(command);
+    // Expand only the directories Git collapsed, with the same ignore rules as status.
+    let expanded = if directories.is_empty() {
+        Vec::new()
+    } else {
+        let mut command = discovery_command(root, monitor);
+        command.args(["--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--"])
+            .args(directories);
+        checked_output(command)?
+    };
+    untracked.extend(expanded.split(|byte| *byte == 0).filter(|path| !path.is_empty()));
+    // Match the scoped porcelain order used in the snapshot identity.
+    untracked.sort_unstable();
+    untracked.dedup();
+    for path in untracked {
+        scoped.extend_from_slice(b"?? ");
+        scoped.extend_from_slice(path);
+        scoped.push(0);
     }
-    result
+    Ok(scoped)
+}
+
+fn changed_paths(root: &Path, native_monitor: bool, save_checkpoint: bool) -> Result<Vec<u8>> {
+    // An inactive built-in monitor would start a daemon from inside status.
+    let running = native_monitor && crate::local::reader_git(root, &["fsmonitor--daemon", "status"]).is_ok();
+    let monitor = native_monitor.then_some(running);
+    let error = match cached_changed_paths(root, monitor, running && save_checkpoint) {
+        Ok(status) => return Ok(status),
+        Err(error) => error,
+    };
+    let timed_out = crate::checked_publication::failure_kind(error.as_ref()) == "timeout";
+    if timed_out && !running {
+        return Err(error);
+    }
+    // A failed directory expansion can be collected in one scoped scan. After
+    // a native monitor timeout, use the same scan with that daemon disabled.
+    let mut command = discovery_command(root, if timed_out { Some(false) } else { monitor });
+    command.args(["-c", "core.untrackedCache=true", "status", "--porcelain=v1", "-z",
+        "--untracked-files=all", "--no-renames", "--", "nodes", "trees"]);
+    checked_output(command)
 }
 
 pub(super) struct Snapshot {
