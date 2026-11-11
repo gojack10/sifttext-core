@@ -4,7 +4,7 @@ use crate::{Policy, Result, index, require};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     path::{Path, PathBuf},
 };
 
@@ -77,12 +77,25 @@ pub fn local_search(
     query: &str,
     under: Option<&str>,
 ) -> Result<Outcome> {
+    local_search_phrasings(policy, store, &[query], under)
+}
+
+/// Several phrasings of one question share a capture and one result page.
+pub fn local_search_phrasings(
+    policy: &Policy,
+    store: &Path,
+    queries: &[&str],
+    under: Option<&str>,
+) -> Result<Outcome> {
+    require(!queries.is_empty(), "search requires a query")?;
+    let mut seen = BTreeSet::new();
+    let queries: Vec<_> = queries.iter().map(|q| q.trim()).filter(|q| seen.insert(*q)).collect();
     search_with(
         policy,
         &Request {
             store,
             base_store: None,
-            query,
+            query: queries[0],
             under_node_id: under,
             readable_ids: &BTreeSet::new(),
             limit: 20,
@@ -90,17 +103,24 @@ pub fn local_search(
             ranking: &Ranking::default(),
             pause_before_accept: None,
         },
+        &queries,
         true,
     )
 }
 
 pub fn search(policy: &Policy, request: &Request<'_>) -> Result<Outcome> {
-    search_with(policy, request, false)
+    search_with(policy, request, &[request.query], false)
 }
 
-fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Outcome> {
+fn search_with(
+    policy: &Policy,
+    request: &Request<'_>,
+    queries: &[&str],
+    local: bool,
+) -> Result<Outcome> {
     require(
-        request.query.len() <= 65_536 && request.offset <= 1_000_000,
+        queries.iter().map(|query| query.len()).sum::<usize>() <= 65_536
+            && request.offset <= 1_000_000,
         "oversized search",
     )?;
     require(
@@ -130,10 +150,89 @@ fn search_with(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Ou
         request.pause_before_accept.is_none(),
         "unsupported old retrieval pause adapter; use a complete worktree without a pause",
     )?;
-    indexed_search(policy, request, local)
+    indexed_search(policy, request, queries, local)
 }
 
-fn indexed_search(policy: &Policy, request: &Request<'_>, local: bool) -> Result<Outcome> {
+/// Standard reciprocal-rank fusion (k=60) over each phrasing's first 50 hits.
+/// Native single-query ordering is unchanged. Exact ties prefer the best single
+/// rank, then the earlier phrasing, then node ID.
+fn retrieve_phrasings(
+    tx: &rusqlite::Transaction<'_>,
+    scope: &BTreeSet<String>,
+    request: &Request<'_>,
+    queries: &[&str],
+) -> Result<(i64, Vec<leviathan_search::Card>)> {
+    let retrieve = |query: &str, limit: usize, offset: usize| {
+        leviathan_search::retrieve_indexed(
+            tx,
+            scope,
+            &request.ranking.boosts,
+            query,
+            limit,
+            offset,
+            request.ranking.title_weight,
+        )
+    };
+    if let [query] = queries {
+        return retrieve(query, request.limit, request.offset);
+    }
+    let mut expressions = Vec::new();
+    // Per note: score, best rank, the phrasing that gave it and that phrasing's card.
+    let mut merged: BTreeMap<String, (f64, usize, usize, leviathan_search::Card)> = BTreeMap::new();
+    for (phrasing, query) in queries.iter().enumerate() {
+        // Alone, a query without searchable words browses every node; here it ranks nothing.
+        let parsed = crate::leviathan_query::Query::parse(query);
+        let Some(positive) = parsed.fts() else { continue };
+        let mut expression = format!("{{title body}} : ({positive})");
+        if let Some(negative) = parsed.not_fts() {
+            expression = format!("({expression}) NOT ({negative})");
+        }
+        expressions.push(format!("({expression})"));
+        let (_, cards) = retrieve(query, crate::relevance::MAX_LIMIT, 0)?;
+        for (index, card) in cards.into_iter().enumerate() {
+            let rank = index + 1;
+            let vote = 1.0 / (60.0 + rank as f64);
+            match merged.entry(card.text.id.clone()) {
+                Entry::Occupied(mut entry) => {
+                    let note = entry.get_mut();
+                    note.0 += vote;
+                    if rank < note.1 {
+                        (note.1, note.2, note.3) = (rank, phrasing, card);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert((vote, rank, phrasing, card));
+                }
+            }
+        }
+    }
+    // Exact union count, not the sum of per-query counts or a page-size estimate.
+    let total = if expressions.is_empty() { 0 } else {
+        tx.query_row("SELECT count(*) FROM search_ids
+            WHERE id IN (SELECT value FROM json_each(?1)) AND rowid IN
+            (SELECT rowid FROM search_fts WHERE search_fts MATCH ?2)",
+            rusqlite::params![serde_json::to_string(scope)?, expressions.join(" OR ")],
+            |row| row.get(0))?
+    };
+    let mut ordered: Vec<_> = merged.into_values().collect();
+    ordered.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1))
+        .then(a.2.cmp(&b.2)).then(a.3.text.id.cmp(&b.3.text.id)));
+    let cards = ordered.into_iter().skip(request.offset).take(request.limit).enumerate()
+        .map(|(index, note)| {
+            let mut card = note.3;
+            card.rank = Some(request.offset + index + 1);
+            card.relevance = None; // BM25 scores from different phrasings are not comparable.
+            card
+        }).collect();
+    Ok((total, cards))
+}
+
+fn indexed_search(
+    policy: &Policy,
+    request: &Request<'_>,
+    queries: &[&str],
+    local: bool,
+) -> Result<Outcome> {
     let (version, (total_matches, cards, hits, rows, path_template)) =
         index::with_current(policy, request.store, |tx, _version| {
             // Compact hierarchy only; bodies/record JSON are decoded for results
@@ -173,15 +272,7 @@ fn indexed_search(policy: &Policy, request: &Request<'_>, local: bool) -> Result
             if !local {
                 scope.retain(|id| request.readable_ids.contains(id));
             }
-            let (total, cards) = leviathan_search::retrieve_indexed(
-                tx,
-                &scope,
-                &request.ranking.boosts,
-                request.query,
-                request.limit,
-                request.offset,
-                request.ranking.title_weight,
-            )?;
+            let (total, cards) = retrieve_phrasings(tx, &scope, request, queries)?;
             let mut parents = BTreeMap::new();
             for (parent, children) in &children {
                 for child in children {

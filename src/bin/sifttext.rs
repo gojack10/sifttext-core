@@ -495,17 +495,24 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             }
             return Ok(());
         }
-        [cmd, path, query, rest @ ..] if cmd == "search" => {
+        [cmd, path, rest @ ..] if cmd == "search" => {
             let force = rest.last().is_some_and(|arg| arg == "-y");
             let rest = if force { &rest[..rest.len() - 1] } else { rest };
-            if rest.len() > 1 {
-                return Err("usage: sifttext search STORE QUERY [UNDER_UUID] [-y]".into());
+            let (queries, under) = match rest {
+                [queries @ .., flag, under] if flag == "--under" => (queries, Some(under.as_str())),
+                // Keep the existing positional full-UUID scope unambiguous.
+                [query, under] if sifttext_file_graph::uuid(under) => (std::slice::from_ref(query), Some(under.as_str())),
+                queries => (queries, None),
+            };
+            if queries.is_empty() || queries.iter().any(|query| query == "--under") {
+                return Err("usage: sifttext search STORE QUERY... [--under UUID] [-y]".into());
             }
-            let result = sifttext_file_graph::search::local_search(
+            let queries: Vec<&str> = queries.iter().map(String::as_str).collect();
+            let result = sifttext_file_graph::search::local_search_phrasings(
                 &policy,
                 Path::new(path),
-                query,
-                rest.first().map(String::as_str),
+                &queries,
+                under,
             )
             .map_err(|e| {
                 if let Some(refusal) = e.downcast_ref::<sifttext_file_graph::index::Refusal>() {
