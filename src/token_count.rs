@@ -17,6 +17,29 @@ struct Counter {
     regex: Regex,
 }
 
+// The first two alternatives match a word with uppercase letters before
+// lowercase letters, optionally preceded by one non-letter, non-number byte.
+// Defer to the regex when a contraction or Unicode letter or mark could extend it.
+fn ascii_word_end(text: &[u8], start: usize) -> Option<usize> {
+    let first = text[start];
+    let prefix = first.is_ascii() && !first.is_ascii_alphanumeric()
+        && !matches!(first, b'\r' | b'\n');
+    let word = start + usize::from(prefix);
+    let mut end = word;
+    while text.get(end).is_some_and(u8::is_ascii_uppercase) {
+        end += 1;
+    }
+    while text.get(end).is_some_and(u8::is_ascii_lowercase) {
+        end += 1;
+    }
+    if end == word {
+        return None;
+    }
+    text.get(end)
+        .is_none_or(|byte| byte.is_ascii() && !byte.is_ascii_alphabetic() && *byte != b'\'')
+        .then_some(end)
+}
+
 impl Counter {
     fn new() -> Self {
         // Generated and checked by build.rs from tiktoken-rs =0.6.0's public
@@ -72,17 +95,27 @@ impl Counter {
     }
 
     fn count(&self, text: &str) -> usize {
-        self.regex.find_iter(text).fold(0usize, |total, matched| {
-            let piece = matched.unwrap().as_str().as_bytes();
+        let bytes = text.as_bytes();
+        let mut offset = 0;
+        let mut total = 0usize;
+        while offset < bytes.len() {
+            let (start, end) = if let Some(end) = ascii_word_end(bytes, offset) {
+                (offset, end)
+            } else if let Some(matched) = self.regex.find_from_pos(text, offset).unwrap() {
+                (matched.start(), matched.end())
+            } else {
+                break;
+            };
+            let piece = &bytes[start..end];
             let count = if piece.len() == 1 || self.encoder.contains_key(piece) {
                 1
-            } else if piece.is_empty() {
-                0
             } else {
                 byte_pair_split(piece, &self.encoder).len()
             };
-            total.checked_add(count).expect("ordinary token count overflow")
-        })
+            total = total.checked_add(count).expect("ordinary token count overflow");
+            offset = end;
+        }
+        total
     }
 }
 
