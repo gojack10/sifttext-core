@@ -634,7 +634,14 @@ impl SyncAccess {
         let mut credentials = if store.issuer.is_empty() || resource == account_resource()? {
             store.load()?
         } else {
-            store.load().map_err(|_| format!("No saved grant for {resource}. Run sifttext login --resource {resource}."))?
+            store.load().map_err(|_| {
+                let command = if store.issuer == provider::PRODUCTION_ISSUER {
+                    "sifttext login".to_owned()
+                } else {
+                    format!("sifttext login --resource {resource}")
+                };
+                format!("No saved grant for {resource}. Run {command}.")
+            })?
         };
         store.check_provider(&credentials)?;
         let saved_resource = if credentials.resource.is_empty() {
@@ -856,7 +863,12 @@ fn callback(
         .ok_or_else(|| "missing callback code".into())
 }
 
-fn login(store: &Store, provider: &provider::Provider, resource: &str) -> Result<()> {
+fn authorize(
+    store: &Store,
+    provider: &provider::Provider,
+    resource: &str,
+    combined: bool,
+) -> Result<(Credentials, Value)> {
     let origin = &store.origin;
     let listener = TcpListener::bind("127.0.0.1:0")?;
     listener.set_nonblocking(true)?;
@@ -879,7 +891,8 @@ fn login(store: &Store, provider: &provider::Provider, resource: &str) -> Result
         text(&value, "client_id")?.to_owned()
     };
     let client_id = client_id.as_str();
-    let scope = if provider.issuer.is_empty() { "mcp" }
+    let scope = if combined { "openid account:read mcp" }
+        else if provider.issuer.is_empty() { "mcp" }
         else if resource == account_resource()? { "openid account:read" }
         else { "openid mcp" };
     let url = format!(
@@ -970,11 +983,38 @@ fn login(store: &Store, provider: &provider::Provider, resource: &str) -> Result
     let account = account(store, &mut credentials, resource)?;
     if production {
         credentials.account_id = text(&account, "id")?.to_owned();
+    }
+    Ok((credentials, account))
+}
+
+fn login(store: &Store, provider: &provider::Provider, resource: &str, combined: bool) -> Result<()> {
+    let (credentials, account) = authorize(store, provider, resource, combined)?;
+    if combined {
+        let workspace_resource = format!("{WORKSPACE_ORIGIN}/mcp");
+        let workspace_store = Store {
+            dir: store.dir.clone(),
+            filename: grant_filename(&store.origin, &store.issuer, &workspace_resource)?,
+            origin: store.origin.clone(),
+            issuer: store.issuer.clone(),
+            _lock: store._lock.try_clone()?,
+        };
+        writeln!(std::io::stdout(), "Connecting Workspace using your browser session.")?;
+        let (workspace_credentials, workspace_account) =
+            authorize(&workspace_store, provider, &workspace_resource, true)?;
+        if text(&workspace_account, "id")? != text(&account, "id")? {
+            return Err("Account and Workspace sign-ins selected different SiftText accounts. Run sifttext login and use the same account throughout.".into());
+        }
+        workspace_store.save(&workspace_credentials)?;
+    }
+    if provider.issuer == provider::PRODUCTION_ISSUER {
         store.save(&credentials)?;
     }
     store.activate()?;
     show_account(&account)?;
-    if !provider.issuer.is_empty() {
+    if combined {
+        writeln!(std::io::stdout(), "Authentication successful. Account and Workspace connected.")?;
+        Ok(())
+    } else if !provider.issuer.is_empty() {
         writeln!(std::io::stdout(), "Authentication successful. Service entitlements are enforced separately.")?;
         Ok(())
     } else if account["paid"] == true {
@@ -983,9 +1023,10 @@ fn login(store: &Store, provider: &provider::Provider, resource: &str) -> Result
     } else {
         writeln!(
             std::io::stdout(),
-            "Payment pending or subscription inactive. Complete payment on Platform, then run sifttext login again.\n{origin}/"
+            "Payment pending or subscription inactive. Complete payment on Platform, then run sifttext login again.\n{}/",
+            store.origin,
         )?;
-        open_browser(&format!("{origin}/"));
+        open_browser(&format!("{}/", store.origin));
         Err("paid activation has not been confirmed; offline knowledge remains available".into())
     }
 }
@@ -1039,7 +1080,8 @@ pub fn run(command: &str, selected_resource: Option<&str>) -> Result<()> {
             return Err("The current sign-in service uses a single login. Run sifttext login.".into());
         }
         let store = Store::open(resource, Some(&provider.issuer))?;
-        return login(&store, &provider, resource);
+        let combined = selected_resource.is_none() && provider.issuer == provider::PRODUCTION_ISSUER;
+        return login(&store, &provider, resource, combined);
     }
     let store = Store::open(resource, None)?;
     if selected_resource.is_some() && store.issuer.is_empty() {
