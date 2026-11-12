@@ -473,18 +473,7 @@ fn entries(reader: &Reader<'_>, view: &View, delta: &Delta, id: &str) -> Vec<Ent
     result
 }
 
-fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Proposal, anchors: &BTreeMap<String, String>) -> Result<String> {
-    let mut output = format!("[+] added, [!] revised, [-] removed, [→][!] moved here, [←] moved away\n{STATUS_NOTATION}\n… omitted context\n");
-    if proposal.artifacts.is_empty() {
-        output.push_str("Artifact link changes are never derived. None declared; declare intended additions/removals explicitly.\n");
-    } else {
-        output.push_str("artifacts/ = file links owned by the topic above it: + new link, - removed link, @1 = shorthand for a full path already shown once in this render\n");
-    }
-    output.push('\n');
-    for (i, stage) in proposal.work_record.iter().enumerate() {
-        output.push_str(&format!("### {}. {}\n{}\n\n", i+1, stage.title, stage.body));
-    }
-    // Alias only actual collisions; exact identities stay in the source packet.
+fn labels(reader: &Reader<'_>, view: &View, delta: &Delta, anchors: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for id in &view.named { names.entry(name(&reader.nodes[id])).or_default().push(id.clone()); }
     let mut labels = BTreeMap::new();
@@ -496,6 +485,21 @@ fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Prop
             });
         }
     }
+    labels
+}
+
+fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Proposal, anchors: &BTreeMap<String, String>) -> Result<String> {
+    let mut output = format!("[+] added, [!] revised, [-] removed, [→][!] moved here, [←] moved away\n{STATUS_NOTATION}\n… omitted context\n");
+    if proposal.artifacts.is_empty() {
+        output.push_str("Artifact link changes are never derived. None declared; declare intended additions/removals explicitly.\n");
+    } else {
+        output.push_str("artifacts/ = file links owned by the topic above it: + new link, - removed link, @1 = shorthand for a full path already shown once in this render\n");
+    }
+    output.push('\n');
+    for (i, stage) in proposal.work_record.iter().enumerate() {
+        output.push_str(&format!("### {}. {}\n{}\n\n", i+1, stage.title, stage.body));
+    }
+    let labels = labels(reader, view, delta, anchors);
     let mut pending: Vec<_> = view.roots.iter().rev().map(|id| (Entry::Node(id.clone()), String::new(), String::new(), String::new())).collect();
     for id in delta.moved.iter().rev().filter(|id| view.routes.contains(*id)) {
         if delta.old_parents.get(id).is_none_or(|p| p.is_none()) {
@@ -668,7 +672,7 @@ pub(super) fn allocation_base(home: &Path) -> Result<String> {
     Ok(base)
 }
 
-pub(super) fn documents(connection: &Connection, home: &Path, request: &Request, proposal: &Proposal, automatic: bool) -> Result<std::result::Result<Vec<(String, usize)>, Vec<Value>>> {
+pub(super) fn documents(connection: &Connection, home: &Path, request: &Request, proposal: &Proposal, automatic: bool) -> Result<std::result::Result<Vec<Document>, Vec<Value>>> {
     let delta = capture(connection, home, proposal)?;
     let mut reader = Reader::new(connection);
     reader.delta = Some(&delta);
@@ -702,6 +706,26 @@ pub(super) fn documents(connection: &Connection, home: &Path, request: &Request,
     }
     let anchors = reveal_targets(&mut reader, &mut forest, request, &delta, proposal)?;
     let text = render_delta(&reader, &forest, &delta, proposal, &anchors)?;
-    let tokens = crate::token_count::ordinary(&text);
-    Ok(Ok(vec![(text, tokens)]))
+    let labels = labels(&reader, &forest, &delta, &anchors);
+    let mut records = Vec::new();
+    let mut references = BTreeMap::new();
+    for id in &forest.named {
+        let context = serde_json::from_value::<serde_json::Map<String, Value>>(json!({"name":reader.nodes[id].name,"status":reader.nodes[id].status}))?;
+        let changed = delta.changed.contains(id);
+        let before = if changed { delta.before.get(id).map(|r| &r.fields) } else { Some(&context) };
+        let after = if changed { delta.after.get(id).map(|r| &r.fields) } else { Some(&context) };
+        for fields in [before, after].into_iter().flatten() {
+            for link in fields.get("see_also").and_then(Value::as_array).into_iter().flatten() {
+                if let Some(target) = link["target"].as_str() {
+                    let record = Record::current(connection, target)?;
+                    let record = record.as_ref().or_else(|| delta.before.get(target));
+                    if let Some(record) = record { references.insert(target.to_owned(), json!({"name":record.node.name,"status":record.node.status})); }
+                }
+            }
+        }
+        records.push(json!({"id":id,"label":labels[id],"before":before,"after":after,"changed":delta.changed.contains(id)}));
+    }
+    let tree = text.split("\n## Node proposals\n").next().unwrap_or(&text);
+    let payload = json!({"tree":tree,"records":records,"references":references,"work_record":proposal.work_record,"base":proposal.base});
+    Ok(Ok(vec![Document::new(text, payload)]))
 }

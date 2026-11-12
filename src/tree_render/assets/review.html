@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SiftText review</title><style>/*STYLE*/</style></head>
+<body><div id="card" class="card"></div><script>
+/*DIFF*/
+/*MODEL*/
+/*VIEW*/
+const embedded = /*DATA*/null;
+const card = document.getElementById('card');
+let previous = '', dispose, appPayload = null;
+function load() {
+  const payload = window.openai?.toolResponseMetadata?.['sifttext/review'] || appPayload || embedded;
+  if (!payload) return;
+  const serialized = JSON.stringify(payload);
+  if (serialized === previous) return;
+  previous = serialized; dispose?.();
+  dispose = renderTreeDelta(card, prepareTreeReview(payload));
+}
+new ResizeObserver(() => window.openai?.notifyIntrinsicHeight?.(Math.ceil(card.getBoundingClientRect().height))).observe(card);
+window.addEventListener('openai:set_globals', load);
+// MCP Apps hosts deliver the authorized tool result through the parent bridge.
+window.addEventListener('message', event => {
+  if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
+  const message = event.data;
+  if (message.method === 'ui/notifications/tool-result') {
+    appPayload = message.params?._meta?.['sifttext/review'] || null;
+    load();
+  }
+  if (message.id === 'sifttext-init' && message.result) {
+    window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'}, '*');
+  }
+});
+if (window.parent !== window && !window.openai) window.parent.postMessage({jsonrpc:'2.0',id:'sifttext-init',method:'ui/initialize',params:{protocolVersion:'2026-01-26',appInfo:{name:'SiftText review',version:'1.0.0'},appCapabilities:{}}}, '*');
+load();
+</script></body></html>

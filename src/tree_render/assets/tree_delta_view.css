@@ -1,0 +1,144 @@
+/* Tokens, tree geometry and diff colours are taken from the old sifttext-platform static/styles (tokens.css, tree.css, historyModal.css). */
+@font-face{font-family:'JetBrains Mono';src:url('fonts/JetBrainsMono-Light.woff2') format('woff2');font-weight:300;font-style:normal}
+@font-face{font-family:'JetBrains Mono';src:url('fonts/JetBrainsMono-LightItalic.woff2') format('woff2');font-weight:300;font-style:italic}
+@font-face{font-family:'JetBrains Mono';src:url('fonts/JetBrainsMono-Regular.woff2') format('woff2');font-weight:400;font-style:normal}
+@font-face{font-family:'JetBrains Mono';src:url('fonts/JetBrainsMono-Medium.woff2') format('woff2');font-weight:500;font-style:normal}
+:root{
+  color-scheme:dark;
+  --bg-1:#0a0a0a;--bg0:#0f0f0f;--bg1:#151515;--bg2:#1e1e1e;--bg3:#282828;
+  --fg0:#fff;--fg1:#d0d0d0;--fg2:#8a8a8a;--accent:#3a3a3a;--focus:#6f6f6f;
+  --urgent:#b85450;--warning:#b8853d;--success:#6b9b7a;--info:#5a8cc7;--purple:#7a5a8b;
+  --add-bg:rgba(107,155,122,.15);--add-hl:rgba(107,155,122,.4);
+  --del-bg:rgba(184,84,80,.15);--del-hl:rgba(184,84,80,.4);--mod-bg:rgba(90,140,199,.15);
+  --text-2xs:10.4px;--text-xs:12px;--text-sm:14px;
+  --row:24px;--branch:22px;--stem:14px;--gutter:16px;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg-1);color:var(--fg1);font:13px/1.4 system-ui,sans-serif}
+
+.card{background:var(--bg0)}
+
+.card{padding:12px 16px 16px;font-family:var(--mono);font-weight:300;font-size:var(--text-xs);-webkit-font-smoothing:antialiased}
+.card *{font-family:var(--mono)}
+.head{display:flex;align-items:center;gap:8px;padding:0 0 8px;margin-bottom:8px;border-bottom:1px solid var(--accent)}
+.head .title{flex:1;color:var(--fg0);font-weight:500;font-size:var(--text-sm)}
+/* Copy control and icons follow the sifttext.com install-command button. */
+.btn{position:relative;display:inline-flex;align-items:center;gap:8px;font-size:var(--text-xs);font-weight:300;color:var(--fg1);background:none;border:1px solid var(--accent);padding:4px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--focus);color:var(--fg0)}
+.btn svg{width:16px;height:16px;flex:none}
+.btn .check{display:none;position:absolute;inset:0;margin:auto;color:var(--success)}
+.btn.copied>:not(.check){visibility:hidden}
+.btn.copied .check{display:block}
+
+/* What changes and how much: one count per kind, then one bar segment per changed node, sized by its changed lines. */
+.summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin-bottom:8px;color:var(--fg2)}
+.summary>span{white-space:nowrap}
+.summary b{color:var(--fg0);font-weight:500}
+.summary .grow{flex:1}
+.summary .added{color:var(--success)}.summary .revised{color:var(--info)}.summary .removed{color:var(--urgent)}.summary .moved{color:var(--purple)}
+.summary>span>span:first-child{font-weight:500}
+.weight{display:flex;gap:2px;height:8px;margin-bottom:12px}
+.seg{display:flex;flex-basis:0;min-width:4px;padding:0;border:0;background:none;cursor:pointer}
+.seg:hover,.seg:focus-visible{filter:brightness(1.5);outline:0}
+.seg i{flex-basis:0}
+.seg .p{background:var(--success)}.seg .m{background:var(--urgent)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 8px;font-size:var(--text-2xs);color:var(--fg2)}
+.legend span{white-space:nowrap}
+
+/* Spacing sits on a 4px grid. A guide line runs under the middle character of its parent's status mark or ellipsis. */
+/* Every row has the same columns: change gutter, guide cells, content. Rows grow with wrapped text and the guide lines grow with them. */
+.row{display:flex;align-items:stretch;min-height:var(--row);line-height:var(--row);min-width:0}
+.gutter{flex:none;width:var(--gutter);font-weight:500}
+.cell{flex:none;width:var(--branch);position:relative}
+.cell.pipe::before,.cell.tee::before,.cell.elbow::before{content:'';position:absolute;left:var(--stem);top:0;width:1px;height:100%;background:var(--fg2)}
+.cell.elbow::before{height:calc(var(--row)/2)}
+.cell.tee::after,.cell.elbow::after{content:'';position:absolute;left:var(--stem);right:0;top:calc(var(--row)/2);height:1px;background:var(--fg2)}
+.body{flex:1;min-width:0;display:flex;gap:4px;padding-left:4px}
+.status{flex:none;font-style:italic;white-space:pre}
+.status-not_examined{color:var(--fg2)}.status-in_progress{color:var(--info)}.status-resolved{color:var(--success)}
+.status-stuck{color:var(--warning)}.status-deferred{color:var(--purple)}.status-discarded{color:#4a4a4a}
+.name{flex:1;min-width:0;overflow-wrap:anywhere}
+.skip .body{color:var(--fg2)}
+.stats{flex:none;padding:0 8px;font-size:var(--text-2xs);white-space:nowrap}
+.plus,.added>.gutter{color:var(--success)}
+.minus,.removed>.gutter{color:var(--urgent)}
+.revised>.gutter{color:var(--info)}
+.moved>.gutter{color:var(--purple)}
+
+/* A changed node is tinted from its name rightwards only, so the guide lines to its left stay untouched. */
+.changed .name{color:var(--fg0);font-weight:400}
+.added>.body{background:var(--add-bg)}.revised>.body{background:var(--mod-bg)}.removed>.body{background:var(--del-bg)}.moved>.body{background:rgba(122,90,139,.2)}
+.removed .name,.away .name{text-decoration:line-through;color:var(--fg2)}
+/* A moved-away row is struck in one unbroken line, status mark included. */
+.away .body{gap:0}
+.away .status{text-decoration:line-through}
+.pick{cursor:pointer}
+.pick:hover>.body,.pick.open>.body{filter:brightness(1.4)}
+
+/* Expand beneath the actual row, at full width. Context stays in place; only its content dims, never the guide lines. */
+.tree>.row>.gutter,.tree>.row>.body{transition:opacity .18s ease}
+.tree.focused>.row:not(.lit)>.gutter,.tree.focused>.row:not(.lit)>.body{opacity:.35}
+.tree.focused>.fact.lit{display:none}
+.expansion{cursor:pointer;overflow-anchor:none}
+.expansion>.clip{overflow:hidden}
+.pick:focus-visible>.body{outline:1px solid var(--info);outline-offset:-1px}
+@media(prefers-reduced-motion:reduce){.tree>.row>.gutter,.tree>.row>.body,.folded{transition:none}}
+
+/* What arrives with a node: one skimmable line per kind, always visible. A line never wraps; what does not fit becomes "...+N". */
+.fact{min-height:20px;line-height:20px;font-size:var(--text-2xs)}
+.fact .body{gap:0;padding-left:8px;color:var(--fg2)}
+.fact .kind{flex:none;width:88px;white-space:pre}
+.fact .items{flex:1;min-width:0;white-space:nowrap;overflow:hidden;color:var(--fg1)}
+.fact .more{color:var(--fg2)}
+.ref{color:var(--fg0);font-weight:500}
+/* The key to file numbers: one unwrapped line per file, beneath the status key. */
+.notes{margin:-4px 0 8px;font-size:var(--text-2xs)}
+.notes .items{display:block;white-space:nowrap;overflow:hidden;color:var(--fg2)}
+.fact .sep{color:var(--fg2);opacity:.6}
+.fact .gone{text-decoration:line-through;color:var(--fg2)}
+.last-fact>.body{padding-bottom:4px}
+
+/* Selected node layout: labels above each part, reworded text side by side, additions and removals full width. */
+.panel{--text:300 12px/1.5 var(--mono);--small:300 10.4px/1.5 var(--mono);--label:400 10.4px/1.5 var(--mono);--marks:var(--mono);
+  min-width:0;margin:8px 0 12px;border:1px solid var(--accent);background:var(--bg0);font:var(--text)}
+.blue{color:var(--info)}
+
+/* One piece of node text: unchanged, removed or added. */
+.block{display:flex;padding:4px 8px;min-width:0}
+.block>.text,.block>.link,.block>.file{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.text{margin:0;font:inherit}
+.eq{color:var(--fg2)}.add{background:var(--add-bg)}.del{background:var(--del-bg)}
+.heading{color:var(--fg0);font-weight:500}
+.mark-add{background:var(--add-hl);border-radius:2px}.mark-del{background:var(--del-hl);border-radius:2px}
+
+/* A see-also link reads like its tree row, with the reason beneath its name. */
+.link{display:flex;gap:8px}
+.link .lname{color:var(--fg0)}
+.panel .status{font-style:normal}
+.reason{color:var(--fg2);font:var(--small)}
+
+.fold{display:block;width:100%;padding:4px 8px;text-align:left;font:var(--label);color:var(--fg2);background:var(--bg1);border:0;border-block:1px dashed var(--accent);cursor:pointer}
+.fold:hover{color:var(--fg0);background:var(--bg2)}
+.fold .act{color:var(--fg1);text-decoration:underline}
+.folded{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.folded.shown{grid-template-rows:1fr}
+.folded>div{min-height:0;overflow:hidden}
+
+/* Space inside paragraphs keeps a run of one kind continuous; gaps separate different kinds. */
+.pieces,.pieces .folded>div{display:flex;flex-direction:column}
+.pieces>*+*{margin-top:4px}
+.pieces>.eq+.eq,.pieces>.add+.add,.pieces>.del+.del,.pieces>.two+.two,.pieces>.fold+.folded{margin-top:0}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+
+/* The label aligns with its text; its change mark hangs in the left margin. */
+.section{padding:12px 16px 4px}
+.section:last-child{padding-bottom:16px}
+.shead,.heads{color:var(--fg2);font:var(--label);text-transform:uppercase;letter-spacing:.12em}
+.shead{position:relative;padding-left:8px;margin-bottom:4px}
+.tag{position:absolute;left:-8px;font-family:var(--marks);font-weight:500}
+.section.columns{padding-block:8px;border-bottom:1px solid var(--accent)}
+.panel>.fold{padding-inline:24px}
+.heads>div{padding:0 8px}
+/* Every unchanged item is grey, including headings, see-also names and status marks. */
+.panel .eq,.panel .eq *{color:var(--fg2)}

@@ -1,10 +1,19 @@
 //! Unix-tree views over the native same-version index. No publication or model calls.
 mod proposal;
+mod review;
+
+struct Document { text: String, tokens: usize, payload: Value }
+impl Document {
+    fn new(text: String, payload: Value) -> Self {
+        let tokens = crate::token_count::ordinary(&text);
+        Self { text, tokens, payload }
+    }
+}
 use crate::{Policy, Result, require, status::Status, tree_selection::{Action, Rule, includes}};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::{BTreeMap, BTreeSet}, io::Write, path::Path};
+use std::{collections::{BTreeMap, BTreeSet}, path::Path};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -371,8 +380,20 @@ fn run_mode(policy: &Policy, home: &Path, request: &Request, automatic: bool) ->
             let mut reader = Reader::new(tx);
             let view = select(&mut reader, selection)?;
             let text = render(&reader, &view)?;
-            let tokens = crate::token_count::ordinary(&text);
-            documents.push((text, tokens));
+            let mut aliases = BTreeMap::new();
+            let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+            for id in &view.named { groups.entry(name(&reader.nodes[id])).or_default().push(id.clone()); }
+            for (text, ids) in groups {
+                for (i, id) in ids.iter().enumerate() {
+                    aliases.insert(id.clone(), if ids.len() > 1 { format!("{} - {text}", label(i)) } else { text.clone() });
+                }
+            }
+            let records = view.named.iter().map(|id| -> Result<Value> {
+                let record: String = tx.query_row("SELECT record FROM nodes WHERE id=?1", [id], |r| r.get(0))?;
+                let fields: Value = serde_json::from_str(&record)?;
+                Ok(json!({"id":id,"label":aliases[id],"before":fields,"after":fields,"changed":false}))
+            }).collect::<Result<Vec<_>>>()?;
+            documents.push(Document::new(text.clone(), json!({"tree":text,"records":records,"static_view":true})));
         }
         Ok(Ok(documents))
     })?;
@@ -380,23 +401,27 @@ fn run_mode(policy: &Policy, home: &Path, request: &Request, automatic: bool) ->
         Ok(documents) => documents,
         Err(errors) => return Ok(json!({"status":"rejected", "errors":errors})),
     };
-    let mut files = Vec::new();
-    for (text, tokens) in documents {
-        let mut file = tempfile::Builder::new().prefix("sifttext-tree-render-").suffix(".md").tempfile_in("/tmp")?;
-        file.write_all(text.as_bytes())?;
-        file.flush()?;
-        files.push((file, tokens));
-    }
-    let outputs: Vec<_> = files.iter().map(|(file, tokens)| json!({"output":file.path(), "tokens":tokens})).collect();
-    let mut retained = Vec::new();
-    for (file, _) in files {
-        match file.keep() {
-            Ok((_, path)) => retained.push(path),
-            Err(error) => {
-                for path in retained { let _ = std::fs::remove_file(path); }
-                return Err(error.error.into());
+    let mut outputs = Vec::new();
+    for document in documents {
+        let directory = tempfile::Builder::new().prefix("sifttext-review-").tempdir_in("/tmp")?;
+        let markdown = directory.path().join("review.md");
+        let data = directory.path().join("review.json");
+        let html = directory.path().join("review.html");
+        std::fs::write(&markdown, &document.text)?;
+        std::fs::write(&data, serde_json::to_vec(&document.payload)?)?;
+        std::fs::write(&html, review::page(&document.payload)?)?;
+        let mut output = json!({"output":markdown,"tokens":document.tokens,"data":data,"html":html});
+        if crate::account::SyncAccess::saved_login_exists().unwrap_or(false) {
+            match review::upload(&document.payload) {
+                Ok(hosted) => {
+                    output["render_id"] = hosted["render_id"].clone();
+                    output["review_url"] = hosted["review_url"].clone();
+                },
+                Err(_) => output["hosted"] = json!("unavailable; use local HTML"),
             }
         }
+        let _ = directory.keep();
+        outputs.push(output);
     }
     Ok(json!({"status":"render-success", "encoding":"o200k_base", "outputs":outputs}))
 }
