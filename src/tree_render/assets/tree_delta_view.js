@@ -245,7 +245,7 @@ function text(segs) {
 const plain = value => text([['=', value]]);
 const link = (entry, reason) => h('div', 'link',
   h('span', 'status status-' + entry.status, '[' + STATUS_MARK[entry.status] + ']'),
-  h('div', '', h('div', 'lname', linkedText(`[${entry.name}](${entry.id || ''})`)), h('div', 'reason', reason)));
+  h('div', '', h('div', 'lname', entry.id && payload.records?.some(record => record.id === entry.id) ? linkedText(`[${entry.name}](${entry.id})`) : entry.name), h('div', 'reason', reason)));
 const file = entry => h('div', 'file', `${entry.path} ← ${entry.transfer ? '[' + entry.transfer + '] ' : ''}${entry.target}`, h('div', 'reason', entry.reason));
 
 // A part contains unchanged pieces, folds, or before/after pairs where either side may be absent.
