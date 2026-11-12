@@ -8,6 +8,7 @@ use std::{
     io::Read,
     mem::MaybeUninit,
     path::{Component, Path, PathBuf},
+    process::Command,
 };
 
 fn field(lines: &mut Vec<String>, key: &str, value: Value) -> Result<()> {
@@ -109,22 +110,23 @@ fn clock_fields(lines: &mut Vec<String>) -> Result<()> {
     )
 }
 
+fn retrieval_tool(names: &[&str]) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    env::var_os("PATH").and_then(|paths| {
+        names.iter().find_map(|name| {
+            env::split_paths(&paths)
+                .map(|directory| directory.join(name))
+                .find(|path| fs::metadata(path)
+                    .is_ok_and(|file| file.is_file() && file.permissions().mode() & 0o111 != 0))
+        })
+    })
+}
+
 /// Where each retrieval tool resolves on PATH, so an agent need not probe before using it.
 fn retrieval_tool_fields(lines: &mut Vec<String>) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let executable = |path: &PathBuf| {
-        fs::metadata(path)
-            .is_ok_and(|file| file.is_file() && file.permissions().mode() & 0o111 != 0)
-    };
     // Debian and Ubuntu package fd as fdfind.
     for (key, names) in [("rg", &["rg"][..]), ("fd", &["fd", "fdfind"][..])] {
-        let found = env::var_os("PATH").and_then(|paths| {
-            names.iter().find_map(|name| {
-                env::split_paths(&paths)
-                    .map(|directory| directory.join(name))
-                    .find(executable)
-            })
-        });
+        let found = retrieval_tool(names);
         field(
             lines,
             key,
@@ -132,6 +134,38 @@ fn retrieval_tool_fields(lines: &mut Vec<String>) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+fn command_output(lines: &mut Vec<String>, key: &str, command: &mut Command) -> Result<()> {
+    match command.output() {
+        Ok(output) if output.status.success() => {
+            lines.push(format!("{key}:"));
+            lines.extend(String::from_utf8_lossy(&output.stdout).lines()
+                .map(|line| format!("  {line}")));
+            Ok(())
+        }
+        Ok(output) => {
+            eprintln!("{key} unavailable: {}", String::from_utf8_lossy(&output.stderr).trim());
+            field(lines, key, json!("unavailable"))
+        }
+        Err(error) => {
+            eprintln!("{key} unavailable: {error}");
+            field(lines, key, json!("unavailable"))
+        }
+    }
+}
+
+fn knowledge_fields(lines: &mut Vec<String>, home: &Path) -> Result<()> {
+    field(lines, "knowledge-home", json!(home))?;
+    command_output(lines, "knowledge-home-entries", Command::new("ls").arg("-1").arg(home))?;
+    let quote = |path: &Path| format!("'{}'", path.display().to_string().replace('\'', "'\\''"));
+    let fd = retrieval_tool(&["fd", "fdfind"]).unwrap_or_else(|| PathBuf::from("fd"));
+    let command = format!(
+        "{} -HI -t l --max-depth 1 . {} | sort | {} outline {} - | cut -f1,3",
+        quote(&fd), quote(&home.join("trees")), quote(&env::current_exe()?), quote(home),
+    );
+    field(lines, "trees-command", json!(command))?;
+    command_output(lines, "trees-output", Command::new("bash").args(["-o", "pipefail", "-c", &command]))
 }
 
 fn references(lines: &mut Vec<String>, key: &str, values: &BTreeSet<String>) -> Result<()> {
@@ -152,6 +186,7 @@ pub(super) fn render(home: &Path, entry: &Value) -> Result<String> {
     let mut stopped = false;
     let mut transport = "unknown".to_owned();
     field(&mut lines, "onboarding-entry", entry["path"].clone())?;
+    knowledge_fields(&mut lines, &home)?;
     match sync::instructions(&home) {
         Ok(receipts) => for receipt in receipts {
             if let Some(state) = receipt["transport"].as_str() { transport = state.to_owned(); }

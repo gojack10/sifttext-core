@@ -10,7 +10,9 @@ position: 2048
 ---
 ## Locate the home
 
-Use the knowledge home named on the command, normally ~/sifttext.
+Use the `knowledge-home` path returned by `sifttext instructions`. The command selects an explicit STORE argument, then `SIFTTEXT_HOME`, then `$HOME/sifttext`.
+
+The receipt shows the home's immediate visible entries, followed by the IDs and names of tree roots under `trees/`. Hidden state such as `.sifttext/` remains at the paths documented below. Use a relevant root ID with `sifttext outline STORE UUID` to see that tree's first level.
 
 Inspect git status there before writing.
 
