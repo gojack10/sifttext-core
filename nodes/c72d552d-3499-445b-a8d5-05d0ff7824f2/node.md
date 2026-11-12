@@ -67,7 +67,7 @@ For drafts that require hosted review, prepare a work packet and follow [Epistem
 
 Follow [Render a Tree Delta](../5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f/node.md) and render the proposal with `sifttext tree-render` so the displayed change is the actual tree delta.
 
-Present the rendered file as made. Do not paraphrase it, re-summarize it, or replace it with your own interpretation. Limit your accompanying words to the check result and the approval request.
+Present the generated review through the HTML, browser link or inline MCP surface selected by Render a Tree Delta. Attach `Review the proposal here: [url]` when a hosted URL is returned. Print a text tree or code-block proposal only on explicit user request. Do not paraphrase or replace the rendered proposal with your own interpretation. Otherwise limit accompanying words to the check result and approval request.
 
 Show the change through [Present the Reviewable Delta](../4036d3c5-e596-4a9c-b432-1c4ccc3162b4/node.md) and obtain the required approval.
 

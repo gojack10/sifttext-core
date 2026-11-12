@@ -28,7 +28,32 @@ For custom selection or a static view:
 sifttext tree-render STORE SELECTION.json
 ```
 
-Each successful command returns fresh `/tmp` file paths and `o200k_base` token counts. Read the returned file and present it as made. Keep the exact candidate available; a temporary render is not durable knowledge.
+Each successful command returns `html`, `data` and `output` paths in a fresh `/tmp` directory, plus the Markdown's `o200k_base` token count. The self-contained HTML is the review surface; `data` contains the exact snapshot and `output` retains the text representation. Keep the exact candidate available.
+
+When signed in and online, the command also saves the snapshot privately and returns `render_id` and `review_url`. Browser access requires the owner's login. In a chat with SiftText MCP, call `show_tree_delta` with that ID to display the same review inline using the existing authenticated connection. Always attach the actual URL:
+
+Review the proposal here: [url]
+
+Use the returned `review_url` in place of `[url]`. When no inline card appears, the link is the review surface. Do not print the tree or proposed bodies in a code block unless the user explicitly requests that representation. `show_tree_text` supplies the saved text tree for that request. Offline or when hosted saving is unavailable, open or attach the local HTML using the environment's supported file route. Never invent a hosted URL.
+
+Rendering does not publish knowledge, approve a proposal or upload attachment bytes. Node references within the snapshot navigate its displayed nodes; external web links retain their destinations. A local filesystem path is a source description, not a remotely accessible attachment. A changed candidate requires a new render. If a saved review returns `This review has expired.`, regenerate it from the current candidate.
+
+### Review surface example
+
+This example is synthetic. A rendering returns a private browser URL, but the chat cannot show inline cards.
+
+**Bad example (A)**
+> Here is the tree instead:
+> ```text
+> [!] Project
+> ```
+
+**Better example (B)**
+> Review the proposal here: https://app.sifttext.com/renders/EXAMPLE_RENDER_ID
+>
+> The check passed. May I save this proposal?
+
+Use the actual returned URL and check result. An offline agent can offer the generated local HTML instead; a user asking for a text tree receives that representation. The review surface does not change who may approve or save knowledge.
 
 ## Selection JSON
 
@@ -98,7 +123,7 @@ When artifacts appear, the header also explains:
 artifacts/ = file links owned by the topic above it: + new link, - removed link, @1 = shorthand for a full path already shown once in this render
 ```
 
-Internal artifact targets use a labelled owner in the forest; external targets retain their absolute paths. Static renders show only the status notation, names and hierarchy, not change marks or proposed bodies.
+Internal artifact targets use a labelled owner in the forest; external targets retain their absolute paths. Static text renders show only the status notation, names and hierarchy. Their HTML also lets the user inspect the selected nodes, without proposal change marks.
 
 Proposal mode includes changed nodes within the selected trees even when selection rules exclude them. Moves show both locations. Deleted subtrees are summarized with omitted-descendant counts. Overlapping selections form one forest. Changed fields and proposed bodies appear beneath it; unchanged ancestors are context, not edits.
 

@@ -9,11 +9,7 @@ position: 2048
 ---
 Receive the complete reviewed candidate from [Draft From Originating Conditions](../d96c84a8-ce99-4474-94ef-7ae1d1db4a1b/node.md).
 
-Explain each change briefly and put its exact fenced diff immediately after the explanation.
-
-Show the complete proposed content for a new node or substantially rewritten procedure.
-
-Use a small Unix tree when nodes are created, moved or removed.
+Use [Render a Tree Delta](../5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f/node.md) to present the exact candidate through its generated HTML, authenticated browser link or inline MCP card. Keep complete proposed content and comparisons inspectable there. Supply a text tree or fenced diff only when the user explicitly asks for that representation.
 
 Identify actual existing UUIDs and label temporary identities for new nodes.
 
@@ -25,7 +21,7 @@ Read [Unix Delta Examples](../198d04b9-1289-4fd1-9050-4d4bf94bfd43/node.md) for 
 
 Read [Tree Development Examples](../f3f63837-0754-4589-9d6b-58a2dd813741/node.md) for structural proposals.
 
-Group large changes into coherent reviewable parts in chat unless the user selects another review surface.
+Help the user review large changes in coherent parts using the available surface; let the user choose where to inspect more detail.
 
 Identify any abridged rendering and keep its complete proposed payload inspectable.
 
