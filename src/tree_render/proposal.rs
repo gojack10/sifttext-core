@@ -488,7 +488,7 @@ fn labels(reader: &Reader<'_>, view: &View, delta: &Delta, anchors: &BTreeMap<St
     labels
 }
 
-fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Proposal, anchors: &BTreeMap<String, String>) -> Result<String> {
+fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Proposal, anchors: &BTreeMap<String, String>) -> Result<(String, String)> {
     let mut output = format!("[+] added, [!] revised, [-] removed, [→][!] moved here, [←] moved away\n{STATUS_NOTATION}\n… omitted context\n");
     if proposal.artifacts.is_empty() {
         output.push_str("Artifact link changes are never derived. None declared; declare intended additions/removals explicitly.\n");
@@ -496,9 +496,11 @@ fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Prop
         output.push_str("artifacts/ = file links owned by the topic above it: + new link, - removed link, @1 = shorthand for a full path already shown once in this render\n");
     }
     output.push('\n');
+    let stage_start = output.len();
     for (i, stage) in proposal.work_record.iter().enumerate() {
         output.push_str(&format!("### {}. {}\n{}\n\n", i+1, stage.title, stage.body));
     }
+    let stage_end = output.len();
     let labels = labels(reader, view, delta, anchors);
     let mut pending: Vec<_> = view.roots.iter().rev().map(|id| (Entry::Node(id.clone()), String::new(), String::new(), String::new())).collect();
     for id in delta.moved.iter().rev().filter(|id| view.routes.contains(*id)) {
@@ -547,6 +549,8 @@ fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Prop
             },
         }
     }
+    let mut tree = output.clone();
+    tree.replace_range(stage_start..stage_end, "");
     // Authored changes belong in their node proposals, never repeated as outline
     // field edits. Complete replacement bodies appear once, not as an inline diff.
     let mut heading = false;
@@ -592,7 +596,7 @@ fn render_delta(reader: &Reader<'_>, view: &View, delta: &Delta, proposal: &Prop
         output.push_str(after.fields.get("content").and_then(Value::as_str).unwrap_or(""));
         if !output.ends_with('\n') { output.push('\n'); }
     }
-    Ok(output)
+    Ok((output, tree))
 }
 
 /// Recognize only this knowledge home's node paths, lexically. Do not follow
@@ -705,7 +709,7 @@ pub(super) fn documents(connection: &Connection, home: &Path, request: &Request,
         forest.named.extend(view.named);
     }
     let anchors = reveal_targets(&mut reader, &mut forest, request, &delta, proposal)?;
-    let text = render_delta(&reader, &forest, &delta, proposal, &anchors)?;
+    let (text, tree) = render_delta(&reader, &forest, &delta, proposal, &anchors)?;
     let labels = labels(&reader, &forest, &delta, &anchors);
     let mut records = Vec::new();
     let mut references = BTreeMap::new();
@@ -725,7 +729,6 @@ pub(super) fn documents(connection: &Connection, home: &Path, request: &Request,
         }
         records.push(json!({"id":id,"label":labels[id],"before":before,"after":after,"changed":delta.changed.contains(id)}));
     }
-    let tree = text.split("\n## Node proposals\n").next().unwrap_or(&text);
     let payload = json!({"tree":tree,"records":records,"references":references,"work_record":proposal.work_record,"base":proposal.base});
     Ok(Ok(vec![Document::new(text, payload)]))
 }
