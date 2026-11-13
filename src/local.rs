@@ -261,10 +261,12 @@ pub(crate) fn reader_git(path: &Path, args: &[&str]) -> Result<String> {
 /// Let Git repack and expire old unreachable objects at a completed write
 /// boundary. Keep native custody and Git's normal two-week grace period.
 pub fn maintain_git(path: &Path) {
+    // gc.autoDetach keeps the work in the foreground on every supported Git;
+    // the --no-detach flag exists only from Git 2.47.
     if let Err(error) = reader_git(path, &[
         "-c", "gc.auto=6700", "-c", "gc.autoPackLimit=50",
         "-c", "gc.pruneExpire=2.weeks.ago", "-c", "gc.autoDetach=false",
-        "gc", "--auto", "--no-detach",
+        "gc", "--auto",
     ]) {
         eprintln!("Git maintenance deferred for {}: {error}", path.display());
     }
