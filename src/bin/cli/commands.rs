@@ -68,7 +68,7 @@ const GROUPS: &[Group] = &[
             command("create WORKTREE NAME SUMMARY [PARENT_UUID]", "Create a root or child"),
             command("normalize BEFORE WORKTREE [EXPLICIT_UUID ...] [-y]", "Apply draft status changes"),
             command("submit REPO DRAFT COMMIT BASE [WORK_PACKET.json] [EXPLICIT_UUID ... | --received-statuses] [--skip-epistemic-check | --accept-despite-findings] [-y]", "Publish a draft. Hosted review requires its work packet. Either override requires the user's explicit approval for this save."),
-            command("trial-enable HOME", "After transcript-upload consent, require server chat custody before trial submissions"),
+            command("trial-enable HOME", "Require server chat custody before trial submissions"),
             command("trial-upload HOME CHAT_FILE", "Upload the exact UTF-8 harness chat to the signed-in account for later drafting (128 MiB per file; 5 GB stored per account; no automatic expiry)"),
             command("accepted REPO [-y]", "Open the checked accepted view"),
             command("advance HOME", "Fast-forward a clean home"),
