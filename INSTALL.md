@@ -10,9 +10,11 @@ For an authorized new installation:
 curl -fsSL https://sifttext.com/install | sh
 ```
 
+The installer supplies missing tools, opens sign-in in the user's browser and finishes account setup. Sign-in is required. If a run stops before it finishes, run it again; it continues from what is missing.
+
 Open a new shell to load any PATH change made by the installer. In the current shell, the default launcher is `"$HOME/.local/share/sifttext/sifttext"`.
 
-Ask the agent to run `sifttext instructions` and follow the returned entry file. Paid services also require the optional account setup below.
+Then run `sifttext instructions` and follow the returned entry file.
 
 Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
 

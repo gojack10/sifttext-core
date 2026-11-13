@@ -48,7 +48,7 @@ The preferred path is the official installer:
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-With the user's permission, the installer installs SiftText and gives the user and agent their next steps.
+With the user's permission, the installer installs SiftText and the tools it needs, opens sign-in in the user's browser and finishes account setup. Sign-in is required. If a run stops before it finishes, run it again; it continues from what is missing.
 
 - For local Core builds, see [INSTALL.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/INSTALL.md).
 
