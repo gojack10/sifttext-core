@@ -1069,7 +1069,7 @@ fn show_account(account: &Value) -> Result<()> {
         "subscription_status":account["subscription_status"], "paid":account["paid"],
         "subscription_plan":account["subscription_plan"],
         "guide":guide_path()?,
-        "next":"Read the installed account/sync guide and inspect local consent before setup. Login and payment do not authorize upload."});
+        "next":"Sharing selection and sync recovery are in the installed account/sync guide."});
     writeln!(
         std::io::stdout(),
         "{}",
