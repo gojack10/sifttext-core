@@ -215,8 +215,8 @@ fn git_config_value(path: &Path, key: &str) -> Result<String> {
             .args(["config", "--get", key])
             .output()?,
     )
-    .map_err(|error| {
-        format!("cannot read Git config {key}; select this workspace's commit identity: {error}")
+    .map_err(|_| {
+        "Read https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md"
     })?;
     require(
         !value.is_empty() && !value.contains(['\n', '\r', '\0', '<', '>']),
