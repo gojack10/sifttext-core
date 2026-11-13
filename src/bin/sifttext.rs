@@ -9,7 +9,9 @@ use serde_json::json;
 use sifttext_file_graph::{Policy, Result, local};
 use std::{
     collections::BTreeSet,
+    fs,
     io::{Read, Write},
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -308,6 +310,27 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             if !explicit.iter().all(|id| sifttext_file_graph::uuid(id)) {
                 return Err("append only full UUIDs for explicit status requests".into());
             }
+            if sifttext_file_graph::sync_policy::config(Path::new(repo))?
+                .pointer("/trial/chat_upload_required") == Some(&json!(true)) {
+                let receipt = fs::read(Path::new(repo).join(".sifttext/trial/chat-upload.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+                let current = receipt.as_ref().is_some_and(|receipt| {
+                    let source = receipt.get("source_path").and_then(|value| value.as_str());
+                    let expected = receipt.get("chat_sha256").and_then(|value| value.as_str());
+                    match (source, expected) {
+                        (Some(source), Some(expected)) => fs::read(source)
+                            .is_ok_and(|bytes| sifttext_file_graph::sha256(&bytes) == expected),
+                        _ => false,
+                    }
+                });
+                if !current {
+                    return Err("trial_chat_upload_required: run `sifttext trial-upload HOME <harness chat file>` then resubmit".into());
+                }
+                let hash = receipt.as_ref().and_then(|value| value["chat_sha256"].as_str())
+                    .ok_or("trial_chat_upload_required: upload the harness chat")?;
+                sifttext_file_graph::hosted_checks::confirm_trial_chat(hash, commit, base)?;
+            }
             let review = sifttext_file_graph::hosted_checks::PublicationReview::new(
                 packet.as_deref().map(Path::new), skip, accept_despite_findings);
             let receipt = local::submit_with_options(
@@ -350,6 +373,48 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 return Err(error);
             }
             return Ok(());
+        }
+        [cmd, home, chat] if cmd == "trial-upload" => {
+            let bytes = fs::read(chat)?;
+            if bytes.is_empty() {
+                return Err("trial chat file is empty".into());
+            }
+            let server_receipt = sifttext_file_graph::hosted_checks::upload_trial_chat(&bytes)?;
+            let hash = sifttext_file_graph::sha256(&bytes);
+            let trial_dir = Path::new(home).join(".sifttext/trial");
+            let chats_dir = trial_dir.join("chats");
+            fs::create_dir_all(&chats_dir)?;
+            fs::set_permissions(&trial_dir, fs::Permissions::from_mode(0o700))?;
+            fs::set_permissions(&chats_dir, fs::Permissions::from_mode(0o700))?;
+            let stored = chats_dir.join(format!("{hash}.jsonl"));
+            if !stored.exists() {
+                fs::write(&stored, &bytes)?;
+            }
+            let receipt = json!({
+                "status": "trial_chat_uploaded",
+                "server_receipt": server_receipt,
+                "chat_sha256": hash,
+                "bytes": bytes.len(),
+                "source_path": fs::canonicalize(chat)?.display().to_string(),
+                "stored_path": stored.display().to_string(),
+                "uploaded_at_unix": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs())
+                    .unwrap_or_default(),
+            });
+            fs::write(trial_dir.join("chat-upload.json"), serde_json::to_vec_pretty(&receipt)?)?;
+            receipt
+        }
+        [cmd, home] if cmd == "trial-enable" => {
+            let mut config = sifttext_file_graph::sync_policy::config(Path::new(home))?;
+            if !config["trial"].is_object() {
+                config["trial"] = json!({});
+            }
+            config["trial"]["chat_upload_required"] = json!(true);
+            let state_dir = Path::new(home).join(".sifttext");
+            fs::create_dir_all(&state_dir)?;
+            fs::write(state_dir.join("config.json"), serde_json::to_vec_pretty(&config)?)?;
+            json!({"status": "trial_enabled", "chat_upload_required": true})
         }
         [cmd, repo, rest @ ..] if cmd == "accepted" && (rest.is_empty() || rest == ["-y"]) => {
             let force = !rest.is_empty();

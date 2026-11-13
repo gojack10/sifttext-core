@@ -381,7 +381,8 @@ fn http_response(
     if let Some((content_type, data)) = body {
         config.push_str(&format!("header = {}\n",
             config_string(&format!("Content-Type: {content_type}"))?));
-        if data.len() > CHECK_REQUEST_LIMIT {
+        if content_type == "application/octet-stream" || data.len() > CHECK_REQUEST_LIMIT {
+            // Raw transcripts contain newlines and must travel as exact bytes, not config text.
             // curl limits a physical config line to 10 MiB. Selected sync
             // bodies can be larger; keep them in an owner-only temporary file
             // for this request, while authorization stays off argv and disk.
@@ -611,7 +612,18 @@ impl SyncAccess {
             crate::require(encoded.as_ref().is_none_or(|body| body.len() <= CHECK_REQUEST_LIMIT),
                 "Encoded check request exceeds 128 KiB. Select a smaller input to allow for JSON fields and escaping.")?;
         }
-        let body = encoded.as_deref().map(|s| ("application/json", s));
+        self.request_body(method, path, encoded.as_deref().map(|s| ("application/json", s)), key)
+    }
+
+    pub(crate) fn upload_trial_chat(&mut self, text: &str) -> Result<(u16, Value)> {
+        crate::require(!text.is_empty() && text.len() <= 128 * 1024 * 1024,
+            "Trial chat must contain 1 byte to 128 MiB of UTF-8 text")?;
+        self.request_body("POST", "/api/checks/trial-chats",
+            Some(("application/octet-stream", text)), None)
+    }
+
+    fn request_body(&mut self, method: &str, path: &str,
+        body: Option<(&str, &str)>, key: Option<&str>) -> Result<(u16, Value)> {
         let Some(credentials) = self.credentials.as_ref() else {
             return http_method_idempotent(&origin()?, path, None, body, method, key);
         };

@@ -312,6 +312,27 @@ impl std::fmt::Display for ReportedCheckFailure {
 
 impl std::error::Error for ReportedCheckFailure {}
 
+/// Store the exact transcript in the account-scoped checker database, without a model call.
+pub fn upload_trial_chat(bytes: &[u8]) -> Result<Value> {
+    let mut access = SyncAccess::checks()?;
+    let (status, receipt) = access.upload_trial_chat(std::str::from_utf8(bytes)?)?;
+    require(status == 200 && receipt["status"] == "trial_chat_uploaded"
+        && receipt["sha256"].as_str() == Some(crate::sha256(bytes).as_str())
+        && receipt["bytes"].as_u64() == Some(bytes.len() as u64),
+        &format!("Trial chat upload not confirmed: {}", receipt["detail"]))?;
+    Ok(receipt)
+}
+
+/// Confirm custody under the current login and associate this attempt with its Git cutoff.
+pub fn confirm_trial_chat(hash: &str, candidate: &str, base: &str) -> Result<Value> {
+    let mut access = SyncAccess::checks()?;
+    let (status, receipt) = access.request("POST", "/api/checks/trial-submissions",
+        Some(&json!({"chat_sha256":hash,"candidate":candidate,"base":base})))?;
+    require(status == 200 && receipt["status"] == "trial_chat_confirmed",
+        &format!("trial_chat_upload_required: server custody not confirmed: {}", receipt["detail"]))?;
+    Ok(receipt)
+}
+
 pub fn run(args: &[String]) -> Result<()> {
     let request = match args {
         [cmd, file] if cmd == "slop-check" =>

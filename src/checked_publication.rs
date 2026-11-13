@@ -474,7 +474,8 @@ fn ignored_entry(root: &Path, path: &Path, durable_home: bool) -> Result<()> {
     }
     if metadata.is_dir() {
         let known = match parts.as_slice() {
-            [".sifttext"] | [".sifttext", "outlines"] | [".sifttext", "outline-stage"] => true,
+            [".sifttext"] | [".sifttext", "outlines"] | [".sifttext", "outline-stage"]
+            | [".sifttext", "trial"] | [".sifttext", "trial", "chats"] => true,
             [".sifttext", "outlines", id] => crate::uuid(id),
             // Git collapses a deleted owner's remaining ignored cache files into
             // this directory. Check every leaf; native indexing still requires
@@ -499,6 +500,8 @@ fn ignored_entry(root: &Path, path: &Path, durable_home: bool) -> Result<()> {
             // Durable-home operation state survives reader advancement. It is
             // not disposable draft data: the importer owns journal retirement
             // and holds its lock through publication and finishing.
+            || (durable_home && (path == Path::new(".sifttext/trial/chat-upload.json")
+                || matches!(parts.as_slice(), [".sifttext", "trial", "chats", _])))
             || (durable_home && [
                 ".sifttext/config.json",
                 ".sifttext/format-migration.json",
