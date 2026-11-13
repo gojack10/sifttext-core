@@ -22,7 +22,7 @@ Installation defaults to `~/.local/share/sifttext` for the application and `~/si
 
 To upgrade a healthy managed installation, use `sifttext update` within the user's permission because rerunning the installer leaves the existing application in place. Follow [INSTALL.md](INSTALL.md) for version-specific update settings and recovery.
 
-For Platform access, follow the optional login section of [INSTALL.md](INSTALL.md), leaving browser authorization and payment to the human.
+For account access, follow [INSTALL.md](INSTALL.md), leaving browser authorization and payment to the human.
 
 Keep native credentials outside Git.
 

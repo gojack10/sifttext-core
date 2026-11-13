@@ -12,7 +12,7 @@ For an authorized new installation:
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-The installer opens sign-in in the user's browser and finishes account setup. Sign-in is required; the human completes browser authorization. If the browser does not open, give the user the URL printed by the installer. If sign-in stops or expires, have the user complete sign-in on the next run and rerun the installer; it continues from what is missing.
+The installer opens sign-in in the user's browser and finishes account setup. Sign-in is required; the human completes browser authorization. If the installer stops with a sign-in URL, give it to the user at once; the link stays open for about ten minutes. Run the installer again once they have signed in; it continues from what is missing.
 
 Open a new shell to load any PATH change made by the installer. In the current shell, the default launcher is `"$HOME/.local/share/sifttext/sifttext"`.
 
@@ -54,7 +54,7 @@ Use the installer to acquire its prerequisites where it can. It attempts Linux p
 | curl | The quick-start download itself needs curl. If missing, install it within permission before running the command. Once running, the installer can attempt Linux package installation. |
 | tar | The installer attempts Linux package installation if missing. If it remains unavailable, install it within permission and rerun. |
 | shasum or sha256sum | One must be available. If missing, install a SHA-256 tool within permission and rerun. |
-| Git | The installer starts Apple's developer-tools installation on macOS or attempts Linux package installation. If it stops, have the user finish the macOS window or install Git within permission, then rerun. |
+| Git | The installer starts Apple's developer-tools installation on macOS or attempts Linux package installation. If it stops, have the user finish the macOS window or run the command the installer names, then rerun. |
 | rg and fd | The installer attempts to supply missing search tools from pinned official releases. Follow the installed retrieval guide if either remains unavailable. |
 
 The installer reuses configured Git identity where available and supplies missing name/email fields as `SiftText Agent <agent@sifttext.com>` for this home only. It leaves the user's global Git configuration unchanged; no identity question is needed.
