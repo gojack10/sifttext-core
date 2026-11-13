@@ -4,25 +4,27 @@ SiftText keeps an agent's project knowledge in local Markdown files with Git his
 
 ## Quick start
 
+A user can ask their agent: “Please install sifttext.com.” That request authorizes installation and saving the running agent's persistent SiftText instructions.
+
 For an authorized new installation:
 
 ```sh
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-The installer supplies missing tools, opens sign-in in the user's browser and finishes account setup. Sign-in is required. If a run stops before it finishes, run it again; it continues from what is missing.
+The installer opens sign-in in the user's browser and finishes account setup. Sign-in is required; the human completes browser authorization. If the browser does not open, give the user the URL printed by the installer. If sign-in stops or expires, have the user complete sign-in on the next run and rerun the installer; it continues from what is missing.
 
 Open a new shell to load any PATH change made by the installer. In the current shell, the default launcher is `"$HOME/.local/share/sifttext/sifttext"`.
 
-Then run `sifttext instructions` and follow the returned entry file.
+Run the installed command with `instructions`, read the returned entry file and follow Maintain Memory Continuity to save this agent's persistent SiftText instructions. The install request already authorizes that setup; do not ask again. Preserve existing instructions, report any unsupported harness step as unfinished, then return to the user's task.
+
+For an activated trial, the installer prints `Trial active until YYYY-MM-DD.` when the expiry date is available, or `Trial active.` while it is not yet available. It also prints the notice:
+
+> We do not sell or share your data. By using SiftText you agree to our Terms: sifttext.com/terms
+
+If the user will not sign in, use [the source-build route](#build-from-source) instead of the installer.
 
 Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
-
-Update prepares the managed knowledge home with the incoming executable before activating it. Older homes are converted automatically in a temporary native draft: legacy child lists become per-child positions, and UUID-targeted wiki body references become relative Markdown links. Completion is recorded in the home's `.sifttext/config.json` after publication and cleanup, preserving other settings. Existing live Git worktrees are prepared where parseable; another owner's unfinished draft is retained for reconciliation. Installation and new-worktree creation prepare their own data too. Ordinary reads refresh authored edits through Git, but never perform a processor/schema upgrade or finish an interrupted application update.
-
-For the one-time transition from v0.3.14 or earlier, the old updater cannot run this new preparation step. After that upgrade, run `sifttext update --prepare` once before using indexed commands. This offline operation also prepares a restored or separately managed view; source builders can run `sifttext index /absolute/path/to/store` with their new executable. Except for the one-time automatic format conversion, these operations do not change authored knowledge. A missing or incompatible cache produces an explicit preparation request rather than hiding a rebuild inside a read.
-
-An updater from v0.3.15 or earlier cannot read a knowledge package that keeps display order in per-child positions. It stops with `failure_stage:candidate_capture` and a missing `children.order` path after caching the new release under the installation's `releases/` directory. Run that cached release's executable once through the installation root, for example `SIFTTEXT_INSTALL_ROOT="$HOME/.local/share/sifttext" "$HOME/.local/share/sifttext/releases/<newest release>/sifttext" update`. It converts the home, merges the official knowledge and activates itself. Official nodes whose only local change is that conversion take the incoming text without a repair worktree. Later updates use the managed command normally.
 
 ## Establish permission and destinations
 
@@ -41,28 +43,21 @@ When a consequential choice blocks setup, ask the human while continuing indepen
 
 Delegate only through the harness's supported capabilities and within the user's cost permission.
 
-## Prepare the machine and Git identity
+## Prepare the machine
 
-Consult the [latest release](https://github.com/gojack10/sifttext-core/releases/latest) for supported platforms and operating-system requirements.
+The installer supports macOS 15 or newer and Linux with glibc 2.35 or newer, on arm64 or x86_64. Consult the [latest release](https://github.com/gojack10/sifttext-core/releases/latest) for its platform packages.
 
-| Required tool | Purpose |
+Use the installer to acquire its prerequisites where it can. It attempts Linux package installation only as root or through passwordless sudo; it never prompts for a password. Obtain approval for any additional privileged or system changes.
+
+| Prerequisite | What to do if setup stops |
 | --- | --- |
-| Git | Knowledge history. |
-| curl | HTTPS downloads. |
-| tar | Package extraction. |
-| shasum or sha256sum | Published checksum verification. |
+| curl | The quick-start download itself needs curl. If missing, install it within permission before running the command. Once running, the installer can attempt Linux package installation. |
+| tar | The installer attempts Linux package installation if missing. If it remains unavailable, install it within permission and rerun. |
+| shasum or sha256sum | One must be available. If missing, install a SHA-256 tool within permission and rerun. |
+| Git | The installer starts Apple's developer-tools installation on macOS or attempts Linux package installation. If it stops, have the user finish the macOS window or install Git within permission, then rerun. |
+| rg and fd | The installer attempts to supply missing search tools from pinned official releases. Follow the installed retrieval guide if either remains unavailable. |
 
-Install missing prerequisites within existing permission, obtaining approval for additional privileged or system changes.
-
-Reuse the Git name and email selected for this knowledge home. If no identity is available, ask the user which to use and offer `SiftText Agent <agent@sifttext.com>` as a possible default.
-
-Apply the chosen identity to this installation:
-
-1. Create a private temporary Git configuration with `git config --file`.
-2. Set `GIT_CONFIG_GLOBAL` to that file for the installer invocation.
-3. Let initialization copy the identity into the knowledge repository's local config.
-
-This leaves the user's global Git configuration unchanged.
+The installer reuses configured Git identity where available and supplies missing name/email fields as `SiftText Agent <agent@sifttext.com>` for this home only. It leaves the user's global Git configuration unchanged; no identity question is needed.
 
 ## Optional installer inspection
 
@@ -123,7 +118,9 @@ Within installation permission, execute the reviewed file:
 SIFTTEXT_RELEASE="$release" sh "$review/install.sh"
 ```
 
-The installer verifies the platform package's checksum and archive paths before extraction, then starts its staged runtime before placing the application at its destination.
+The installer verifies the platform package's checksum and archive paths before extraction, starts its staged runtime, completes required sign-in and initializes the knowledge home before placing a new application at its destination. It exposes `~/.local/bin/sifttext` and, when needed, adds that directory to supported shell startup files for the next shell.
+
+If it stops, retain the diagnostic and fix the named prerequisite before rerunning. Do not bypass a checksum, path or command-conflict refusal. A recognized managed application is reused rather than upgraded; use `sifttext update` to upgrade it. An unrelated application directory or `sifttext` command is preserved and requires a destination/conflict decision before continuing.
 
 | Knowledge destination | Installer behavior |
 | --- | --- |
@@ -143,6 +140,14 @@ cd -P -- "$HOME/sifttext" && pwd -P
 
 Use the returned physical path. Retain any path refusal for diagnosis instead of substituting a symlink alias.
 
+After a successful run, [complete this agent's setup](#complete-this-agents-setup) before reporting installation complete. The remaining sections are references for source builds, skills, accounts and later maintenance.
+
+## Build from source
+
+For someone who will not sign in, use the [GitHub source repository](https://github.com/gojack10/sifttext-core) instead of the public installer. Follow [README's source-build instructions](README.md#install-from-source), beginning with the checkout's `AGENTS.md` and local instruction pipeline. That route covers compiler/tool acquisition, the build and `install-local.sh`, without the installer's required sign-in.
+
+Keep the source checkout, installed application and knowledge home separate. If a source-build prerequisite or permission is missing, retain the diagnostic and resolve it before continuing. Once the source-built command is installed, [complete this agent's setup](#complete-this-agents-setup) using its actual launcher and knowledge-home path.
+
 ## Commit shortcut
 
 Initialization and managed update preparation install a missing `sifttext-commit` skill for existing Codex, Claude Code and Pi user directories. The bundled skill points to SiftText Commit in the actual knowledge home; its maintained procedure and approval boundary remain in that node.
@@ -157,9 +162,18 @@ Existing skill directories are preserved, including different content or a point
 
 Start a fresh conversation to discover the skill, or use Pi's `/reload`. Other harnesses can install the [bundled pointer template](integrations/skills/sifttext-commit/SKILL.md) using their supported skill mechanism, replacing `{{COMMIT_NODE}}` with the verified absolute path to `nodes/c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md` in the user's knowledge home. Skill discovery depends on the harness's own settings and support.
 
-## Optional paid services
+## Account and subscription reference
 
-Choose a plan and sign in through Zitadel to continue to Stripe checkout.
+The installer runs `sifttext login` itself. Do not add a separate login or checkout step to a successful new installation. For a later interrupted or expired connection, run `sifttext login` again and let the human complete browser authorization. If the browser stays closed, give the user the authorization URL printed in the terminal.
+
+Production login connects both the account and Workspace in one command, using browser authorization with PKCE and local callbacks. Both grants must identify the same SiftText account before they are saved. Keep the private credential directory `~/.config/sifttext/account` outside the knowledge home and Git.
+
+| Command | Effect |
+| --- | --- |
+| `sifttext account` | Reads server-confirmed account facts and returns the installed account guide path. |
+| `sifttext logout` | Removes local credentials, including offline, and attempts remote refresh-token revocation. Already-issued access tokens expire normally. |
+
+For a user-requested subscription purchase, use the plan's Stripe checkout and leave payment to the human.
 
 | Plan | Price | Included services |
 | --- | --- | --- |
@@ -183,55 +197,13 @@ Handle an existing subscription according to its current state:
 | Existing $20 plan | Keep its current price as Plus. |
 | Existing $50 plan | Keep its current price as Pro. |
 
-Log in through the CLI once Platform's waiting page confirms paid activation.
-
-```sh
-sifttext login
-```
-
-Production login connects both your account and Workspace in one command.
-It uses browser authorization with PKCE and local callbacks, reusing your
-existing SiftText browser session when available. The command completes the
-account authorization, then redirects the same tab through Workspace authorization.
-Both grants must identify the same SiftText account before they are saved.
-The tab confirms completion after both grants are verified and saved.
-If the browser stays closed, open the authorization URL printed in the terminal.
-An interrupted connection can be resumed by running `sifttext login` again.
-Use `sifttext login --resource https://workspace.sifttext.com/mcp` only when
-you deliberately want to authorize Workspace separately.
-
-| Server-confirmed access | Login result |
-| --- | --- |
-| `paid:true` | Prints `Authentication successful.` |
-| Pending or inactive payment | Follow the Platform link and check payment status before retrying. |
-
-| Command | Effect |
-| --- | --- |
-| `sifttext account` | Reads server-confirmed account facts and returns the installed account/sync guide path. |
-| `sifttext logout` | Removes local credentials, including offline, and attempts remote refresh-token revocation. |
-
-Already-issued access tokens expire normally. Keep the private credential directory `~/.config/sifttext/account` outside the knowledge home and Git.
-
-Offline knowledge work and official updates remain available without payment or cloud login.
-
-### Authorize knowledge sharing
-
-Record sharing permission and any local-only exclusions using the installed account/sync guide before enabling transfers.
-
-For remote-client OAuth setup and the hosted instruction bootstrap, follow [Connect Hosted MCP](nodes/c5dd1192-f75f-4369-bd9e-852f86b55121/node.md).
-
-| Command | Effect |
-| --- | --- |
-| `sync enable HOME` | Records consent and installs native user-session scheduling. |
-| `sync disable HOME` | Stops further transfers and scheduling while retaining both copies. |
-| `sync decline HOME` | Records the decision to decline. |
-| `sync policy HOME FILE.json` | Changes selection while preserving consent. |
-
-After an upload acknowledges durable storage of the exact Git commit, follow pending work in sync status until the server finishes processing it.
-
-An exclusion can leave earlier uploaded history in place after the current hosted content is removed by server processing.
-
 ## Updates and recovery
+
+Update prepares the managed knowledge home with the incoming executable before activating it. Older homes are converted automatically in a temporary native draft: legacy child lists become per-child positions, and UUID-targeted wiki body references become relative Markdown links. Completion is recorded in the home's `.sifttext/config.json` after publication and cleanup, preserving other settings. Existing live Git worktrees are prepared where parseable; another owner's unfinished draft is retained for reconciliation. Installation and new-worktree creation prepare their own data too. Ordinary reads refresh authored edits through Git, but never perform a processor/schema upgrade or finish an interrupted application update.
+
+For the one-time transition from v0.3.14 or earlier, the old updater cannot run this new preparation step. After that upgrade, run `sifttext update --prepare` once before using indexed commands. This offline operation also prepares a restored or separately managed view; source builders can run `sifttext index /absolute/path/to/store` with their new executable. Except for the one-time automatic format conversion, these operations do not change authored knowledge. A missing or incompatible cache produces an explicit preparation request rather than hiding a rebuild inside a read.
+
+An updater from v0.3.15 or earlier cannot read a knowledge package that keeps display order in per-child positions. It stops with `failure_stage:candidate_capture` and a missing `children.order` path after caching the new release under the installation's `releases/` directory. Run that cached release's executable once through the installation root, for example `SIFTTEXT_INSTALL_ROOT="$HOME/.local/share/sifttext" "$HOME/.local/share/sifttext/releases/<newest release>/sifttext" update`. It converts the home, merges the official knowledge and activates itself. Official nodes whose only local change is that conversion take the incoming text without a repair worktree. Later updates use the managed command normally.
 
 Managed installations fetch release notices in a detached process so ordinary commands can use the cached result without waiting for the network.
 
@@ -315,12 +287,11 @@ For rollback, use `sifttext update --rollback` and follow the installed guide th
 
 Enable private session retention only when the user requests it, following [the session-retention guide](integrations/pi/README.md). Keep its archive outside the knowledge home so transcripts remain separate from submitted knowledge.
 
-## Return to the user's task
+## Complete this agent's setup
 
-Start the runtime and locate its instruction entry:
+After the installer finishes, use the absolute command it printed if PATH is not yet available. Locate its instruction entry:
 
 ```sh
-sifttext runtime-check
 sifttext instructions
 ```
 
@@ -341,7 +312,7 @@ During authorized setup:
 
 | Setup step | Action |
 | --- | --- |
-| Configure the harness | Follow Maintain Memory Continuity so future sessions read the entry, preserving existing instructions. |
+| Configure the harness | Follow Maintain Memory Continuity so future sessions read the entry, preserving existing instructions. The install request already authorizes saving this agent's persistent SiftText instructions; do not ask again. |
 | Handle a blocked setup | Report missing permission or unsupported harness functionality as unfinished setup. |
 | Continue | Return to the user's task, or ask what they want to work on. |
 
