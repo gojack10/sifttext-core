@@ -422,9 +422,9 @@ pub(crate) fn publication(
             Err(error) => unavailable(error),
             Ok(true) => match SyncAccess::checks() {
                 Ok(mut access) if replication => publication_with_access(reader, after, &scope, &mut access, true),
-                Ok(mut access) => match pro_account(&mut access) {
-                    Ok(true) => review_packet(reader, after, &scope, options.work_packet, &mut access),
-                    Ok(false) => json!({"status":"not_required","reason":"free_account"}),
+                Ok(mut access) => match account_balance(&mut access) {
+                    Ok(account) if account["paid"] == true => review_packet(reader, after, &scope, options.work_packet, &mut access),
+                    Ok(_) => json!({"status":"not_required","reason":"no_active_subscription"}),
                     Err(error) => unavailable(error),
                 },
                 Err(error) => unavailable(error),
@@ -499,8 +499,7 @@ fn unavailable(error: Box<dyn std::error::Error>) -> Value {
     json!({"status":"unchecked","reason":"service_unavailable","detail":error.to_string(),"uncertain_usage":true})
 }
 
-/// Subscribers and accounts with introductory Pro access get publication review.
-fn pro_account(access: &mut SyncAccess) -> Result<bool> {
+fn account_balance(access: &mut SyncAccess) -> Result<Value> {
     let (status, account) = access.request("GET", &format!("{ROOT}/balance"), None)?;
     require(
         status == 200 && account["paid"].is_boolean(),
@@ -508,6 +507,12 @@ fn pro_account(access: &mut SyncAccess) -> Result<bool> {
             account["error"].as_str().unwrap_or("invalid_account_response"),
             account["detail"].as_str().unwrap_or("The service did not confirm subscription status.")),
     )?;
+    Ok(account)
+}
+
+/// Sync retains publication review for subscribers and introductory Pro access.
+fn pro_account(access: &mut SyncAccess) -> Result<bool> {
+    let account = account_balance(access)?;
     // Checkers without introductory access report only the subscription.
     Ok(account["pro_access"].as_bool().unwrap_or(account["paid"] == true))
 }
@@ -801,6 +806,7 @@ pub fn render_publication(check: &Value) -> String {
         Some("not_required") if check["reason"] == "no_changed_node_text" => lines.push("Epistemic submit check: no changed node text.".into()),
         Some("not_required") if check["reason"] == "upload_excluded" => lines.push("Epistemic submit check: all changed knowledge excluded by upload policy; no review, upload or charge.".into()),
         Some("not_required") if check["reason"] == "accepted_replication" => (),
+        Some("not_required") if check["reason"] == "no_active_subscription" => lines.push("Epistemic submit check: not applicable without an active subscription; no review or charge.".into()),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),
         Some("unchecked") if check["waived"] == true => lines.push("Epistemic review explicitly waived for this save.".into()),
         Some("unchecked") if check["blocked"] == true => (),
