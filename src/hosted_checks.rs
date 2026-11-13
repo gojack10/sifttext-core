@@ -510,11 +510,10 @@ fn account_balance(access: &mut SyncAccess) -> Result<Value> {
     Ok(account)
 }
 
-/// Sync retains publication review for subscribers and introductory Pro access.
-fn pro_account(access: &mut SyncAccess) -> Result<bool> {
-    let account = account_balance(access)?;
-    // Checkers without introductory access report only the subscription.
-    Ok(account["pro_access"].as_bool().unwrap_or(account["paid"] == true))
+/// Sync reviews a publication only for an active subscriber. An account on the
+/// introductory trial sends nothing to the reviewer and is charged nothing.
+fn subscriber(access: &mut SyncAccess) -> Result<bool> {
+    Ok(account_balance(access)?["paid"] == true)
 }
 
 fn read_work_packet(path: &Path) -> Result<WorkPacket> {
@@ -651,8 +650,8 @@ fn publication_with_access(
 ) -> Value {
     let mut results = Vec::new();
     let mut attempt = || -> Result<Value> {
-        if subscription_only && !pro_account(access)? {
-            return Ok(json!({"status":"not_required","reason":"free_account"}));
+        if subscription_only && !subscriber(access)? {
+            return Ok(json!({"status":"not_required","reason":"no_active_subscription"}));
         }
         for id in &scope.included {
             let text = scope.markdown(reader, after, id)?;
