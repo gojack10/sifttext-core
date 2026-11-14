@@ -1088,7 +1088,7 @@ fn main() {
     let mut hosted_summary = None;
     let result = (|| -> Result<()> {
         if !updating && !authentication && std::env::args().nth(1).as_deref() == Some("instructions") {
-            sifttext_file_graph::updates::admit_update();
+            sifttext_file_graph::updates::admit_update()?;
         }
         let _operation = if updating || authentication {
             None
