@@ -32,15 +32,15 @@ Each successful command returns `html`, `data` and `output` paths in a fresh `/t
 
 When signed in and online, the command also saves the snapshot privately and returns `render_id` and `review_url`. Browser access requires the owner's login. In a chat with SiftText MCP, call `show_tree_delta` with that ID to display the same review inline using the existing authenticated connection. Always attach the actual URL:
 
-Review the proposal here: [url]
+Review the saved change here: [url]
 
-Use the returned `review_url` in place of `[url]`. When no inline card appears, the link is the review surface. Do not print the tree or proposed bodies in a code block unless the user explicitly requests that representation. `show_tree_text` supplies the saved text tree for that request. Offline or when hosted saving is unavailable, open or attach the local HTML using the environment's supported file route. Never invent a hosted URL.
+During a proposal-only assignment, write `Review the proposal here: [url]` instead. Use the returned `review_url` in place of `[url]`. When no inline card appears, the link is the review surface. Do not print the tree or proposed bodies in a code block unless the user explicitly requests that representation. `show_tree_text` supplies the saved text tree for that request. Offline or when hosted saving is unavailable, open or attach the local HTML using the environment's supported file route. Never invent a hosted URL.
 
 Rendering does not publish knowledge, approve a proposal or upload attachment bytes. Node references within the snapshot navigate its displayed nodes; external web links retain their destinations. A local filesystem path is a source description, not a remotely accessible attachment. A changed candidate requires a new render. If a saved review returns `This review has expired.`, regenerate it from the current candidate.
 
 ### Review surface example
 
-This example is synthetic. A rendering returns a private browser URL, but the chat cannot show inline cards.
+This example is synthetic. The user asked to save, the save succeeded, and the rendering returned a private browser URL, but the chat cannot show inline cards.
 
 **Bad example (A)**
 > Here is the tree instead:
@@ -49,9 +49,9 @@ This example is synthetic. A rendering returns a private browser URL, but the ch
 > ```
 
 **Better example (B)**
-> Review the proposal here: https://app.sifttext.com/renders/EXAMPLE_RENDER_ID
+> Saved to SiftText. The check passed.
 >
-> The check passed. May I save this proposal?
+> Review the saved change here: https://app.sifttext.com/renders/EXAMPLE_RENDER_ID
 
 Use the actual returned URL and check result. An offline agent can offer the generated local HTML instead; a user asking for a text tree receives that representation. The review surface does not change who may approve or save knowledge.
 
@@ -127,4 +127,4 @@ Internal artifact targets use a labelled owner in the forest; external targets r
 
 Proposal mode includes changed nodes within the selected trees even when selection rules exclude them. Moves show both locations. Deleted subtrees are summarized with omitted-descendant counts. Overlapping selections form one forest. Changed fields and proposed bodies appear beneath it; unchanged ancestors are context, not edits.
 
-Return the rendered proposal to SiftText Commit with its check result and the approval request required by the user's grant.
+Return the render to SiftText Commit, which shows it with the check result after the save succeeds.

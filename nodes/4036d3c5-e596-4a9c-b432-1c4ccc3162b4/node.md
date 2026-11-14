@@ -1,10 +1,10 @@
 ---
 id: "4036d3c5-e596-4a9c-b432-1c4ccc3162b4"
 name: "Present the Reviewable Delta"
-micro_summary: "Shows the user exactly what would change before asking for approval."
+micro_summary: "Shows the user exactly what a triggered save changed."
 status: "resolved"
 see_also: []
-scope: "Present the complete proposed knowledge change for review."
+scope: "Present the complete saved knowledge change for review."
 position: 2048
 ---
 Receive the complete reviewed candidate from [Draft From Originating Conditions](../d96c84a8-ce99-4474-94ef-7ae1d1db4a1b/node.md).
@@ -25,10 +25,8 @@ Help the user review large changes in coherent parts using the available surface
 
 Identify any abridged rendering and keep its complete proposed payload inspectable.
 
-Compare the outgoing presentation with the candidate before asking approval.
+Compare the outgoing presentation with the saved candidate before showing it.
 
-Ask approval for the specific changes shown unless the user explicitly preapproves them or the setting is autonomous with no user interaction.
+Render before [Save and Restore Continuation](../a609e77c-8164-40d2-b391-e675194fd2ad/node.md) submits the candidate, and show the render after the save succeeds.
 
-Send approved changes to [Save and Restore Continuation](../a609e77c-8164-40d2-b391-e675194fd2ad/node.md).
-
-Return a substantive later change beyond that approval to the user.
+Bring a substantive change beyond what the user asked to preserve back to the user before saving it.
