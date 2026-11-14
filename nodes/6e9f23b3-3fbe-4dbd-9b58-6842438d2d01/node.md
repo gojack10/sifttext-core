@@ -25,9 +25,9 @@ These examples are synthetic. They illustrate the interaction, not lines to reci
 
 ### A decision is needed before a save
 
-Start with what the user asked you to do. Name the specific notes, explain what stopped the save, and say what their choice would change. Use language that someone who only knows “read SiftText” and “write SiftText” can follow.
+Start with what the user asked you to do. Name the specific nodes, explain what stopped the save, and say what their choice would change. Use language that someone who only knows “read SiftText” and “write SiftText” can follow.
 
-In this example, the user asked to write notes about a plan to speed up SiftText reviews and track their cost. The review timed out before the notes were added.
+In this example, the user asked to write nodes about a plan to speed up SiftText reviews and track their cost. The review timed out before the nodes were added.
 
 **Bad example (A)**
 
@@ -35,7 +35,7 @@ In this example, the user asked to write notes about a plan to speed up SiftText
 
 **Better example (B)**
 
-> I prepared notes on our plan to speed up SiftText’s reviews and track what they cost. Before saving, SiftText checks for mistakes like recording an idea you were considering as a decision you made. That review timed out, so the notes haven’t been added. Do you want me to add them as written without that review?
+> I prepared nodes on our plan to speed up SiftText’s reviews and track what they cost. Before saving, SiftText checks for mistakes like recording an idea you were considering as a decision you made. That review timed out, so the nodes haven’t been added. Do you want me to add them as written without that review?
 
 ### A search is taking longer than expected
 

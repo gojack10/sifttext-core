@@ -11,15 +11,15 @@ position: 1024
 
 Read a known file directly.
 
-`sifttext search STORE "query"` ranks notes by their words, for when you do not know where the answer lives. rg finds exact wording, names and IDs. fd finds files and links. The outline command shows tree structure. These are independent, so they can run in the same batch, alongside any other method that suits the task.
+`sifttext search STORE "query"` ranks nodes by their words, for when you do not know where the answer lives. rg finds exact wording, names and IDs. fd finds files and links. The outline command shows tree structure. These are independent, so they can run in the same batch, alongside any other method that suits the task.
 
 ## Search by words
 
 Search returns 20 ranked matches: the first 3 include their complete bodies; the other 17 are cards. Ancestor names and the first hit's children come in the same return.
 
-It is SQLite FTS5 with BM25 ranking, so it scores words, not meaning. Every query word is optional: a note containing any one of them is a candidate, and each distinct query word it contains adds to its score. Rare words add the most, and a word in the note's name counts double. Word endings are folded, so "removed" also matches "remove" and "removal". Filler such as "the", "what" and "why" is ignored. `total_matches` reports how many notes were candidates.
+It is SQLite FTS5 with BM25 ranking, so it scores words, not meaning. Every query word is optional: a node containing any one of them is a candidate, and each distinct query word it contains adds to its score. Rare words add the most, and a word in the node's name counts double. Word endings are folded, so "removed" also matches "remove" and "removal". Filler such as "the", "what" and "why" is ignored. `total_matches` reports how many nodes were candidates.
 
-Build the query from the user's own words for the thing they are asking about. One call accepts several phrasings, `sifttext search STORE "first phrasing" "second phrasing"`, and merges their rankings, so a note that ranks well under more than one rises.
+Build the query from the user's own words for the thing they are asking about. One call accepts several phrasings, `sifttext search STORE "first phrasing" "second phrasing"`, and merges their rankings, so a node that ranks well under more than one rises.
 
 This example is synthetic. The user asks: "Why did we stop offering the annual plan, who made that call, and what bigger effort was it part of?"
 
@@ -28,9 +28,9 @@ This example is synthetic. The user asks: "Why did we stop offering the annual p
 > `sifttext search . "Why did we stop offering the annual plan, who made that call, and what bigger effort was it part of?"` returns `total_matches:11000`. The decision is not among the 20.
 
 **Better example (B)**
-> `sifttext search . "stop offering annual plan" "annual plan discontinued"` returns `total_matches:310`. The decision note is first, with its body.
+> `sifttext search . "stop offering annual plan" "annual plan discontinued"` returns `total_matches:310`. The decision node is first, with its body.
 
-"Plan" alone is in most notes. The whole question adds "made", "call", "bigger", "effort" and "part", which match thousands more. Both phrasings in B name the subject.
+"Plan" alone is in most nodes. The whole question adds "made", "call", "bigger", "effort" and "part", which match thousands more. Both phrasings in B name the subject.
 
 ## If rg or fd is missing
 
@@ -46,7 +46,7 @@ Use an available equivalent when installation is blocked, and report the obstacl
 
 ## Search and read
 
-`rg -l` and fd print bare paths. `sifttext outline STORE -` accepts node IDs or paths from any producer and returns each once, in input order, without ranking or a cap, so one call both finds the notes and names them. Rows carry ID, name, status and micro-summary; nonempty status reasons and warnings remain as optional fields.
+`rg -l` and fd print bare paths. `sifttext outline STORE -` accepts node IDs or paths from any producer and returns each once, in input order, without ranking or a cap, so one call both finds the nodes and names them. Rows carry ID, name, status and micro-summary; nonempty status reasons and warnings remain as optional fields.
 
 ```sh
 rg -l -i "phrase|alternative wording" --glob node.md nodes | sifttext outline . -
@@ -56,7 +56,7 @@ fd -HI -t l "^FULL_NODE_UUID$" nodes --exclude artifacts | sifttext outline . -
 
 Base conclusions on the node bodies, not cards alone. Search already supplies the first three bodies, so those do not need another read.
 
-Each note's folder has `parent`, a link to its parent's folder, and it chains: `nodes/UUID/parent/node.md` is the parent's body and `nodes/UUID/parent/parent/node.md` is the grandparent's. A note and its ancestors' bodies can be read in one batch. A root has no `parent`.
+Each node's folder has `parent`, a link to its parent's folder, and it chains: `nodes/UUID/parent/node.md` is the parent's body and `nodes/UUID/parent/parent/node.md` is the grandparent's. A node and its ancestors' bodies can be read in one batch. A root has no `parent`.
 
 Exclude attached datasets unless they are relevant.
 

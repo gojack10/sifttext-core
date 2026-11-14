@@ -19,7 +19,7 @@ Keep each node focused on one work item. Update the existing node when it alread
 
 ### Example of updating affected recovery instructions
 
-The user asks to save machine details. While drafting, the agent discovers that the same recovery note still instructs a reader to restore an archived automation. The incident is reported in [GitHub issue #36](https://github.com/gojack10/sifttext-core/issues/36).
+The user asks to save machine details. While drafting, the agent discovers that the same recovery node still instructs a reader to restore an archived automation. The incident is reported in [GitHub issue #36](https://github.com/gojack10/sifttext-core/issues/36).
 
 **Bad example (A), observed excerpt**
 

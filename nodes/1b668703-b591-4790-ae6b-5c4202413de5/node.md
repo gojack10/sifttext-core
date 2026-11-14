@@ -60,7 +60,7 @@ Core filters the packet before sending it, including when requesting reuse. The 
 | Incomplete review or insufficient credits | Keep the draft. Use the recorded reason to recover the result or explain what prevented review. |
 | Findings | Compare them with the draft and its evidence. Repair supported defects within the user's grant. |
 
-For an incomplete review, explain which notes the user asked you to write, what the review checks in those notes, and why they haven’t been added. If saving without review is an option, ask the user to approve it for this save. Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md).
+For an incomplete review, explain which nodes the user asked you to write, what the review checks in those nodes, and why they haven’t been added. If saving without review is an option, ask the user to approve it for this save. Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md).
 
 After explicit approval to save without review, use:
 

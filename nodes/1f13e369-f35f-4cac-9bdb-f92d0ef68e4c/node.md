@@ -4,7 +4,7 @@ name: "Content"
 micro_summary: "Field contract for the node's evolving record of what is known, including what belongs there and what to move elsewhere."
 status: "resolved"
 see_also: []
-scope: "The content field. What is known. Conclusions, decisions, working notes, the evolving state of understanding."
+scope: "The content field. What is known. Conclusions, decisions, working memory, the evolving state of understanding."
 warnings: ""
 position: 2048
 ---

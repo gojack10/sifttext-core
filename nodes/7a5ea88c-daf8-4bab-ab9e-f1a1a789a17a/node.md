@@ -69,7 +69,7 @@ An explicit user instruction to serialize this production host remains binding u
 
 ### Input
 
-A procedure that requests incident facts and an action produced a note recommending a rewrite from the single observation “Export Q7 failed.”
+A procedure that requests incident facts and an action produced a node recommending a rewrite from the single observation “Export Q7 failed.”
 
 ### A — bad record
 
@@ -79,7 +79,7 @@ An unexplained response would require a new format without identifying how the c
 
     ## Observed conditions
 
-    The authoring and review procedures accept a note that lists an
+    The authoring and review procedures accept a node that lists an
     incident followed by an action, leaving its reasoning unexplained.
 
     ## Inference and response

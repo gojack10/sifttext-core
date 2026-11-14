@@ -45,13 +45,13 @@ The resolved node records the choice. The open trial carries the unfinished veri
 The user has approved deleting a duplicate whose content is retained in Survey Evidence.
 
 ```text
-[~] Research Notes
+[~] Research Nodes
 └── [-][x] Duplicate Survey Copy
     Delete reason: Reviewed content is duplicated in Survey Evidence.
 
 [~] Improve Response Time
 ├── [→][✓] Survey Evidence
-│   Move: Research Notes -> Improve Response Time
+│   Move: Research Nodes -> Improve Response Time
 │   Keep: existing ID, content and status
 └── [←][~] Investigate Routing
     Add see_also -> Survey Evidence

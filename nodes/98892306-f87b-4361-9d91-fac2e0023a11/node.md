@@ -105,7 +105,7 @@ If the current harness was added later or installation reported an error, retry 
 
 Confirm which sources are permitted and how the content may be shared.
 
-Inventory the selected notes and instructions.
+Inventory the selected memory and instructions.
 
 Preserve recoverable originals, paths and provenance.
 
