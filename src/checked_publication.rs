@@ -965,7 +965,7 @@ pub fn submit(policy: &Policy, request: &Request) -> Receipt {
 
 /// Prepare and review the same immutable combination used by submission without
 /// advancing the accepted ref. Any normalization remains in the retained draft;
-/// the returned candidate is the commit to show and submit after human approval.
+/// the returned candidate is the commit to render and submit under the user's save trigger.
 pub fn review(policy: &Policy, request: &Request, work_packet: &Path) -> Receipt {
     let review = crate::hosted_checks::PublicationReview { work_packet: Some(work_packet), ..Default::default() };
     submit_inner(policy, request, true, None, &mut |_, _| Ok(()), None, None, false, review, true)

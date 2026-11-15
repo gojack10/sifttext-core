@@ -312,7 +312,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                         .replace("Epistemic submit check:", "Epistemic candidate check:"));
                 }
                 if receipt.status == "reviewed" {
-                    println!("Draft retained for human approval. Submit the returned candidate commit with the same base and explicit status IDs.");
+                    println!("Draft retained for submission. Submit the returned candidate commit with the same base and explicit status IDs.");
                 }
             }
             return if receipt.status == "reviewed" { Ok(()) } else {

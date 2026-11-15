@@ -12,6 +12,6 @@ You control which knowledge the current agent can read and which changes it may 
 
 Inspect the files or ask the agent to explain the evidence behind a proposal.
 
-Approve proposed knowledge changes before saving unless you explicitly preapprove them or choose an autonomous noninteractive setting.
+The agent saves when you ask it to, or when you say yes to its suggestion to save. It then shows you the saved change; tell it what to correct and it saves the correction. Without your request, it does not save.
 
 Keep meaningful prior understanding recoverable so future work can reconsider it.

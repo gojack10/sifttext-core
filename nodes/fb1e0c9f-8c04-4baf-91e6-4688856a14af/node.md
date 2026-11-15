@@ -38,9 +38,9 @@ When investigating expiry or retained operation storage, read [Temporary Operati
 
 Follow SiftText Commit and its required reads before knowledge edits.
 
-Only explicit preapproval or an autonomous setting with no user interaction skips the normal approval gate.
+Save when [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s permission and timing rules allow it.
 
-An ordinary editing request does not.
+A save trigger needs no second approval.
 
 A bounded worker returns its assigned candidate to its assigning agent.
 
@@ -110,7 +110,7 @@ A private commit is not accepted knowledge.
 
 ## Submit the exact combined candidate
 
-For saves that require hosted review, follow [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) before showing the proposal. Use the returned commit as `candidate` and the packet path as `work_packet`. After approval, submit that candidate with the same packet.
+For saves that require hosted review, follow [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md) before saving. Use the returned commit as `candidate` and the packet path as `work_packet`. Under the user's save trigger, submit that candidate with the same packet.
 
 ```sh
 sifttext submit "$home" "$wt" "$candidate" "$base_sha" "$work_packet"

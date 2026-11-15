@@ -146,17 +146,17 @@ Before interpreting knowledge, read [SiftText Read](../5c2f91e4-9bd5-4b45-bbc4-e
 
 Before an authorized save, read [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and its required procedures there.
 
-## Approval before writes
+## Permission before writes
 
 | Control | Responsible actor |
 | --- | --- |
 | Workspace authentication | Server |
 | Submitted-knowledge checks | Core binary |
-| Human approval of each conversational proposal | Agent, with no per-proposal approval gate in hosted Bash |
+| Saving only when the user triggers it | Agent, with no per-save approval gate in hosted Bash |
 
-Because hosted Bash has no per-proposal approval gate, the agent is responsible for following [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s approval rules. Show the proposed change and obtain the required approval before writing.
+Because hosted Bash has no per-save approval gate, the agent is responsible for following [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md)'s permission and timing rules. Save only after the user's trigger, then show the saved change.
 
-After approval, save through Core's private worktree and checked submit procedure so Core can validate the candidate before accepting it.
+Save through Core's private worktree and checked submit procedure so Core can validate the candidate before accepting it.
 
 ## Confirm which copy was read
 

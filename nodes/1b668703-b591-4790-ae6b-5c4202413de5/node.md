@@ -4,12 +4,12 @@ name: "Epistemic Check"
 micro_summary: "Handles hosted review of knowledge before submit."
 status: "resolved"
 see_also: []
-scope: "Use epistemic checking within Commit's approval boundary and recover from findings or an unchecked save."
+scope: "Use epistemic checking within Commit's permission and timing rules and recover from findings or an unchecked save."
 position: 3072
 ---
 ## Before submit
 
-Read this procedure from [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) before submitting an approved change.
+Read this procedure from [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) before submitting a triggered change.
 
 Review the proposed text against its sources. Distinguish observations from interpretations and preserve the context of consequential quotations, including rejected historical claims.
 
@@ -44,13 +44,13 @@ Commit the private draft and run:
 sifttext epistemic-check HOME DRAFT COMMIT BASE WORK_PACKET.json [EXPLICIT_UUID ...]
 ```
 
-This prepares the same combined candidate as submission, including merging accepted work, normalizing statuses, and applying structural checks. Use the returned `candidate` commit to render the proposal. After the user approves the proposal, submit with the same work packet, base, and explicit status IDs:
+This prepares the same combined candidate as submission, including merging accepted work, normalizing statuses, and applying structural checks. Use the returned `candidate` commit to render the change. Under the user's save trigger, submit with the same work packet, base, and explicit status IDs:
 
 ```sh
 sifttext submit HOME DRAFT COMMIT BASE WORK_PACKET.json [EXPLICIT_UUID ...]
 ```
 
-Core filters the packet before sending it, including when requesting reuse. The authenticated service reuses a saved PASS when the final candidate tree, filtered work packet, and checker version match. Reuse adds no model run or charge. When there is no applicable PASS, submission runs the same review. Structural checks and human approval remain required.
+Core filters the packet before sending it, including when requesting reuse. The authenticated service reuses a saved PASS when the final candidate tree, filtered work packet, and checker version match. Reuse adds no model run or charge. When there is no applicable PASS, submission runs the same review. Structural checks and the user's save trigger remain required.
 
 ## When a save is blocked
 
