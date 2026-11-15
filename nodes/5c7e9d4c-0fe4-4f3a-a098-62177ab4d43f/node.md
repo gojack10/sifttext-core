@@ -9,6 +9,8 @@ position: 10240
 ---
 ## Choose the view
 
+Use this guide whenever you show a tree change, not only during a save. When the user asks where knowledge should live, or an answer proposes a change to the tree, draft it privately through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) and present it as a proposal-only review.
+
 During [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md), epistemically check non-exempt proposed nodes before presentation. Official bundled documentation is exempt, not passed. Rendering makes no checker calls and does not approve or publish knowledge.
 
 For a native private draft, derive the selection and allocation base:
