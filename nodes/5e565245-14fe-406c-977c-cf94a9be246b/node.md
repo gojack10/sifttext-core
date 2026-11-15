@@ -41,7 +41,7 @@ During authorized installation or memory import, follow [Maintain Memory Continu
 
 When the instructions receipt returns `harness-instructions-refresh: required`, read its `harness-instructions-guide` and follow the same procedure used for initial installation.
 
-When the user asks where knowledge should live, or an answer proposes a change to the tree, show that change through [Render a Tree Delta](../5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f/node.md).
+When the user asks to see a tree or where knowledge should live, or an answer proposes a change to the tree, show it through [Render a Tree Delta](../5c7e9d4c-0fe4-4f3a-a098-62177ab4d43f/node.md).
 
 Before changing knowledge, read [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) and its required procedures.
 

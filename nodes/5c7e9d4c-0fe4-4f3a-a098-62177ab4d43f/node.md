@@ -9,7 +9,9 @@ position: 10240
 ---
 ## Choose the view
 
-Use this guide whenever you show a tree change, not only during a save. When the user asks where knowledge should live, or an answer proposes a change to the tree, draft it privately through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) and present it as a proposal-only review.
+Use this guide whenever you show a tree, not only during a save. When the user asks to see an existing tree, render a static view of it. When the user asks where knowledge should live, or an answer proposes a change to the tree, draft it privately through [Worktree Publication](../fb1e0c9f-8c04-4baf-91e6-4688856a14af/node.md) and present it as a proposal-only review.
+
+Run `sifttext help` for the current `tree-render` command forms.
 
 During [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md), epistemically check non-exempt proposed nodes before presentation. Official bundled documentation is exempt, not passed. Rendering makes no checker calls and does not approve or publish knowledge.
 
@@ -36,7 +38,7 @@ When signed in and online, the command also saves the snapshot privately and ret
 
 Review the saved change here: [url]
 
-During a proposal-only assignment, write `Review the proposal here: [url]` instead. Use the returned `review_url` in place of `[url]`. When no inline card appears, the link is the review surface. Do not print the tree or proposed bodies in a code block unless the user explicitly requests that representation. `show_tree_text` supplies the saved text tree for that request. Offline or when hosted saving is unavailable, open or attach the local HTML using the environment's supported file route. Never invent a hosted URL.
+During a proposal-only assignment, write `Review the proposal here: [url]` instead. For a static view of an existing tree, write `View the tree here: [url]`. Use the returned `review_url` in place of `[url]`. When no inline card appears, the link is the review surface. Do not print the tree or proposed bodies in a code block unless the user explicitly requests that representation. `show_tree_text` supplies the saved text tree for that request. Offline or when hosted saving is unavailable, open or attach the local HTML using the environment's supported file route. Never invent a hosted URL.
 
 Rendering does not publish knowledge, approve a proposal or upload attachment bytes. Node references within the snapshot navigate its displayed nodes; external web links retain their destinations. A local filesystem path is a source description, not a remotely accessible attachment. A changed candidate requires a new render. If a saved review returns `This review has expired.`, regenerate it from the current candidate.
 
