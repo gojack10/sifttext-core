@@ -2,7 +2,7 @@
 use super::*;
 use crate::account::{SyncAccess, TransportFailure};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use std::time::{Duration, Instant};
+use std::{fs::File, io::Read, time::{Duration, Instant}};
 
 pub(super) fn page(payload: &Value) -> Result<String> {
     let mut style = include_str!("assets/tree_delta_view.css").to_owned();
@@ -25,10 +25,20 @@ pub(super) fn page(payload: &Value) -> Result<String> {
 /// The hosted save, retries included, ends within this time and leaves the local HTML.
 const UPLOAD_LIMIT: Duration = Duration::from_secs(30);
 /// Seconds to wait before each retry of an upload that stalled, could not connect or met a
-/// server failure. A duplicate stored render is harmless: renders are private and expire.
-const RETRY_WAITS: [u64; 3] = [1, 2, 3];
+/// server failure, before `spread`. A duplicate stored render is harmless: renders are
+/// private and expire.
+const RETRY_WAITS: [u64; 3] = [1, 2, 4];
 /// A retry is skipped when less time than this would remain for it.
 const SHORTEST_TRY: Duration = Duration::from_secs(2);
+
+/// Varies a wait by up to half its length either way, so clients retrying a recovering
+/// server do not all arrive at the same moment. Without randomness the wait is unchanged.
+fn spread(wait: Duration) -> Duration {
+    let mut bytes = [0; 2];
+    let fraction = File::open("/dev/urandom").and_then(|mut file| file.read_exact(&mut bytes))
+        .map_or(0.5, |()| f64::from(u16::from_le_bytes(bytes)) / f64::from(u16::MAX));
+    wait.mul_f64(0.5 + fraction)
+}
 
 enum Attempt {
     Saved(Value),
@@ -40,7 +50,7 @@ enum Attempt {
 pub(super) fn upload(payload: &Value) -> std::result::Result<Value, String> {
     let deadline = Instant::now() + UPLOAD_LIMIT;
     let mut access = None;
-    let mut waits = RETRY_WAITS.iter().map(|seconds| Duration::from_secs(*seconds));
+    let mut waits = RETRY_WAITS.iter().map(|seconds| spread(Duration::from_secs(*seconds)));
     let mut tries = 0;
     loop {
         tries += 1;
