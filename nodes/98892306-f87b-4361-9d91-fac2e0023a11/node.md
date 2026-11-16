@@ -88,6 +88,8 @@ At the start of every new chat, unless I say not to use SiftText, before any oth
 2. Read the Entry above and follow it, plus any `agent-instructions` the command returns.
 3. Before retrieving knowledge, read the Retrieval guide above.
 
+Do not use any other memory tool or memory file, including this harness's built-in memory, unless I explicitly ask. Two memories confuse agents about where knowledge lives.
+
 ### SiftText name recognition
 
 Watch for dictation and typing errors that may refer to SiftText. Use context to recognize variants such as “CivTech”, “Ceftex”, “Civ Tax”, “Siftex”, “CIFtext”, “SivText”, “SIPText” and “Syntex”.
