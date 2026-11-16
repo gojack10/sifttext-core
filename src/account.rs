@@ -110,6 +110,17 @@ fn account_resource() -> Result<String> {
     Ok(format!("{}/mcp", origin()?))
 }
 
+/// The command that saves a grant for `resource` under `issuer`. The legacy service has one
+/// login, and the production login also signs in to Workspace.
+fn login_command(issuer: &str, resource: &str) -> Result<String> {
+    Ok(if issuer.is_empty() || issuer == provider::PRODUCTION_ISSUER
+        || resource.is_empty() || resource == account_resource()? {
+        "sifttext login".to_owned()
+    } else {
+        format!("sifttext login --resource {resource}")
+    })
+}
+
 // Leave legacy credentials readable by the previous CLI. OIDC grants are bound
 // to one resource and are never written to the legacy credential file.
 fn grant_filename(origin: &str, issuer: &str, resource: &str) -> Result<String> {
@@ -206,7 +217,8 @@ impl Store {
 
     fn check_provider(&self, credentials: &Credentials) -> Result<()> {
         if credentials.origin != self.origin || credentials.issuer != self.issuer {
-            return Err("saved login belongs to another account service or issuer; sign in again".into());
+            return Err(format!("Saved sign-in belongs to another account service or issuer. Run {}.",
+                login_command(&self.issuer, &credentials.resource)?).into());
         }
         Ok(())
     }
@@ -337,9 +349,24 @@ fn http_method_idempotent(
     method: &str,
     idempotency_key: Option<&str>,
 ) -> Result<(u16, Value)> {
-    let (status, body) = http_response(origin, path, bearer, body, method, idempotency_key)?;
+    let (status, body) = http_response(origin, path, bearer, body, method, idempotency_key, None)?;
     Ok((status, json_response(status, &body)?))
 }
+
+/// curl could not complete the exchange, so no server answer arrived. Holds curl's own message.
+#[derive(Debug)]
+pub(crate) struct TransportFailure(pub(crate) String);
+
+impl std::fmt::Display for TransportFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Platform request failed ({}); check your connection and try again", self.0)
+    }
+}
+
+impl std::error::Error for TransportFailure {}
+
+/// A deadline-bound request also ends once no data has moved for this many seconds.
+const STALL_SECONDS: &str = "8";
 
 fn http_response(
     origin: &str,
@@ -348,6 +375,7 @@ fn http_response(
     body: Option<(&str, &str)>,
     method: &str,
     idempotency_key: Option<&str>,
+    deadline: Option<Instant>,
 ) -> Result<(u16, Vec<u8>)> {
     if !matches!(method, "GET" | "POST" | "DELETE") {
         return Err("unsupported Platform HTTP method".into());
@@ -395,27 +423,35 @@ fn http_response(
             config.push_str(&format!("data = {}\n", config_string(data)?));
         }
     }
-    let mut child = Command::new("curl")
-        .args([
+    let max_time = match deadline {
+        Some(deadline) => format!("{:.1}",
+            deadline.saturating_duration_since(Instant::now()).as_secs_f64().max(1.0)),
+        None => (if path == "/api/checks" { "600" } else { "20" }).to_owned(),
+    };
+    let mut command = Command::new("curl");
+    command.args([
             "-q",
             "--silent",
             "--show-error",
             "--connect-timeout",
             "5",
             "--max-time",
-            if path == "/api/checks" { "600" } else { "20" },
+            &max_time,
             "--max-filesize",
             if path.starts_with("/sync/v1/") { "46137344" } else { "1048576" },
             "--proto",
             "=http,https",
             "--write-out",
             "\n%{http_code}",
-            "--config",
-            "-",
-        ])
+        ]);
+    if deadline.is_some() {
+        command.args(["--speed-limit", "1", "--speed-time", STALL_SECONDS]);
+    }
+    let mut child = command
+        .args(["--config", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|_| "authentication requires curl (an installer prerequisite)")?;
     let sent = child
@@ -427,7 +463,11 @@ fn http_response(
     drop(request_body);
     sent?;
     if !output.status.success() {
-        return Err("Platform request failed; check your connection and try again".into());
+        // Only curl's final error line: config warnings never reach the caller.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.lines().rev().find_map(|line| line.strip_prefix("curl: ("))
+            .map_or_else(|| format!("curl {}", output.status), |line| format!("curl ({line}"));
+        return Err(TransportFailure(detail).into());
     }
     let mut response = output.stdout;
     let body_end = response
@@ -482,13 +522,16 @@ fn tokens(
         Some(("application/x-www-form-urlencoded", &form(fields))),
         "POST",
         None,
+        None,
     )?;
     if status != 200 && provider.issuer.is_empty() {
         return Err("Platform authorization is no longer available. Run sifttext login to reconnect.".into());
     }
     let value = json_response(status, &body)?;
     if status != 200 {
-        return Err(format!("Token endpoint returned HTTP {status}: {}. Use the matching login command to retry.", oauth_error_name(value["error"].as_str())).into());
+        let resource = fields.iter().find(|(key, _)| *key == "resource").map_or("", |(_, value)| *value);
+        return Err(format!("Token endpoint returned HTTP {status}: {}. Run {} to sign in again.",
+            oauth_error_name(value["error"].as_str()), login_command(&provider.issuer, resource)?).into());
     }
     if !text(&value, "token_type")?.eq_ignore_ascii_case("bearer") {
         return Err("unsupported OAuth token type".into());
@@ -514,7 +557,8 @@ fn tokens(
 fn refresh_for(store: &Store, credentials: &mut Credentials, resource: &str) -> Result<()> {
     store.check_provider(credentials)?;
     if !credentials.issuer.is_empty() && credentials.resource != resource {
-        return Err("resource-bound grant cannot change audience; login separately for this resource".into());
+        return Err(format!("Saved sign-in is bound to another resource. Run {} to sign in for {resource}.",
+            login_command(&store.issuer, resource)?).into());
     }
     let provider = provider::for_issuer(&store.origin, &store.issuer)?;
     let mut refreshed = tokens(
@@ -575,7 +619,7 @@ impl SyncAccess {
                 grant.issuer == workspace.issuer && grant.account_id == workspace.account_id
             })
         {
-            return Err("Sign in to the same SiftText account for Workspace and checker review.".into());
+            return Err("Workspace and checker review are signed in to different SiftText accounts. Run sifttext login and use the same account for both.".into());
         }
         Ok(account)
     }
@@ -612,30 +656,42 @@ impl SyncAccess {
             crate::require(encoded.as_ref().is_none_or(|body| body.len() <= CHECK_REQUEST_LIMIT),
                 "Encoded check request exceeds 128 KiB. Select a smaller input to allow for JSON fields and escaping.")?;
         }
-        self.request_body(method, path, encoded.as_deref().map(|s| ("application/json", s)), key)
+        let (status, reply) = self.request_body(method, path,
+            encoded.as_deref().map(|s| ("application/json", s)), key, None)?;
+        Ok((status, json_response(status, &reply)?))
+    }
+
+    /// A POST that ends by `deadline`, or sooner when its transfer stalls, so the caller can
+    /// retry. Returns the raw reply: a failing proxy may answer with an HTML page.
+    pub(crate) fn post_until(&mut self, path: &str, body: &Value, deadline: Instant)
+        -> Result<(u16, Vec<u8>)> {
+        self.request_body("POST", path,
+            Some(("application/json", &serde_json::to_string(body)?)), None, Some(deadline))
     }
 
     pub(crate) fn upload_trial_chat(&mut self, text: &str) -> Result<(u16, Value)> {
         crate::require(!text.is_empty() && text.len() <= 128 * 1024 * 1024,
             "Trial chat must contain 1 byte to 128 MiB of UTF-8 text")?;
-        self.request_body("POST", "/api/checks/trial-chats",
-            Some(("application/octet-stream", text)), None)
+        let (status, reply) = self.request_body("POST", "/api/checks/trial-chats",
+            Some(("application/octet-stream", text)), None, None)?;
+        Ok((status, json_response(status, &reply)?))
     }
 
     fn request_body(&mut self, method: &str, path: &str,
-        body: Option<(&str, &str)>, key: Option<&str>) -> Result<(u16, Value)> {
+        body: Option<(&str, &str)>, key: Option<&str>, deadline: Option<Instant>)
+        -> Result<(u16, Vec<u8>)> {
         let Some(credentials) = self.credentials.as_ref() else {
-            return http_method_idempotent(&origin()?, path, None, body, method, key);
+            return http_response(&origin()?, path, None, body, method, key, deadline);
         };
         let origin = credentials.origin.clone();
         let resource = format!("{origin}/mcp");
         if credentials.resource != resource {
             self.renew(&resource)?;
         }
-        let mut response = http_method_idempotent(&origin, path, Some(self.token()?), body, method, key)?;
+        let mut response = http_response(&origin, path, Some(self.token()?), body, method, key, deadline)?;
         if response.0 == 401 {
             self.renew(&resource)?;
-            response = http_method_idempotent(&origin, path, Some(self.token()?), body, method, key)?;
+            response = http_response(&origin, path, Some(self.token()?), body, method, key, deadline)?;
         }
         Ok(response)
     }
@@ -646,14 +702,8 @@ impl SyncAccess {
         let mut credentials = if store.issuer.is_empty() || resource == account_resource()? {
             store.load()?
         } else {
-            store.load().map_err(|_| {
-                let command = if store.issuer == provider::PRODUCTION_ISSUER {
-                    "sifttext login".to_owned()
-                } else {
-                    format!("sifttext login --resource {resource}")
-                };
-                format!("No saved grant for {resource}. Run {command}.")
-            })?
+            let command = login_command(&store.issuer, resource)?;
+            store.load().map_err(|_| format!("No saved grant for {resource}. Run {command}."))?
         };
         store.check_provider(&credentials)?;
         let saved_resource = if credentials.resource.is_empty() {
@@ -682,7 +732,7 @@ impl SyncAccess {
         let Some(credentials) = self.credentials.as_mut() else { return Ok(()); };
         let store = Store::open(resource, None)?;
         if store.path() != self.file {
-            return Err("saved grant changed during sync; retry using the matching sign-in".into());
+            return Err("Saved sign-in changed while this command ran. Run the command again.".into());
         }
         let saved = store.load()?;
         // Never adopt a new login or replay a concurrently rotated refresh token.
@@ -746,7 +796,8 @@ fn account(store: &Store, credentials: &mut Credentials, resource: &str) -> Resu
         return Err("Platform did not confirm subscription status".into());
     }
     if !credentials.account_id.is_empty() && text(&response.1, "id")? != credentials.account_id {
-        return Err("The account service returned a different SiftText account. Sign in again.".into());
+        return Err(format!("The account service returned a different SiftText account. Run {} to sign in again.",
+            login_command(&store.issuer, resource)?).into());
     }
     Ok(response.1)
 }

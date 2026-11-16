@@ -84,7 +84,7 @@ fn legacy(origin: &str) -> Provider {
 
 fn discover(issuer: &str) -> Result<Option<Provider>> {
     let (status, body) = http_response(
-        issuer, "/.well-known/openid-configuration", None, None, "GET", None,
+        issuer, "/.well-known/openid-configuration", None, None, "GET", None, None,
     )?;
     if status == 404 {
         return Ok(None);

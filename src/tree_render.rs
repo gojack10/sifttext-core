@@ -417,7 +417,7 @@ fn run_mode(policy: &Policy, home: &Path, request: &Request, automatic: bool) ->
                     output["render_id"] = hosted["render_id"].clone();
                     output["review_url"] = hosted["review_url"].clone();
                 },
-                Err(_) => output["hosted"] = json!("unavailable; use local HTML"),
+                Err(reason) => output["hosted"] = json!(reason),
             }
         }
         let _ = directory.keep();
