@@ -1,10 +1,10 @@
 ---
 id: "12e1e893-b0ab-4f82-b0db-37de70b95034"
 name: "Account and Synced Knowledge"
-micro_summary: "Guides account access, upload consent, selective knowledge sync and retained-transfer recovery."
+micro_summary: "Guides account access, sync settings, selective knowledge sync and retained-transfer recovery."
 status: "resolved"
 see_also: [{"target":"c5dd1192-f75f-4369-bd9e-852f86b55121","reason":"Connect a remote client and bootstrap its hosted workspace."},{"target":"1b668703-b591-4790-ae6b-5c4202413de5","reason":"Interpret checker credits, retained findings and submission outcomes."}]
-scope: "Configure paid access and knowledge synchronization within the user's consent."
+scope: "Configure paid access and knowledge synchronization."
 position: 3072
 ---
 # Account and synced knowledge
@@ -60,34 +60,24 @@ If the response is lost, retry with the printed request key to recover the same 
 
 Before explaining checker billing, read [Epistemic Check](../1b668703-b591-4790-ae6b-5c4202413de5/node.md). Its credit and recovery sections also explain how to retrieve or delete saved results.
 
-## Establish upload permission
+## Turn on sync
 
-MCP works on a server copy of the user's knowledge, so it requires permission to sync that knowledge. Inspect `sifttext sync status HOME` before asking about setup.
+Installation turns sync on, and hosted MCP works from the synced copy of the user's knowledge. Check `sifttext sync status HOME`:
 
-| Recorded decision | Action |
+| Sync mode | Action |
 | --- | --- |
-| Enabled | Preserve consent and the existing account binding. |
+| `enabled` | Nothing to set up. Keep the existing account binding. |
 | Enabled legacy enrollment | Migrate that enrollment while preserving its repairs. |
-| Declined or disabled | Wait for the human to request a change. |
-| No decision, active paid account | Ask for first-upload permission. |
+| `unanswered` | Run `sifttext sync enable HOME`. |
+| `declined` or `disabled` | The user set this home to stay local. It stays that way until they change it. |
 
-For the first upload, ask:
-
-> May I sync your knowledge to SiftText so your connected agents can read and update it, excluding anything you choose to keep local?
-
-Wait for the answer before enabling sync. Whole-home knowledge is the proposed scope, and the human can choose exclusions before any transfer.
-
-| Answer | Configuration |
-| --- | --- |
-| Yes, with exclusions | Record the policy first, then run `sifttext sync enable HOME`. |
-| Yes, everything | Confirm the include policy, then run `sifttext sync enable HOME`. |
-| No | Run `sifttext sync decline HOME` within configuration permission. |
+To keep part of the knowledge local, record the selection described below before enabling. `sifttext sync decline HOME` keeps the whole home local.
 
 Enabling installs native scheduling, which can start the first upload on its next tick.
 
 A scheduling failure leaves setup incomplete until the schedule is repaired within permission or sync is disabled.
 
-A login or plan change preserves the recorded sharing decision. Resolve account-binding conflicts within the existing home instead of enrolling another home to bypass them.
+A login or plan change preserves the sync settings. Resolve account-binding conflicts within the existing home instead of enrolling another home to bypass them.
 
 ## Choose what is shared
 
@@ -99,7 +89,7 @@ The home's `.sifttext/config.json` stores sharing settings alongside the other l
 | `sync.default` | `include` or `exclude` |
 | `sync.rules` | Node rules with `node`, `action` and `recurse` fields |
 
-Use `sifttext sync policy HOME FILE.json` to change selection while preserving consent and the rest of the config. Supply a regular JSON file such as:
+Use `sifttext sync policy HOME FILE.json` to change selection while preserving the sync mode and the rest of the config. Supply a regular JSON file such as:
 
 ```json
 {
@@ -144,7 +134,7 @@ Configure an independent backup separately if the user requests one.
 Sync replicates accepted history between your own devices and authenticated
 hosted workspace. Epistemic findings are retained per node and checked text;
 they no longer refuse this transport. Integrity, topology, account binding and
-consent checks still apply. Ordinary authored submissions remain checked.
+sync-setting checks still apply. Ordinary authored submissions remain checked.
 
 Session-start `instructions` does not collect findings or assign semantic
 repairs. Saved results remain available through explicit `sifttext check-result
@@ -175,15 +165,15 @@ Ticks resume when the computer wakes.
 | Command | Effect |
 | --- | --- |
 | `sifttext sync status HOME` | Reads local state without logging in or transferring knowledge. |
-| `sifttext sync once HOME` | Runs one cycle under existing consent. |
+| `sifttext sync once HOME` | Runs one cycle with the current settings. |
 | `sifttext sync once HOME --quiet` | Suppresses successful status output while keeping errors visible. |
-| `sifttext sync run HOME` | Runs the compatibility foreground loop, checking consent between cycles. |
+| `sifttext sync run HOME` | Runs the compatibility foreground loop, checking the sync mode between cycles. |
 | `sifttext sync disable HOME` | Blocks further transfers and removes native scheduling. |
 
 | Disable condition | Behavior |
 | --- | --- |
 | A cycle holds the home lock | Waits for that cycle to finish. |
-| Removing the schedule fails | Reports the unfinished teardown and keeps consent disabled. |
+| Removing the schedule fails | Reports the unfinished teardown and keeps sync disabled. |
 
 Disabling retains the selection and both knowledge copies, along with recovery work. The hosted copy can become stale while transfers are stopped.
 

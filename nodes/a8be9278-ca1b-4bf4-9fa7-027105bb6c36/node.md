@@ -19,13 +19,13 @@ If a listing or query cannot be produced, its output field is `unavailable`; the
 
 Every successful receipt includes `utc-time`, `system-local-time`, and `system-time-zone`. The two times show the same instant in UTC and in the CLI process's local timezone, with its numeric offset. The zone name is `unknown` when the active timezone has no discoverable name. An unreadable clock or failed conversion gives `unavailable` for the affected time.
 
-`hosted-sync` reports retained transport state, not a fresh server inquiry. `last-sync-complete` describes the last recorded exchange; it does not establish current remote freshness. `not-configured`, disabled consent, pending delivery, local changes, stopped transport and `needs-repair` are different states. Use `sifttext sync status HOME` and its actual repair guide when directed.
+`hosted-sync` reports retained transport state, not a fresh server inquiry. `last-sync-complete` describes the last recorded exchange; it does not establish current remote freshness. `not-configured`, sync turned off, pending delivery, local changes, stopped transport and `needs-repair` are different states. Use `sifttext sync status HOME` and its actual repair guide when directed.
 
 Session-start `instructions` does not collect semantic findings or assign their retrieval or repair. Saved results remain available through explicit `sifttext check-result ID` requests. A historical finding is not a session-start work assignment, and a later unrelated passing save does not clear it.
 
 Authored submissions retain their semantic-review procedure. Official GitHub/bundled user-facing documentation remains exempt from epistemic-state checks. An older finding on an exempt guide is not a current repair obligation or a new PASS.
 
-Own-device sync retains findings without refusing transport on that ground. Integrity, topology, account binding and consent checks still apply. Do not share a flagged node with another person until its findings are resolved. A checker result is not human approval.
+Own-device sync retains findings without refusing transport on that ground. Integrity, topology, account binding and sync-setting checks still apply. Do not share a flagged node with another person until its findings are resolved. A checker result is not human approval.
 
 Resolve assigned repairs within the user's grant while keeping independent work moving. Ask the user only when a genuinely significant choice remains, such as changing supported meaning or sharing permission.
 

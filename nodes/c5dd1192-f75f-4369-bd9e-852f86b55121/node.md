@@ -5,7 +5,7 @@ micro_summary: "Connects a remote AI client to synced knowledge and bootstraps i
 status: "resolved"
 see_also: []
 scope: "Connect a remote client to the synced knowledge workspace."
-warnings: "Obtain permission for uploads and proposed writes."
+warnings: "Obtain permission for proposed writes."
 position: 1024
 ---
 ## Choose local or hosted access
@@ -38,23 +38,11 @@ If an active subscription is not recognized, retain local work and contact SiftT
 
 Use the knowledge-home path for `HOME` in the commands below. The application directory is a different path.
 
-Inspect `sifttext sync status HOME` before changing sync. Preserve its existing consent and account binding.
+Hosted MCP works from the synced copy, which installation turns on. Inspect `sifttext sync status HOME` and keep its existing account binding. If the mode is `unanswered`, run `sifttext sync enable HOME`; the default selection covers every node. A home the user set to stay local (`declined` or `disabled`) stays that way until they change it.
 
-For a first upload, propose the whole knowledge home:
+To keep part of the knowledge local, apply a selection with `sifttext sync policy HOME FILE.json` before enabling. The account/sync guide shows the format.
 
-> May I sync your knowledge to SiftText so your connected agents can read and update it, excluding anything you choose to keep local?
-
-After the human approves the whole home, use the default selection of every node.
-
-If the user chooses exclusions:
-
-Review what would upload using the account/sync guide's policy format.
-
-Apply the reviewed selection with `sifttext sync policy HOME FILE.json` before enabling transfers.
-
-A declined or disabled sync stays that way until the human requests a change.
-
-Within upload permission, use these commands:
+Sync commands:
 
 | Command | Effect |
 | --- | --- |
