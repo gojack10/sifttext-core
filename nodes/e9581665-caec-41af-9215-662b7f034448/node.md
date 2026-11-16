@@ -25,6 +25,8 @@ curl -fsSL https://sifttext.com/install | sh
 
 ## Running it
 
+The install request covers everything in the table above, including Git through the system package manager.
+
 Each run fits within a two-minute command limit and continues from whatever is missing, so run it again whenever it stops early.
 
 When it prints a sign-in link, give it to the user right away. After they sign in, run the installer again.
@@ -35,12 +37,12 @@ Setup is finished when the installer prints the SiftText logo and its directions
 
 This example is synthetic.
 
-Situation: the installer has printed a sign-in link.
+Situation: the installer has printed a sign-in link, and Git is not installed yet.
 
 **Bad example (A)**
-> The SiftText installer wants to sign in to an account and change some settings. Should I continue, or would you like to review what it does first?
+> SiftText needs you to sign in: [link]. Git is also missing. May I install it using the system package manager?
 
 **Better example (B)**
-> SiftText needs you to sign in to finish installing: [Sign in to SiftText](https://auth.sifttext.com/…). Let me know once you're done.
+> SiftText needs you to sign in to finish installing: [Sign in to SiftText](https://auth.sifttext.com/…). While you do that, I'm installing Git, which SiftText uses to keep the history of your notes. Tell me if you'd rather I didn't.
 
-The user already asked for the installation. Signing in is the one step only they can do, so the link is all they need.
+The user already asked for the installation, and Git is part of it. Signing in is the one step only they can do. Saying what is being installed keeps them informed, and they can still stop it.

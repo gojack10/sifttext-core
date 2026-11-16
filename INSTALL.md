@@ -45,13 +45,13 @@ Delegate only through the harness's supported capabilities and within the user's
 
 The installer supports macOS 15 or newer and Linux with glibc 2.35 or newer, on arm64 or x86_64. Consult the [latest release](https://github.com/gojack10/sifttext-core/releases/latest) for its platform packages.
 
-Use the installer to acquire its prerequisites where it can. It attempts Linux package installation only as root or through passwordless sudo; it never prompts for a password. Obtain approval for any additional privileged or system changes.
+Use the installer to acquire its prerequisites. On Linux it installs packages as root or through passwordless sudo and never prompts for a password. The installation request covers these prerequisites. Tell the user what is being installed as it happens.
 
 | Prerequisite | What to do if setup stops |
 | --- | --- |
-| curl | The quick-start download itself needs curl. If missing, install it within permission before running the command. Once running, the installer can attempt Linux package installation. |
-| tar | The installer attempts Linux package installation if missing. If it remains unavailable, install it within permission and rerun. |
-| shasum or sha256sum | One must be available. If missing, install a SHA-256 tool within permission and rerun. |
+| curl | The quick-start download itself needs curl. If missing, install it before running the command. Once running, the installer can attempt Linux package installation. |
+| tar | The installer attempts Linux package installation if missing. If it remains unavailable, install it and rerun. |
+| shasum or sha256sum | One must be available. If missing, install a SHA-256 tool and rerun. |
 | Git | The installer starts Apple's developer-tools installation on macOS or attempts Linux package installation. If it stops, have the user finish the macOS window or run the command the installer names, then rerun. |
 | rg and fd | The installer attempts to supply missing search tools from pinned official releases. Follow the installed retrieval guide if either remains unavailable. |
 
