@@ -332,8 +332,9 @@ activate() {
   wait "$TOOLS_JOB" || :
   # A home already set to stay local keeps that setting.
   SYNC=
+  SYNC_ERROR=
   if ! "$1" sync status "$KNOWLEDGE" 2>/dev/null | grep -Eq '^ *mode:(declined|disabled)$'; then
-    "$1" sync enable "$KNOWLEDGE" >/dev/null 2>&1 || :
+    SYNC_ERROR=$("$1" sync enable "$KNOWLEDGE" 2>&1 >/dev/null) && SYNC_ERROR= || SYNC_ERROR=${SYNC_ERROR:-unknown error}
     SYNC=1
   fi
   # The trial works from the chat behind each save, so trial accounts upload it.
@@ -374,6 +375,7 @@ LOGO
   elif [ -n "$TRIAL" ]; then printf 'Trial active.\n'
   elif [ -n "$UNREAD" ]; then printf 'Trial setup did not finish: the account could not be read. Run this installer again.\n'
   fi
+  [ -z "$SYNC_ERROR" ] || printf 'Sync setup did not finish (%s). Run this installer again.\n' "$(printf '%s\n' "$SYNC_ERROR" | sed -n 1p)"
   printf '\n'
   printf 'SiftText is installed. Its command is:\n%s\n\n' "$1"
   printf 'For the agent:\n'
