@@ -37,7 +37,7 @@ When you need guidance on using the SiftText CLI, read [CLI Operations](../a472e
 
 When a consequential choice needs clarification, read [Develop Understanding Through Interaction](../31dc46ab-eaf1-4f1a-97ed-5ff88200c4d8/node.md).
 
-During authorized installation or memory import, follow [Maintain Memory Continuity](../221ca2fc-1caf-4c40-92e5-d9f55501ba1e/node.md).
+During authorized installation or memory import, or when you find knowledge in another memory system that SiftText lacks, follow [Maintain Memory Continuity](../221ca2fc-1caf-4c40-92e5-d9f55501ba1e/node.md).
 
 When the instructions receipt returns `harness-instructions-refresh: required`, read its `harness-instructions-guide` and follow the same procedure used for initial installation.
 
