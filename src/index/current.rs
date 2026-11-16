@@ -622,6 +622,12 @@ fn refresh(
                 relations(&tx, id, Some(&row))?;
             }
         }
+        // A forced rebuild visits present and indexed nodes only. Search rows whose
+        // node row is already gone would otherwise outlive every rebuild and repair.
+        if force {
+            tx.execute_batch("DELETE FROM search_fts WHERE rowid IN (SELECT rowid FROM search_ids WHERE id NOT IN (SELECT id FROM nodes));
+                DELETE FROM search_ids WHERE id NOT IN (SELECT id FROM nodes);")?;
+        }
         // Root shortcuts are authored data, independent of Markdown changes.
         tx.execute("DELETE FROM tree_roots WHERE id NOT IN (SELECT substr(path,7) FROM expected_sources WHERE path GLOB 'trees/*' AND typeof(signature)='blob' AND substr(signature,1,2)=x'0102')", [])?;
         tx.execute("INSERT OR IGNORE INTO tree_roots SELECT substr(path,7) FROM expected_sources WHERE path GLOB 'trees/*' AND typeof(signature)='blob' AND substr(signature,1,2)=x'0102'", [])?;
