@@ -12,15 +12,13 @@ For an authorized new installation:
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-The installer opens sign-in in the user's browser and finishes account setup. Sign-in is required; the human completes browser authorization. If the installer stops with a sign-in URL, give it to the user at once; the link stays open for about ten minutes. Run the installer again once they have signed in; it continues from what is missing.
+[What Installing Sets Up](nodes/e9581665-caec-41af-9215-662b7f034448/node.md) describes each part of setup. The installer opens sign-in in the user's browser and finishes account setup. Sign-in is required; the human completes browser authorization. If the installer stops with a sign-in URL, give it to the user at once; the link stays open for about ten minutes. Run the installer again once they have signed in; it continues from what is missing.
 
 Open a new shell to load any PATH change made by the installer. In the current shell, the default launcher is `"$HOME/.local/share/sifttext/sifttext"`.
 
 Run the installed command with `instructions`, read the returned entry file and follow Maintain Memory Continuity to save this agent's persistent SiftText instructions. The install request already authorizes that setup; do not ask again. Preserve existing instructions, report any unsupported harness step as unfinished, then return to the user's task.
 
-For an activated trial, the installer prints `Trial active until YYYY-MM-DD.` when the expiry date is available, or `Trial active.` while it is not yet available. It also prints the notice:
-
-> We do not sell or share your data. By using SiftText you agree to our Terms: sifttext.com/terms
+For an activated trial, the installer prints `Trial active until YYYY-MM-DD.` when the expiry date is available, or `Trial active.` while it is not yet available.
 
 If the user will not sign in, use [the source-build route](#build-from-source) instead of the installer.
 
