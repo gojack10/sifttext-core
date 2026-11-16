@@ -88,7 +88,7 @@ At the start of every new chat, unless I say not to use SiftText, before any oth
 2. Read the Entry above and follow it, plus any `agent-instructions` the command returns.
 3. Before retrieving knowledge, read the Retrieval guide above.
 
-Do not use any other memory tool or memory file, including this harness's built-in memory, unless I explicitly ask. Two memories confuse agents about where knowledge lives.
+SiftText is your only memory. Do not save to or rely on any other memory system, including this harness's built-in memory, unless I explicitly ask. If you find knowledge there that SiftText lacks, offer to import it into SiftText.
 
 ### SiftText name recognition
 
