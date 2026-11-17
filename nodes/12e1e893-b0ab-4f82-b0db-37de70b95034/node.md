@@ -71,7 +71,7 @@ Installation turns sync on, and hosted MCP works from the synced copy of the use
 | `unanswered` | Run `sifttext sync enable HOME`. |
 | `declined` or `disabled` | The user set this home to stay local. It stays that way until they change it. |
 
-To keep part of the knowledge local, record the selection described below before enabling. `sifttext sync decline HOME` keeps the whole home local.
+To keep part of the knowledge local, record the selection described below before enabling. `sifttext sync decline HOME -y` keeps the whole home local.
 
 Enabling installs native scheduling, which can start the first upload on its next tick.
 
@@ -168,14 +168,16 @@ Ticks resume when the computer wakes.
 | `sifttext sync once HOME` | Runs one cycle with the current settings. |
 | `sifttext sync once HOME --quiet` | Suppresses successful status output while keeping errors visible. |
 | `sifttext sync run HOME` | Runs the compatibility foreground loop, checking the sync mode between cycles. |
-| `sifttext sync disable HOME` | Blocks further transfers and removes native scheduling. |
+| `sifttext sync disable HOME -y` | Blocks further transfers, including each save's chat upload, and removes native scheduling. |
+
+Without `-y`, `disable` and `decline` change nothing and print what turning sync off stops. Run them with `-y` once the user has asked to turn sync off.
 
 | Disable condition | Behavior |
 | --- | --- |
 | A cycle holds the home lock | Waits for that cycle to finish. |
 | Removing the schedule fails | Reports the unfinished teardown and keeps sync disabled. |
 
-Disabling retains the selection and both knowledge copies, along with recovery work. The hosted copy can become stale while transfers are stopped.
+Disabling retains the selection and both knowledge copies, along with recovery work. The hosted copy can become stale while transfers are stopped. While sync is `disabled` or `declined`, saves upload no chat and `sifttext trial-upload` refuses.
 
 ## Understand an upload receipt
 

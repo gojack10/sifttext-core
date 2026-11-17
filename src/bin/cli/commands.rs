@@ -90,8 +90,8 @@ const GROUPS: &[Group] = &[
         guide: "a472e05c-9bbf-48f2-89d7-6c6092c339ed",
         commands: &[
             command("sync enable HOME", "Enable hosted sync"),
-            command("sync disable HOME", "Disable hosted sync"),
-            command("sync decline HOME", "Keep this home local"),
+            command("sync disable HOME -y", "Disable hosted sync and chat uploads"),
+            command("sync decline HOME -y", "Keep this home local, with no chat uploads"),
             command("sync status HOME", "Inspect retained sync state"),
             command("sync once HOME [--quiet]", "Run one sync exchange"),
             command("sync run HOME", "Run the scheduled sync exchange"),
