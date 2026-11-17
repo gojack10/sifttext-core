@@ -532,6 +532,11 @@ fn subscriber(access: &mut SyncAccess) -> Result<bool> {
     Ok(account_balance(access)?["paid"] == true)
 }
 
+/// Whether the signed-in account has an active subscription.
+pub fn subscribed() -> Result<bool> {
+    subscriber(&mut SyncAccess::checks()?)
+}
+
 fn read_work_packet(path: &Path) -> Result<WorkPacket> {
     let packet: WorkPacket = serde_json::from_str(&input(path)?)?;
     require(!packet.work_record.trim().is_empty() && !packet.outline.trim().is_empty(),

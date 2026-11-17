@@ -20,7 +20,7 @@ curl -fsSL https://sifttext.com/install | sh
 | The `sifttext` command, Git, ripgrep and fd | Keeps the user's knowledge in local Markdown files with Git history, searchable by their agents. |
 | Sign-in | Connects the knowledge home to the user's SiftText account. The user signs in through a link in their browser. |
 | Sync | Keeps the knowledge home on the user's account, so their other agents and the AI clients they connect through hosted MCP work from the same knowledge. |
-| Trial chat upload | On the introductory trial, each save uploads the chat it came from. The trial works from those chats. |
+| Trial chat upload | On the introductory trial, each save uploads the chat it came from. The trial works from those chats. The first save after the user subscribes ends the upload. |
 | Agent setup | The installer finishes by printing directions for you: run `sifttext instructions` and save this agent's persistent SiftText instructions. |
 
 ## Running it
