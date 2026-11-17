@@ -349,8 +349,13 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             if !explicit.iter().all(|id| sifttext_file_graph::uuid(id)) {
                 return Err("append only full UUIDs for explicit status requests".into());
             }
-            if sifttext_file_graph::sync_policy::config(Path::new(repo))?
-                .pointer("/trial/chat_upload_required") == Some(&json!(true)) {
+            let mut config = sifttext_file_graph::sync_policy::config(Path::new(repo))?;
+            let trial = config.pointer("/trial/chat_upload_required") == Some(&json!(true));
+            // Subscribing ends the trial's save-time terms on this home.
+            if trial && sifttext_file_graph::hosted_checks::subscribed().unwrap_or(false) {
+                if let Some(object) = config.as_object_mut() { object.remove("trial"); }
+                fs::write(Path::new(repo).join(".sifttext/config.json"), serde_json::to_vec_pretty(&config)?)?;
+            } else if trial {
                 let receipt = fs::read(Path::new(repo).join(".sifttext/trial/chat-upload.json"))
                     .ok()
                     .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
