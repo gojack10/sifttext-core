@@ -308,8 +308,12 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             println!("{}", render_cli_receipt(&output)?);
             if std::env::var("SIFTTEXT_RECEIPT_FORMAT").as_deref() != Ok("json") {
                 if let Some(check) = &receipt.hosted_check {
-                    *hosted_summary = Some(sifttext_file_graph::hosted_checks::render_publication(check)
-                        .replace("Epistemic submit check:", "Epistemic candidate check:"));
+                    *hosted_summary = Some(if check["reason"] == "introductory_trial" {
+                        "Epistemic candidate check: not part of the SiftText trial; nothing was sent or charged. Save with `sifttext submit`.".into()
+                    } else {
+                        sifttext_file_graph::hosted_checks::render_publication(check)
+                            .replace("Epistemic submit check:", "Epistemic candidate check:")
+                    });
                 }
                 if receipt.status == "reviewed" {
                     println!("Draft retained for submission. Submit the returned candidate commit with the same base and explicit status IDs.");
@@ -1127,7 +1131,7 @@ fn main() {
             || (args.len() == 2 && matches!(args[1].as_str(), "-h" | "--help"));
         sifttext_file_graph::updates::opportunistic_with_notice(!onboarding_or_help);
     }
-    if let Some(summary) = hosted_summary {
+    if let Some(summary) = hosted_summary.filter(|summary| !summary.is_empty()) {
         let mut out = std::io::stdout().lock();
         if let Err(error) = writeln!(out, "{summary}").and_then(|_| out.flush()) {
             let _ = writeln!(std::io::stderr().lock(), "rejected: {error}");

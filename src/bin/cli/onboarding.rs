@@ -231,6 +231,10 @@ pub(super) fn render(home: &Path, entry: &Value) -> Result<String> {
     } else {
         &transport
     }))?;
+    if sifttext_file_graph::sync_policy::config(&home)?
+        .pointer("/trial/chat_upload_required") == Some(&json!(true)) {
+        field(&mut lines, "trial", json!("This account is on the SiftText trial: saves don't use the epistemic check. Submit without a work packet."))?;
+    }
     clock_fields(&mut lines)?;
     retrieval_tool_fields(&mut lines)?;
     references(&mut lines, "repair-guide", &guides)?;
