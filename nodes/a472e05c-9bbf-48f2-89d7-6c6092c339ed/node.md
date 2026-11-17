@@ -10,13 +10,13 @@ position: 5120
 ---
 ## Install and verify
 
-For an authorized installation, use the source repository's INSTALL.md.
+For an authorized installation, use the official installer and follow [What Installing Sets Up](../e9581665-caec-41af-9215-662b7f034448/node.md).
 
 ```sh
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-Open a new shell when sifttext is not yet on PATH.
+When `sifttext` is not found by name, use the `command` path from `sifttext instructions` or the installer's output.
 
 Set BIN to the installed launcher, normally "$HOME/.local/share/sifttext/sifttext".
 

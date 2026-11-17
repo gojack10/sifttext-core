@@ -7,6 +7,12 @@ fn command(program: &str, args: &[&str]) -> Result<()> {
         let mut c = Command::new(program);
         c.args(args);
         c
+    })
+    .map_err(|error| match error.downcast_ref::<std::io::Error>() {
+        Some(io) if io.kind() == std::io::ErrorKind::NotFound => {
+            format!("{program} is not available on this machine, so the 15-second sync schedule could not be installed")
+        }
+        _ => format!("{program} could not start: {error}"),
     })?;
     if !output.status.success() {
         return Err(format!("{program} could not update the user sync schedule; inspect sync status, setup remains incomplete").into());
