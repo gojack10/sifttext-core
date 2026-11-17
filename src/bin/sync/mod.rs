@@ -1224,9 +1224,11 @@ fn initialize(store: &Store) -> Result<State> {
 }
 pub(super) fn run(runtime: &Path, args: &[String]) -> Result<Value> {
     let quiet = matches!(args, [_, operation, _, flag] if operation == "once" && flag == "--quiet");
-    let args = if quiet { &args[..3] } else { args };
+    let confirmed = matches!(args, [_, operation, _, flag]
+        if (operation == "disable" || operation == "decline") && flag == "-y");
+    let args = if quiet || confirmed { &args[..3] } else { args };
     if args.len() < 3 || args.len() > 4 {
-        return Err("usage: sifttext sync enable|disable|decline|status|once|run HOME; sync policy HOME FILE.json".into());
+        return Err("usage: sifttext sync enable|status|once|run HOME; sync disable|decline HOME -y; sync policy HOME FILE.json".into());
     }
     let operation = args[1].as_str();
     let home = Path::new(&args[2]);
@@ -1237,6 +1239,9 @@ pub(super) fn run(runtime: &Path, args: &[String]) -> Result<Value> {
         || (args.len() == 4) != (operation == "policy")
     {
         return Err("unknown sync operation/arguments".into());
+    }
+    if (operation == "disable" || operation == "decline") && !confirmed {
+        return Err(format!("Turning sync off stops sending this home's knowledge, and the chat behind each save, to the SiftText account. Hosted MCP and SiftText's other hosted services work from those copies and stop receiving updates; the copy already on the account stays there. Nothing was changed. Run `sifttext sync {operation} HOME -y` to turn sync off.").into());
     }
     if operation == "status"
         && !home
