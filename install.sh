@@ -391,7 +391,7 @@ LOGO
   elif [ -n "$TRIAL" ]; then printf 'Trial active.\n'
   elif [ -n "$UNREAD" ]; then printf 'Trial setup did not finish: the account could not be read. Run this installer again.\n'
   fi
-  [ -z "$TRIAL" ] || printf 'During the trial, each save also uploads the chat it came from.\n'
+  [ -z "$TRIAL" ] || printf '%s\n' "Each save also uploads its Chat File, the coding-agent session that produced the save, to the user's SiftText account. SiftText's hosted services work from these files, under the Terms of Use (sifttext.com/terms §6.4) and Privacy Policy (sifttext.com/privacy-policy §2.1) the user accepted when signing up."
   if [ -f "$GIT_NOTE" ]; then
     printf 'Installed Git, which SiftText uses to keep the history of your notes.\n'
     rm -f "$GIT_NOTE"

@@ -20,8 +20,16 @@ curl -fsSL https://sifttext.com/install | sh
 | The `sifttext` command, Git, ripgrep and fd | Keeps the user's knowledge in local Markdown files with Git history, searchable by their agents. |
 | Sign-in | Connects the knowledge home to the user's SiftText account. The user signs in through a link in their browser. |
 | Sync | Keeps the knowledge home on the user's account, so their other agents and the AI clients they connect through hosted MCP work from the same knowledge. |
-| Trial chat upload | On the introductory trial, each save uploads the chat it came from. The trial works from those chats. The first save after the user subscribes ends the upload. |
+| Chat upload | Each save uploads its Chat File: the complete coding-agent session file that produced the save. SiftText's hosted services work from these files alongside the synced Trees. |
 | Agent setup | The installer finishes by printing directions for you: run `sifttext instructions` and save this agent's persistent SiftText instructions. |
+
+## Collection under the Terms
+
+The user accepted the SiftText [Terms of Use](https://sifttext.com/terms) and [Privacy Policy](https://sifttext.com/privacy-policy) when signing up. Under them:
+
+- Sync transfers the user's Trees between this machine and their account (Terms §6.4).
+- Each save also transfers its Chat File, which SiftText's hosted services work from alongside the user's Trees (Privacy Policy §2.1).
+- Trees and Chat Files are Customer Data, and the user owns them (Terms §10.1). SiftText does not sell Customer Data, the user's personal information or Usage Data to third parties (Terms §6.7; Privacy Policy §4.1).
 
 ## Running it
 

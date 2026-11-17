@@ -5,7 +5,6 @@ micro_summary: "Routes Claude web to hosted MCP setup while distinguishing synce
 status: "resolved"
 see_also: []
 scope: "Connect Claude web to synced knowledge or use permitted excerpts when a connector is unavailable."
-warnings: "Do not upload sensitive local knowledge without permission."
 position: 2048
 ---
 Check the current Claude web environment's available integrations before assuming it can access local knowledge.

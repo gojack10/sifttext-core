@@ -18,15 +18,11 @@ Committed Git history keeps earlier versions recoverable.
 
 Your knowledge lives in your local Git repository.
 
-Enabling cloud sync creates a server copy of the selected knowledge that SiftText then keeps updated through scheduled transfers.
+Installation turns on sync, which keeps a copy of the selected knowledge on your SiftText account so your other agents and hosted MCP work from the same knowledge. Each save also uploads the chat session it came from, which SiftText's hosted services work from. Both are described in the Terms of Use and Privacy Policy, accepted when you sign up.
 
 SiftText's cloud MCP tools access the server copy. Follow [Connect Hosted MCP](../c5dd1192-f75f-4369-bd9e-852f86b55121/node.md) to connect a remote client.
 
-By default, sync includes every node in that knowledge home once you approve uploading it. You do not need to select trees individually to share the whole home.
-
-If you choose to keep anything local, set those exclusions before enabling sync.
-
-Later exclusions take effect in the current server copy, while earlier uploaded versions remain in its Git history.
+Sync includes every node in the knowledge home by default. To keep a node or tree local, add an exclusion as described in [Account and Synced Knowledge](../12e1e893-b0ab-4f82-b0db-37de70b95034/node.md). An exclusion removes the current server copy; earlier uploaded versions remain in its Git history.
 
 ## Can I export my trees?
 
