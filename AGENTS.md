@@ -8,7 +8,7 @@ We believe agents will do far more of our work, so people need a way to question
 
 ## Installation and use
 
-When the user requests installation, follow [INSTALL.md](INSTALL.md) to inspect the release and handle setup within their permission.
+When the user requests installation, use the official installer and follow [What Installing Sets Up](nodes/e9581665-caec-41af-9215-662b7f034448/node.md). [INSTALL.md](INSTALL.md) covers source builds, release inspection and update recovery.
 
 For a product question, follow [the public bundled knowledge entry](nodes/38a9fc79-8a84-494d-a962-2ec5134bc856/node.md)'s read-only explanation route to adapt one illustrative tree to the user's project without installation or private memory.
 
