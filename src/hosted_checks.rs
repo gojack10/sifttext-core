@@ -340,6 +340,9 @@ pub fn run(args: &[String]) -> Result<()> {
         _ => None,
     };
     let mut access = SyncAccess::checks()?;
+    if request.is_some() && introductory_trial(&account_balance(&mut access)?) {
+        return Err("Checks are not part of the SiftText trial. Nothing was sent or charged.".into());
+    }
     let value = if let Some(request) = request {
         response(&mut access, "POST", ROOT, Some(&request), true)?
     } else { match args {
@@ -451,11 +454,22 @@ pub(crate) fn review(
         json!({"status":"not_required","reason":"upload_excluded"})
     } else {
         match SyncAccess::checks() {
-            Ok(mut access) => review_packet(reader, after, &scope, work_packet, &mut access),
+            Ok(mut access) => match account_balance(&mut access) {
+                Ok(account) if introductory_trial(&account) =>
+                    json!({"status":"not_required","reason":"introductory_trial"}),
+                Ok(_) => review_packet(reader, after, &scope, work_packet, &mut access),
+                Err(error) => unavailable(error),
+            },
             Err(error) => unavailable(error),
         }
     };
     scope.record(result)
+}
+
+/// Checks are not part of the introductory trial. Credits-only buyers are not on
+/// an active trial and keep the checks they paid for.
+fn introductory_trial(account: &Value) -> bool {
+    account["paid"] != true && matches!(account["trial"]["status"].as_str(), Some("lead_in" | "active"))
 }
 
 struct ReviewScope {
@@ -806,6 +820,7 @@ pub fn render_publication(check: &Value) -> String {
         Some("not_required") if check["reason"] == "upload_excluded" => lines.push("Epistemic submit check: all changed knowledge excluded by upload policy; no review, upload or charge.".into()),
         Some("not_required") if check["reason"] == "accepted_replication" => (),
         Some("not_required") if check["reason"] == "no_active_subscription" => lines.push("Epistemic submit check: not applicable without an active subscription; no review or charge.".into()),
+        Some("not_required") if check["reason"] == "introductory_trial" => lines.push("Epistemic submit check: not part of the SiftText trial; nothing was sent or charged. Save with `sifttext submit`.".into()),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),
         Some("unchecked") if check["waived"] == true => lines.push("Epistemic review explicitly waived for this save.".into()),
         Some("unchecked") if check["blocked"] == true => (),
