@@ -2,44 +2,15 @@
 
 SiftText keeps an agent's project knowledge in local Markdown files with Git history so later sessions can revisit earlier decisions.
 
-## Quick start
+This manual covers building Core from source, checking a release before running its installer, account reference and update recovery.
 
-A user can ask their agent: “Please install sifttext.com.” That request authorizes installation and saving the running agent's persistent SiftText instructions.
-
-For an authorized new installation:
+To install SiftText for a user, use the official installer and follow [What Installing Sets Up](nodes/e9581665-caec-41af-9215-662b7f034448/node.md):
 
 ```sh
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-[What Installing Sets Up](nodes/e9581665-caec-41af-9215-662b7f034448/node.md) describes each part of setup. The installer opens sign-in in the user's browser and finishes account setup. Sign-in is required; the human completes browser authorization. If the installer stops with a sign-in URL, give it to the user at once; the link stays open for about ten minutes. Run the installer again once they have signed in; it continues from what is missing.
-
-Open a new shell to load any PATH change made by the installer. In the current shell, the default launcher is `"$HOME/.local/share/sifttext/sifttext"`.
-
-Run the installed command with `instructions`, read the returned entry file and follow Maintain Memory Continuity to save this agent's persistent SiftText instructions. The install request already authorizes that setup; do not ask again. Preserve existing instructions, report any unsupported harness step as unfinished, then return to the user's task.
-
-For an activated trial, the installer prints `Trial active until YYYY-MM-DD.` when the expiry date is available, or `Trial active.` while it is not yet available.
-
-If the user will not sign in, use [the source-build route](#build-from-source) instead of the installer.
-
-Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
-
-## Establish permission and destinations
-
-For an information request, limit work to inspection until the user authorizes installation.
-
-Use separate locations for application files and knowledge so replacing the application preserves the user's work.
-
-| Purpose | Default path |
-| --- | --- |
-| Application | `~/.local/share/sifttext` |
-| Knowledge home | `~/sifttext` |
-
-Keep both locations outside project code unless the user chooses otherwise. Preserve conflicting files and ask how to handle them before changing the destination.
-
-When a consequential choice blocks setup, ask the human while continuing independent authorized work. Retain the blocked step if they are unavailable.
-
-Delegate only through the harness's supported capabilities and within the user's cost permission.
+For someone who will not sign in, [build from source](#build-from-source) instead. Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
 
 ## Prepare the machine
 
