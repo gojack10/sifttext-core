@@ -17,7 +17,7 @@ Read [SiftText Commit](../c72d552d-3499-445b-a8d5-05d0ff7824f2/node.md) before c
 
 Use the same procedure for first installation and later refreshes.
 
-Use the entrypoint returned by `sifttext instructions` and locate Retrieve SiftText Knowledge in that home. Reuse these paths if already established.
+Use the entrypoint and `command` path returned by `sifttext instructions` and locate Retrieve SiftText Knowledge in that home. Reuse these paths if already established.
 
 Follow [Keeping the Human in the Loop](../6e9f23b3-3fbe-4dbd-9b58-6842438d2d01/node.md) while handling the work. Adapt any user-facing message to whether you are installing a missing block, replacing an older one or confirming an already-current block.
 
@@ -84,7 +84,7 @@ Entry: <verified absolute entrypoint path>
 Retrieval guide: <verified absolute path to Retrieve SiftText Knowledge>
 
 At the start of every new chat, unless I say not to use SiftText, before any other tool call:
-1. Run `sifttext instructions`.
+1. Run `sifttext instructions`. If `sifttext` is not found, run `<verified absolute command path> instructions` instead.
 2. Read the Entry above and follow it, plus any `agent-instructions` the command returns.
 3. Before retrieving knowledge, read the Retrieval guide above.
 

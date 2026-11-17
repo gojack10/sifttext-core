@@ -110,16 +110,36 @@ fn clock_fields(lines: &mut Vec<String>) -> Result<()> {
     )
 }
 
-fn retrieval_tool(names: &[&str]) -> Option<PathBuf> {
+fn executable_on(paths: &std::ffi::OsStr, names: &[&str]) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
-    env::var_os("PATH").and_then(|paths| {
-        names.iter().find_map(|name| {
-            env::split_paths(&paths)
-                .map(|directory| directory.join(name))
-                .find(|path| fs::metadata(path)
-                    .is_ok_and(|file| file.is_file() && file.permissions().mode() & 0o111 != 0))
-        })
+    names.iter().find_map(|name| {
+        env::split_paths(paths)
+            .map(|directory| directory.join(name))
+            .find(|path| fs::metadata(path)
+                .is_ok_and(|file| file.is_file() && file.permissions().mode() & 0o111 != 0))
     })
+}
+
+fn retrieval_tool(names: &[&str]) -> Option<PathBuf> {
+    env::var_os("PATH").and_then(|paths| executable_on(&paths, names))
+}
+
+/// The stable launcher of a managed installation survives release activation;
+/// a source build has only its own executable.
+fn command_path() -> Result<PathBuf> {
+    if let Some(root) = env::var_os("SIFTTEXT_INSTALL_ROOT") {
+        let launcher = Path::new(&root).join("sifttext");
+        if launcher.is_file() { return Ok(launcher) }
+    }
+    Ok(env::current_exe()?)
+}
+
+/// Whether the caller's shell finds `sifttext` by name. The managed launcher adds
+/// ~/.local/bin to PATH for itself, so it passes the caller's PATH separately.
+fn runs_by_name() -> bool {
+    if env::var_os("SIFTTEXT_INSTALL_ROOT").is_none() { return true }
+    env::var_os("SIFTTEXT_CALLER_PATH").or_else(|| env::var_os("PATH"))
+        .is_some_and(|paths| executable_on(&paths, &["sifttext"]).is_some())
 }
 
 /// Where each retrieval tool resolves on PATH, so an agent need not probe before using it.
@@ -155,14 +175,14 @@ fn command_output(lines: &mut Vec<String>, key: &str, command: &mut Command) -> 
     }
 }
 
-fn knowledge_fields(lines: &mut Vec<String>, home: &Path) -> Result<()> {
+fn knowledge_fields(lines: &mut Vec<String>, home: &Path, sifttext: &Path) -> Result<()> {
     field(lines, "knowledge-home", json!(home))?;
     command_output(lines, "knowledge-home-entries", Command::new("ls").arg("-1").arg(home))?;
     let quote = |path: &Path| format!("'{}'", path.display().to_string().replace('\'', "'\\''"));
     let fd = retrieval_tool(&["fd", "fdfind"]).unwrap_or_else(|| PathBuf::from("fd"));
     let command = format!(
         "{} -HI -t l --max-depth 1 . {} | sort | {} outline {} - | cut -f1,3",
-        quote(&fd), quote(&home.join("trees")), quote(&env::current_exe()?), quote(home),
+        quote(&fd), quote(&home.join("trees")), quote(sifttext), quote(home),
     );
     field(lines, "trees-command", json!(command))?;
     command_output(lines, "trees-output", Command::new("bash").args(["-o", "pipefail", "-c", &command]))
@@ -186,7 +206,13 @@ pub(super) fn render(home: &Path, entry: &Value) -> Result<String> {
     let mut stopped = false;
     let mut transport = "unknown".to_owned();
     field(&mut lines, "onboarding-entry", entry["path"].clone())?;
-    knowledge_fields(&mut lines, &home)?;
+    let sifttext = command_path()?;
+    field(&mut lines, "command", json!(sifttext))?;
+    if !runs_by_name() {
+        field(&mut lines, "command-by-name", json!("unavailable"))?;
+        actions.push("`sifttext` does not run by name in this chat's shell, so the startup block's first command fails here. Use `command` for SiftText in this chat. Make `sifttext` run by name in this agent's new chats without administrator access, or tell the user exactly what to do.".to_owned());
+    }
+    knowledge_fields(&mut lines, &home, &sifttext)?;
     match sync::instructions(&home) {
         Ok(receipts) => for receipt in receipts {
             if let Some(state) = receipt["transport"].as_str() { transport = state.to_owned(); }

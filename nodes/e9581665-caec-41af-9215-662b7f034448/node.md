@@ -31,7 +31,9 @@ Each run fits within a two-minute command limit and continues from whatever is m
 
 When it prints a sign-in link, give it to the user right away. After they sign in, run the installer again.
 
-Setup is finished when the installer prints the SiftText logo and its directions for you. If a line under the logo says part of setup did not finish, run the installer again. If the same line comes back, tell the user what it says.
+Setup is finished when the installer prints the SiftText logo and its directions for you. Some steps depend on the machine. When the installer cannot finish one, its directions say what it tried, what is missing and what result to reach; reach that result with what this machine has. When a line says to run the installer again, do that. If the same line comes back, tell the user what it says.
+
+To install somewhere other than `~/.local/share/sifttext` and `~/sifttext`, pass the application directory and the knowledge home as the installer's two arguments: `curl -fsSL https://sifttext.com/install | sh -s -- APP_DIR KNOWLEDGE_HOME`. Create their parent directories first.
 
 ## Example
 
