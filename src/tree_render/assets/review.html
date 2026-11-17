@@ -6,7 +6,12 @@
 /*VIEW*/
 const embedded = /*DATA*/null;
 const card = document.getElementById('card');
-let previous = '', dispose, appPayload = null;
+let previous = '', dispose, appPayload = null, renderId = null, requested = false;
+function reviewFrom(result) {
+  if (result?._meta?.['sifttext/review']) return result._meta['sifttext/review'];
+  // OpenAI's connector delivers the whole tool result serialized in one text block.
+  try { return JSON.parse(result?.content?.[0]?.text)?._meta?.['sifttext/review'] || null; } catch { return null; }
+}
 function load() {
   const payload = window.openai?.toolResponseMetadata?.['sifttext/review'] || appPayload || embedded;
   if (!payload) return;
@@ -21,14 +26,21 @@ window.addEventListener('openai:set_globals', load);
 window.addEventListener('message', event => {
   if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
   const message = event.data;
-  if (message.method === 'ui/notifications/tool-result') {
-    appPayload = message.params?._meta?.['sifttext/review'] || null;
+  if (message.method === 'ui/notifications/tool-input') renderId = message.params?.arguments?.render_id || null;
+  if (message.method === 'ui/notifications/tool-result' || message.id === 'sifttext-review') {
+    appPayload = reviewFrom(message.params || message.result) || appPayload;
+    // Codex passes only the result's content to the card; fetch the review through the host.
+    if (!appPayload && renderId && !requested) {
+      requested = true;
+      window.parent.postMessage({jsonrpc:'2.0',id:'sifttext-review',method:'tools/call',params:{name:'show_tree_delta',arguments:{render_id:renderId}}}, '*');
+    }
     load();
   }
   if (message.id === 'sifttext-init' && message.result) {
     window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'}, '*');
   }
 });
-if (window.parent !== window && !window.openai) window.parent.postMessage({jsonrpc:'2.0',id:'sifttext-init',method:'ui/initialize',params:{protocolVersion:'2026-01-26',appInfo:{name:'SiftText review',version:'1.0.0'},appCapabilities:{}}}, '*');
+// Codex exposes window.openai inside MCP Apps frames and still waits for this handshake.
+if (window.parent !== window) window.parent.postMessage({jsonrpc:'2.0',id:'sifttext-init',method:'ui/initialize',params:{protocolVersion:'2026-01-26',appInfo:{name:'SiftText review',version:'1.0.0'},appCapabilities:{}}}, '*');
 load();
 </script></body></html>
