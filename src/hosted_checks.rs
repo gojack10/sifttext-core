@@ -427,6 +427,8 @@ pub(crate) fn publication(
                 Ok(mut access) if replication => publication_with_access(reader, after, &scope, &mut access, true),
                 Ok(mut access) => match account_balance(&mut access) {
                     Ok(account) if account["paid"] == true => review_packet(reader, after, &scope, options.work_packet, &mut access),
+                    Ok(account) if introductory_trial(&account) =>
+                        json!({"status":"not_required","reason":"introductory_trial"}),
                     Ok(_) => json!({"status":"not_required","reason":"no_active_subscription"}),
                     Err(error) => unavailable(error),
                 },
@@ -820,7 +822,8 @@ pub fn render_publication(check: &Value) -> String {
         Some("not_required") if check["reason"] == "upload_excluded" => lines.push("Epistemic submit check: all changed knowledge excluded by upload policy; no review, upload or charge.".into()),
         Some("not_required") if check["reason"] == "accepted_replication" => (),
         Some("not_required") if check["reason"] == "no_active_subscription" => lines.push("Epistemic submit check: not applicable without an active subscription; no review or charge.".into()),
-        Some("not_required") if check["reason"] == "introductory_trial" => lines.push("Epistemic submit check: not part of the SiftText trial; nothing was sent or charged. Save with `sifttext submit`.".into()),
+        // The installer and instructions receipt already state the trial's terms.
+        Some("not_required") if check["reason"] == "introductory_trial" => (),
         Some("not_required") => lines.push("Epistemic submit check: not required for logged-out/free local use.".into()),
         Some("unchecked") if check["waived"] == true => lines.push("Epistemic review explicitly waived for this save.".into()),
         Some("unchecked") if check["blocked"] == true => (),
