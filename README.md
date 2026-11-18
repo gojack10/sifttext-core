@@ -20,11 +20,10 @@ Tell your agent to run `sifttext instructions` and read the returned entry file 
 
 ## Plans
 
-The [website](https://sifttext.com/#plans) offers these plans:
+Installing SiftText signs you in and starts your free trial. No card is needed. To keep the hosted services after the trial, choose a plan:
 
 | Plan | Price (USD) | Included offering |
 | --- | --- | --- |
-| Core | Free | Local Markdown files with Git history for agents with file and terminal access. |
 | [Plus](https://app.sifttext.com/subscribe?plan=plus) | $20/month | Hosted MCP, knowledge sync, browser tooling and both checkers with 2,000 monthly credits. |
 | [Pro](https://app.sifttext.com/subscribe?plan=pro) | $50/month | Plus services, greater parallel connection capacity and 10,000 monthly credits. |
 
@@ -91,8 +90,6 @@ Accepted changes remain in Git history. Incomplete drafts remain available for r
 For a logged-in paid account, the binary reviews a work packet and the changed node text from the final candidate before accepting a submission.
 
 Follow [Epistemic Check](nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) to review a draft, submit the returned candidate with the same work packet, and resolve a blocked save.
-
-Logged-out and free offline work remains available.
 
 `worktree HOME` allocates a sparse draft without a full checkout. Expand an existing or new node with `git -C WORKTREE sparse-checkout add nodes/UUID`; this does not pull a newer version. Read the selected node with ordinary file tools, for example `cat WORKTREE/nodes/UUID/node.md`. `sifttext create` selects its new node and parent automatically. Then edit and stage ordinary authored files in that draft. For manually created files outside the selection, select their directory first (or deliberately stage with `git add --sparse`). Search, outlines and submit use the complete logical version, including omitted Git content and valid uncommitted changes; missing sparse paths are not deletions. Submit materializes only nodes requiring status patches. `git -C WORKTREE sparse-checkout disable` is the full-draft fallback. The normal home stays complete; keep durable task artifacts there, not in the disposable draft.
 

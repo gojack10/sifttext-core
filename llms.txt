@@ -8,7 +8,7 @@ The tree lives in Markdown files with Git history, allowing agents to use it acr
 
 ## Plans
 
-- Core is free for agents with file and terminal access.
+- Installing SiftText signs the user in and starts their free trial. No card is needed.
 
 | Plan | Price | Included services |
 | --- | --- | --- |
@@ -22,8 +22,6 @@ External AI-client subscriptions are separate purchases.
 The binary enforces epistemic checking on paid submissions with credits.
 
 Read [Epistemic Check](https://github.com/gojack10/sifttext-core/blob/main/nodes/1b668703-b591-4790-ae6b-5c4202413de5/node.md) before using the commands or handling findings and unchecked saves.
-
-Free offline work is unchanged.
 
 Use [AI Slop Writing Check](https://github.com/gojack10/sifttext-core/blob/main/nodes/869c330b-ec65-4ecd-9d03-9a09dab87010/node.md) on demand for writing review.
 
@@ -42,7 +40,7 @@ Before showing a tree delta, read [SiftText Commit](https://github.com/gojack10/
 
 ## Installation
 
-The preferred path is the official installer:
+Install SiftText with the official installer:
 
 ```sh
 curl -fsSL https://sifttext.com/install | sh
@@ -50,7 +48,7 @@ curl -fsSL https://sifttext.com/install | sh
 
 Before running it, read [What Installing Sets Up](https://raw.githubusercontent.com/gojack10/sifttext-core/main/nodes/e9581665-caec-41af-9215-662b7f034448/node.md). The installer installs SiftText and the tools it needs, opens sign-in in the user's browser and finishes setup. When it finishes, follow the directions it prints. If a run stops before it finishes, run it again; it continues from what is missing.
 
-- For local Core builds, see [INSTALL.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/INSTALL.md).
+- [INSTALL.md](https://raw.githubusercontent.com/gojack10/sifttext-core/main/INSTALL.md) covers source builds, release inspection and update recovery.
 
 ## Release evidence
 
