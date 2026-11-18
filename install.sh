@@ -59,17 +59,41 @@ elif command -v sha256sum >/dev/null; then
 else
   echo 'A SHA-256 tool is required. Install shasum or sha256sum, then run this installer again.' >&2; exit 1
 fi
-git_ready() {
+system_git_ready() {
   have git || return 1
-  # macOS ships a /usr/bin/git stub that opens Apple's install window when run.
+  # macOS ships a /usr/bin/git placeholder that opens Apple's install window when run.
   if [ "$OS" = darwin ] && [ "$(command -v git)" = /usr/bin/git ]; then
     xcode-select -p >/dev/null 2>&1 || return 1
   fi
   git --version >/dev/null 2>&1
 }
+# A Mac without a working Git gets SiftText's own copy: GitHub Desktop's
+# portable build, pinned by SHA-256. Only SiftText's launcher puts it on PATH,
+# so the user's own `git` is unchanged. The launcher below repeats this path.
+GIT_HOME=$HOME/.local/share/sifttext-git
+git_ready() {
+  system_git_ready || "$GIT_HOME/bin/git" --version >/dev/null 2>&1
+}
+install_portable_git() (
+  asset=dugite-native-v2.56.1-238326e-macOS-$CPU.tar.gz
+  case "$CPU" in
+    arm64) digest=a882ec6882416b57d212a22bac845ae27944f96cf73453a864f6a12c17863a79 ;;
+    x64) digest=3fdb0c2f102fe0273d64b5d5fb77315c19f2b4648a154593723cb9ed98f2bc7d ;;
+  esac
+  mkdir -p "$(dirname "$GIT_HOME")" || exit 1
+  stage=$(mktemp -d "$(dirname "$GIT_HOME")/.sifttext-git.XXXXXX") || exit 1
+  trap 'rm -rf "$stage"' EXIT
+  curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 90 --max-filesize 268435456 \
+    "https://github.com/desktop/dugite-native/releases/download/v2.56.1/$asset" \
+    -o "$stage/git.tar.gz" </dev/null || exit 1
+  [ "$(sha256 "$stage/git.tar.gz")" = "$digest" ] || exit 1
+  mkdir "$stage/git" && tar -xzf "$stage/git.tar.gz" -C "$stage/git" || exit 1
+  [ -e "$GIT_HOME" ] || mv "$stage/git" "$GIT_HOME" || exit 1
+  "$GIT_HOME/bin/git" --version >/dev/null 2>&1
+)
 ensure_git() {
   git_ready && return 0
-  if [ "$OS" = darwin ]; then xcode-select --install >/dev/null 2>&1 || :
+  if [ "$OS" = darwin ]; then install_portable_git || return 1
   else system_install git || :
   fi
   while ! git_ready; do
@@ -77,7 +101,8 @@ ensure_git() {
     sleep 2
   done
   # A later run prints the result, since sign-in usually ends this one first.
-  { mkdir -p "$(dirname "$GIT_NOTE")" && command -v git > "$GIT_NOTE"; } || :
+  if system_git_ready; then GIT_PATH=$(command -v git); else GIT_PATH=$GIT_HOME/bin/git; fi
+  { mkdir -p "$(dirname "$GIT_NOTE")" && printf '%s\n' "$GIT_PATH" > "$GIT_NOTE"; } || :
 }
 case "$PREFIX:$KNOWLEDGE" in *'
 '*) echo 'Installation paths cannot contain newlines.' >&2; exit 1 ;; esac
@@ -310,9 +335,13 @@ install_hint() {
   fi
 }
 git_or_stop() {
-  if wait "$GIT_JOB"; then return 0; fi
+  if wait "$GIT_JOB"; then
+    # SiftText's own Git also serves this installer's remaining commands.
+    system_git_ready || PATH=$GIT_HOME/bin:$PATH
+    return 0
+  fi
   if [ "$OS" = darwin ]; then
-    echo "Git is still installing with Apple's developer tools. Ask the user to finish the macOS install window, then run this installer again." >&2
+    echo "Git is required, and this Mac has no working Git: \`git\` here is Apple's placeholder, which works only after Apple's developer tools are installed. The installer tried to set up a copy of Git for SiftText alone (GitHub Desktop's portable build from github.com, checked against a pinned SHA-256), and that did not finish. The install request covers Git. Get SiftText a working Git with what this machine allows, then run this installer again. For example, retry once github.com is reachable, or ask the user to install Apple's developer tools: \`xcode-select --install\` opens Apple's install window, where they click Install." >&2
     exit 1
   fi
   if [ "$(id -u)" -ne 0 ] && ! { have sudo && sudo -n true 2>/dev/null; }; then
@@ -393,7 +422,10 @@ LOGO
   fi
   [ -z "$TRIAL" ] || printf '%s\n' "Each save also uploads its Chat File, the coding-agent session that produced the save, to the user's SiftText account. SiftText's hosted services work from these files, under the Terms of Use (sifttext.com/terms §6.4) and Privacy Policy (sifttext.com/privacy-policy §2.1) the user accepted when signing up."
   if [ -f "$GIT_NOTE" ]; then
-    printf 'Installed Git, which SiftText uses to keep the history of your notes.\n'
+    case "$(cat "$GIT_NOTE")" in
+      "$GIT_HOME"/*) printf 'Installed a copy of Git that only SiftText uses, to keep the history of your notes.\n' ;;
+      *) printf 'Installed Git, which SiftText uses to keep the history of your notes.\n' ;;
+    esac
     rm -f "$GIT_NOTE"
   fi
   # A missing scheduler is not fixed by running the installer again.
@@ -476,6 +508,8 @@ export SIFTTEXT_INSTALL_ROOT
 # The caller's own PATH shows whether `sifttext` runs by name in its shell.
 SIFTTEXT_CALLER_PATH=$PATH
 export SIFTTEXT_CALLER_PATH
+# SiftText's own Git, which the installer adds only when the machine has no working Git.
+[ ! -x "$HOME/.local/share/sifttext-git/bin/git" ] || PATH=$HOME/.local/share/sifttext-git/bin:$PATH
 # Search tools installed beside the command stay reachable before a new shell.
 PATH=$PATH:$HOME/.local/bin
 export PATH

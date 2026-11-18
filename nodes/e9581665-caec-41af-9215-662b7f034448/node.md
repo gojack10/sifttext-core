@@ -33,7 +33,7 @@ The user accepted the SiftText [Terms of Use](https://sifttext.com/terms) and [P
 
 ## Running it
 
-The install request covers everything in the table above, including Git through the system package manager.
+The install request covers everything in the table above, including Git. The installer uses the machine's Git when it works. Otherwise it installs a copy only SiftText uses on a Mac, or uses the system package manager on Linux.
 
 Each run fits within a two-minute command limit and continues from whatever is missing, so run it again whenever it stops early.
 
