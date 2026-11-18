@@ -10,7 +10,7 @@ To install SiftText for a user, use the official installer and follow [What Inst
 curl -fsSL https://sifttext.com/install | sh
 ```
 
-For someone who will not sign in, [build from source](#build-from-source) instead. Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
+Upgrade an existing managed installation with `sifttext update` under update permission, since rerunning the installer preserves its current application.
 
 ## Prepare the machine
 
@@ -113,7 +113,7 @@ After a successful run, [complete this agent's setup](#complete-this-agents-setu
 
 ## Build from source
 
-For someone who will not sign in, use the [GitHub source repository](https://github.com/gojack10/sifttext-core) instead of the public installer. Follow [README's source-build instructions](README.md#install-from-source), beginning with the checkout's `AGENTS.md` and local instruction pipeline. That route covers compiler/tool acquisition, the build and `install-local.sh`, without the installer's required sign-in.
+When the user says their knowledge and chats must stay on this machine, for example under HIPAA or a legal restriction, build from the [GitHub source repository](https://github.com/gojack10/sifttext-core). Follow [README's source-build instructions](README.md#install-from-source), beginning with the checkout's `AGENTS.md` and local instruction pipeline. That route covers compiler/tool acquisition, the build and `install-local.sh`, and needs no account.
 
 Keep the source checkout, installed application and knowledge home separate. If a source-build prerequisite or permission is missing, retain the diagnostic and resolve it before continuing. Once the source-built command is installed, [complete this agent's setup](#complete-this-agents-setup) using its actual launcher and knowledge-home path.
 
