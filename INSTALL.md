@@ -23,7 +23,7 @@ Use the installer to acquire its prerequisites. On Linux it installs packages as
 | curl | The quick-start download itself needs curl. If missing, install it before running the command. Once running, the installer can attempt Linux package installation. |
 | tar | The installer attempts Linux package installation if missing. If it remains unavailable, install it and rerun. |
 | shasum or sha256sum | One must be available. If missing, install a SHA-256 tool and rerun. |
-| Git | The installer starts Apple's developer-tools installation on macOS or attempts Linux package installation. If it stops, have the user finish the macOS window or run the command the installer names, then rerun. |
+| Git | The installer uses the machine's Git when it works. On a Mac without one, where `git` is Apple's placeholder without developer tools, it downloads GitHub Desktop's portable Git, pinned by SHA-256, to `~/.local/share/sifttext-git`. Only SiftText's launcher uses that copy; the user's own `git` is unchanged. On Linux it attempts package installation. If it stops, follow its directions, then rerun. |
 | rg and fd | The installer attempts to supply missing search tools from pinned official releases. Follow the installed retrieval guide if either remains unavailable. |
 
 The installer reuses configured Git identity where available and supplies missing name/email fields as `SiftText Agent <agent@sifttext.com>` for this home only. It leaves the user's global Git configuration unchanged; no identity question is needed.
