@@ -168,12 +168,25 @@ fn safe_regular(path: &Path) -> Result<()> {
     let m = fs::symlink_metadata(path)?;
     require(m.is_file() && m.nlink() == 1, "unsafe derived cache file")
 }
-fn cache(root: &Path) -> Result<(Connection, PathBuf)> {
+// A knowledge view is a Git root. Refuse other folders before writing derived
+// state there; Snapshot::read still confirms the exact top level.
+fn knowledge_root(path: &Path) -> Result<PathBuf> {
+    let root = working_path(path, None)?;
+    require(fs::symlink_metadata(root.join(".git")).is_ok(), "knowledge view must be its Git root")?;
+    Ok(root)
+}
+fn preparation_required(root: &Path) -> String {
+    format!("derived data requires update preparation, not a read-time rebuild. Run `sifttext index {}` (managed installation: `sifttext update --prepare`), then retry", root.display())
+}
+// Only preparation creates the index. Reads open an existing one.
+fn cache(root: &Path, create: bool) -> Result<(Connection, PathBuf)> {
     let directory = root.join(".sifttext");
-    match fs::create_dir(&directory) {
-        Ok(()) => (),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
-        Err(e) => return Err(e.into()),
+    if create {
+        match fs::create_dir(&directory) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(e) => return Err(e.into()),
+        }
     }
     crate::real_dir(&directory)?;
     let path = directory.join("index.sqlite");
@@ -185,12 +198,11 @@ fn cache(root: &Path) -> Result<(Connection, PathBuf)> {
             Err(e) => return Err(e.into()),
         }
     }
-    let connection = Connection::open_with_flags(
-        &path,
-        OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_NOFOLLOW,
-    )?;
+    let mut flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW;
+    if create {
+        flags |= OpenFlags::SQLITE_OPEN_CREATE;
+    }
+    let connection = Connection::open_with_flags(&path, flags)?;
     safe_regular(&path)?;
     connection.busy_timeout(Duration::from_secs(5))?;
     connection
@@ -685,9 +697,9 @@ fn refresh(
 /// Explicit repair of lost/damaged generated outputs. Ordinary retrieval trusts
 /// the completed generation instead of inspecting every unrelated output file.
 pub(crate) fn repair(policy: &Policy, path: &Path) -> Result<(String, i64)> {
-    let root = working_path(path, None)?;
+    let root = knowledge_root(path)?;
     {
-        let (mut connection, directory) = cache(&root)?;
+        let (mut connection, directory) = cache(&root, true)?;
         let _lock = lock(&directory)?;
         setup(&connection)?;
         let tx = connection.transaction()?;
@@ -743,7 +755,7 @@ pub(super) fn prepare_node_links(path: &Path) -> Result<()> {
 }
 
 pub(super) fn invalidate_node_links(path: &Path) -> Result<()> {
-    let (connection, directory) = cache(path)?;
+    let (connection, directory) = cache(path, true)?;
     let _lock = lock(&directory)?;
     put(&connection, "node_links_ready", "0")
 }
@@ -755,8 +767,9 @@ fn with_source<T>(
     mut query: impl FnMut(&Transaction<'_>, &str) -> Result<T>,
 ) -> Result<(String, T)> {
     let mut work = Work::default();
-    let root = working_path(path, None)?;
-    let (mut connection, directory) = cache(&root)?;
+    let root = knowledge_root(path)?;
+    require(prepare || root.join(".sifttext/index.sqlite").try_exists()?, &preparation_required(&root))?;
+    let (mut connection, directory) = cache(&root, prepare)?;
     let directory_id = identity(&directory)?;
     let database = directory.join("index.sqlite");
     let database_id = identity(&database)?;
@@ -773,7 +786,7 @@ fn with_source<T>(
         let mut refresh_lock = None;
         let tx = connection.transaction()?;
         require(prepare || (compatible(&tx)? && crate::outlines::indexed_current(&tx)?),
-            &format!("derived data requires update preparation, not a read-time rebuild. Run `sifttext index {}` (managed installation: `sifttext update --prepare`), then retry", root.display()))?;
+            &preparation_required(&root))?;
         let tx = if current(&tx, &snapshot, node_links)?.is_none() {
             drop(tx);
             let waiting = Instant::now();
@@ -798,7 +811,7 @@ fn with_source<T>(
         // Real queries retain their post-query source barrier. Ensure-only
         // callers have no intervening query work; refresh already checked it.
         if verify_query && !snapshot.unchanged()? { continue }
-        let (observer, _) = cache(&root)?;
+        let (observer, _) = cache(&root, false)?;
         // A fresh connection observes another publisher's dirty generation;
         // the original read transaction cannot. No additional source scan.
         if current(&observer, &snapshot, node_links)? != Some((version.clone(), generation)) {
