@@ -1104,20 +1104,17 @@ fn reader_state(home: &Path) -> Result<String> {
     reader_repository(home)?;
     crate::checked_publication::native_index_guard(home)?;
     let head = reader_git(home, &["rev-parse", "--verify", "HEAD^{commit}"])?;
-    let status = reader_git(
-        home,
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--ignore-submodules=none",
-        ],
-    )?;
-    if !status.is_empty() {
-        let database = status.lines().any(|line| line == "?? sifttext.db");
+    // Raw -z records keep each path exact; reader_git would trim the first status column.
+    let args = ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"];
+    let output = crate::checked_publication::run_command(reader_command(home, &args))?;
+    crate::checked_publication::require_git_success("status", output.status)?;
+    let status = String::from_utf8(output.stdout)?;
+    let records: Vec<&str> = status.split('\0').filter(|record| record.len() > 3).collect();
+    if !records.is_empty() {
+        let database = records.contains(&"?? sifttext.db");
         return Err(crate::source_error::PublicationProblem {
             kind: "reader_dirty",
-            paths: if database { vec!["sifttext.db".into()] } else { vec![] },
+            paths: records.iter().map(|record| record[3..].to_owned()).collect(),
             reason: if database {
                 "reader contains an untracked sifttext.db with unknown ownership. Core's generated retrieval index is .sifttext/index.sqlite"
             } else {

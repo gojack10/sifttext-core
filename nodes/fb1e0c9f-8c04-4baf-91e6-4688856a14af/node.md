@@ -196,9 +196,9 @@ The normal home can remain behind while that view is read. Draft cleanup still n
 
 ### Preserve a dirty reader
 
-Inspect `git -C HOME status --short` without changing files.
+The refusal's `paths` lists each file Git reports as changed or untracked. Inspect them without changing files.
 
-Core generates its retrieval database at `.sifttext/index.sqlite`. An untracked root `sifttext.db` is a different file with unknown ownership. Do not delete, relocate or ignore it merely to advance the reader.
+Core generates its retrieval database at the home root's `.sifttext/index.sqlite`. An untracked root `sifttext.db` is a different file with unknown ownership. Do not delete, relocate or ignore it merely to advance the reader.
 
 Leave the blocking file and normal home unchanged while ownership or preservation authority is unknown. Hand reader recovery to the owner and use the accepted view for reading in the meantime.
 
