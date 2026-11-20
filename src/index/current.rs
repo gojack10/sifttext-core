@@ -6,12 +6,15 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params, ty
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+
+#[path = "fresh.rs"]
+mod fresh;
 
 const SCHEMA: &str = "sifttext-index/7";
 #[derive(Default)]
@@ -179,7 +182,7 @@ fn preparation_required(root: &Path) -> String {
     format!("derived data requires update preparation, not a read-time rebuild. Run `sifttext index {}` (managed installation: `sifttext update --prepare`), then retry", root.display())
 }
 // Only preparation creates the index. Reads open an existing one.
-fn cache(root: &Path, create: bool) -> Result<(Connection, PathBuf)> {
+fn cache_directory(root: &Path, create: bool) -> Result<PathBuf> {
     let directory = root.join(".sifttext");
     if create {
         match fs::create_dir(&directory) {
@@ -189,6 +192,11 @@ fn cache(root: &Path, create: bool) -> Result<(Connection, PathBuf)> {
         }
     }
     crate::real_dir(&directory)?;
+    Ok(directory)
+}
+
+fn open_cache(directory: &Path, create: bool) -> Result<Connection> {
+    crate::real_dir(directory)?;
     let path = directory.join("index.sqlite");
     for suffix in ["", "-wal", "-shm", "-journal"] {
         let p = directory.join(format!("index.sqlite{suffix}"));
@@ -207,8 +215,36 @@ fn cache(root: &Path, create: bool) -> Result<(Connection, PathBuf)> {
     connection.busy_timeout(Duration::from_secs(5))?;
     connection
         .execute_batch("PRAGMA cache_size=-2048; PRAGMA mmap_size=0; PRAGMA temp_store=FILE; PRAGMA temp.cache_size=-1024; PRAGMA synchronous=FULL;")?;
-    Ok((connection, directory))
+    Ok(connection)
 }
+
+fn absent(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(false),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn no_sidecars(directory: &Path) -> Result<bool> {
+    for name in ["index.sqlite-wal", "index.sqlite-shm", "index.sqlite-journal"] {
+        if !absent(&directory.join(name))? { return Ok(false) }
+    }
+    Ok(true)
+}
+
+// Readers keep seeing an absent index. Only prepare on the same filesystem can
+// publish a new one by rename; never replace an existing database or its log.
+fn private_build(directory: &Path) -> Result<Option<(File, crate::scratch::Directory)>> {
+    let target = directory.join("index.sqlite");
+    if !absent(&target)? { return Ok(None) }
+    let gate = lock(directory)?;
+    if !absent(&target)? || !no_sidecars(directory)? { return Ok(None) }
+    let stage = crate::scratch::Directory::new()?;
+    if fs::metadata(stage.path())?.dev() != fs::metadata(directory)?.dev() { return Ok(None) }
+    Ok(Some((gate, stage)))
+}
+
 fn meta(connection: &Connection, key: &str) -> Result<Option<String>> {
     let exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='metadata')",
@@ -336,9 +372,11 @@ fn lock(directory: &Path) -> Result<File> {
     Ok(file)
 }
 
-fn setup(connection: &Connection) -> Result<()> {
-    connection.execute_batch("PRAGMA journal_mode=WAL;
-        CREATE TABLE IF NOT EXISTS nodes (
+fn setup(connection: &Connection, fresh_rollback: bool) -> Result<()> {
+    if !fresh_rollback {
+        connection.execute_batch("PRAGMA journal_mode=WAL")?;
+    }
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS nodes (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, micro_summary TEXT NOT NULL,
             scope TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL,
             children TEXT NOT NULL, record TEXT NOT NULL);
@@ -373,7 +411,13 @@ fn project(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Resu
     crate::source_error::context(
         (|| {
             let bytes = bytes(connection, objects, &relative)?;
-            let parsed = crate::markdown(std::str::from_utf8(&bytes)?)?;
+            project_bytes(&bytes, id)
+        })(), &relative, None,
+    )
+}
+
+fn project_bytes(bytes: &[u8], id: &str) -> Result<Value> {
+            let parsed = crate::markdown(std::str::from_utf8(bytes)?)?;
             require(
                 parsed.authored.id == id && crate::uuid(&parsed.authored.id),
                 "node UUID disagrees with path",
@@ -405,18 +449,17 @@ fn project(connection: &Connection, objects: &mut Objects<'_>, id: &str) -> Resu
             }
             row.insert("content".into(), json!(parsed.authored.content));
             Ok(Value::Object(row))
-        })(),
-        &relative,
-        None,
-    )
+}
+fn child_members(connection: &Connection, id: &str) -> Result<Vec<String>> {
+    let prefix = format!("nodes/{id}/children/");
+    Ok(connection.prepare("SELECT substr(path,length(?1)+1) FROM expected_sources WHERE path>=?1 AND path<?2 AND substr(signature,1,2)=x'0102'")?
+        .query_map(params![prefix, format!("nodes/{id}/children0")], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
 }
 fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str, scoped: bool) -> Result<Vec<String>> {
     let own = bytes(connection, objects, &PathBuf::from(format!("nodes/{id}/node.md")))?;
     require(crate::ordering::position(std::str::from_utf8(&own)?)?.is_some(), "missing display position")?;
-    let prefix = format!("nodes/{id}/children/");
-    let names = connection.prepare("SELECT substr(path,length(?1)+1) FROM expected_sources WHERE path>=?1 AND path<?2 AND substr(signature,1,2)=x'0102'")?
-        .query_map(params![prefix, format!("nodes/{id}/children0")], |row| row.get::<_, String>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let names = child_members(connection, id)?;
     // A scoped refresh still needs the positions of unchanged children.
     let mut child_source = connection.prepare(if scoped {
         "SELECT signature FROM git_sources WHERE path=?1"
@@ -509,6 +552,7 @@ fn refresh(
     donor: Option<(&Connection, &Path)>,
     accepted: Option<(&str, &str)>,
     node_links: bool,
+    private: bool,
     work: &mut Work,
 ) -> Result<bool> {
     work.refreshed = true;
@@ -519,7 +563,15 @@ fn refresh(
         || !crate::outlines::indexed_current(connection)?;
     let rebuild_links = node_links && (force || force_artifact_verification
         || meta(connection, "node_links_ready")?.as_deref() != Some("1"));
-    setup(connection)?;
+    // Only an empty database still in SQLite's default rollback mode can
+    // build in place. Never take an existing generation out of WAL.
+    let fresh_rollback = private && connection.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))? == 0
+        && connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))? == "delete";
+    if fresh_rollback && donor.is_none() && let Some(tree) = snapshot.clean_tree()
+        && let Some(done) = fresh::refresh(connection, root, snapshot, tree, node_links, work)? {
+        return Ok(done);
+    }
+    setup(connection, fresh_rollback)?;
     // Before the first publication, these commits stage rebuildable data.
     // Sync the completed generation after its final source check.
     let checkpoint = if meta(connection, "version")?.is_none() {
@@ -570,6 +622,8 @@ fn refresh(
         changes.extend(present.iter().cloned());
         changes.extend(connection.prepare("SELECT id FROM nodes")?.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<BTreeSet<_>>>()?);
     }
+    // Only this path projects every present node from its current Markdown.
+    let mut positions = (force && !scoped && donor.is_none()).then(BTreeMap::new);
     for id in changes.iter().filter(|id| present.contains(*id)) {
         let path = format!("nodes/{id}/node.md");
         let hash: String = connection.query_row("SELECT content_hash FROM expected_sources WHERE path=?1", [&path], |r| r.get(0))?;
@@ -587,8 +641,16 @@ fn refresh(
             (row, Some(body))
         };
         // A Markdown hash authorizes only its projected fields, never hierarchy.
-        let order = crate::source_error::context(bytes_for_order(connection, &mut objects, id, scoped), Path::new(&path), None)?;
-        row["children"] = json!(order);
+        if let Some(positions) = &mut positions {
+            let position = crate::source_error::context(
+                row["position"].as_u64().ok_or_else(|| "missing or invalid display position".into()),
+                Path::new(&path), None,
+            )?;
+            positions.insert(id.clone(), position);
+            row["children"] = json!(child_members(connection, id)?);
+        } else {
+            row["children"] = json!(crate::source_error::context(bytes_for_order(connection, &mut objects, id, scoped), Path::new(&path), None)?);
+        }
         connection.execute("INSERT INTO projected VALUES (?1,?2,?3)", params![id,serde_json::to_string(&row)?,body])?;
     }
     drop(objects);
@@ -602,7 +664,7 @@ fn refresh(
         tx.commit()?;
     }
     if let Some(pages) = checkpoint {
-        connection.pragma_update(None, "synchronous", "FULL")?;
+        connection.pragma_update(None, "synchronous", if fresh_rollback { "EXTRA" } else { "FULL" })?;
         connection.pragma_update(None, "wal_autocheckpoint", pages)?;
     }
     let writer = Instant::now();
@@ -624,7 +686,14 @@ fn refresh(
                 relations(&tx, id, None)?;
             } else {
                 let (record, body): (String, Option<String>) = tx.query_row("SELECT record,body FROM projected WHERE id=?1", [id], |r| Ok((r.get(0)?,r.get(1)?)))?;
-                let row: Value = serde_json::from_str(&record)?;
+                let mut row: Value = serde_json::from_str(&record)?;
+                if let Some(positions) = &positions {
+                    let children: Vec<String> = serde_json::from_value(row["children"].take())?;
+                    row["children"] = json!(crate::source_error::context(
+                        crate::ordering::sort(children, |child| Ok(positions.get(child).copied())),
+                        &PathBuf::from(format!("nodes/{id}/node.md")), None,
+                    )?);
+                }
                 if body.is_some() {
                     let started = Instant::now();
                     crate::node_links::index_body(&tx, id, row["content"].as_str().ok_or("missing content")?)?;
@@ -645,6 +714,7 @@ fn refresh(
         tx.execute("INSERT OR IGNORE INTO tree_roots SELECT substr(path,7) FROM expected_sources WHERE path GLOB 'trees/*' AND typeof(signature)='blob' AND substr(signature,1,2)=x'0102'", [])?;
         // Only compact changed IDs survive preparation, and a forced whole-view
         // repair needs no per-owner dirty set. Release both before rendering.
+        drop(positions);
         drop(present);
         if force || force_artifact_verification { changes.clear(); }
         // Project/render from the complete logical overlay. git_sources retains
@@ -681,11 +751,20 @@ fn refresh(
         work.source_publish_us += source_publish.elapsed().as_micros();
         let count: i64 = tx.query_row("SELECT count(*) FROM sources", [], |r| r.get(0))?;
         put(&tx, "source_count", &count.to_string())?;
-        put(&tx, "schema", SCHEMA)?;
         put(&tx, "source_version_algorithm", crate::source_version::ALGORITHM)?;
         put(&tx, "processing", processing_identity())?;
-        put(&tx, "version", &version)?;
         put(&tx, "git_working", &snapshot.identity)?;
+        let tx = if fresh_rollback {
+            // No compatible schema, version or ready marker is visible until
+            // the durable bulk transaction is complete and WAL is active.
+            tx.commit()?;
+            let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
+            require(mode == "wal", "could not enable WAL before index publication")?;
+            connection.pragma_update(None, "synchronous", "FULL")?;
+            connection.transaction()?
+        } else { tx };
+        put(&tx, "schema", SCHEMA)?;
+        put(&tx, "version", &version)?;
         put(&tx, "artifacts_ready", "1")?;
         tx.commit()?;
         Ok(true)
@@ -699,9 +778,10 @@ fn refresh(
 pub(crate) fn repair(policy: &Policy, path: &Path) -> Result<(String, i64)> {
     let root = knowledge_root(path)?;
     {
-        let (mut connection, directory) = cache(&root, true)?;
+        let directory = cache_directory(&root, true)?;
         let _lock = lock(&directory)?;
-        setup(&connection)?;
+        let mut connection = open_cache(&directory, true)?;
+        setup(&connection, false)?;
         let tx = connection.transaction()?;
         put(&tx, "artifacts_ready", "0")?;
         tx.execute("DELETE FROM metadata WHERE key IN ('schema','git_tree')", [])?;
@@ -755,8 +835,9 @@ pub(super) fn prepare_node_links(path: &Path) -> Result<()> {
 }
 
 pub(super) fn invalidate_node_links(path: &Path) -> Result<()> {
-    let (connection, directory) = cache(path, true)?;
+    let directory = cache_directory(path, true)?;
     let _lock = lock(&directory)?;
+    let connection = open_cache(&directory, true)?;
     put(&connection, "node_links_ready", "0")
 }
 
@@ -769,9 +850,12 @@ fn with_source<T>(
     let mut work = Work::default();
     let root = knowledge_root(path)?;
     require(prepare || root.join(".sifttext/index.sqlite").try_exists()?, &preparation_required(&root))?;
-    let (mut connection, directory) = cache(&root, prepare)?;
+    let directory = cache_directory(&root, prepare)?;
     let directory_id = identity(&directory)?;
-    let database = directory.join("index.sqlite");
+    let private = if prepare { private_build(&directory)? } else { None };
+    let active = private.as_ref().map(|(_, stage)| stage.path()).unwrap_or(&directory);
+    let mut connection = open_cache(active, prepare)?;
+    let database = active.join("index.sqlite");
     let database_id = identity(&database)?;
     let donor = prepared.and_then(|p| donor(p).ok());
     let node_links = prepare_links || crate::node_links::enabled(&root)?;
@@ -790,14 +874,14 @@ fn with_source<T>(
         let tx = if current(&tx, &snapshot, node_links)?.is_none() {
             drop(tx);
             let waiting = Instant::now();
-            refresh_lock = Some(lock(&directory)?);
+            if private.is_none() { refresh_lock = Some(lock(&directory)?); }
             work.refresh_lock_wait_us += waiting.elapsed().as_micros();
             // Another refresher may have published while this caller waited.
             // Reuse our inputs: mutable bytes validate their native identities
             // when read, and the final barrier catches any intervening changes.
             if current(&connection, &snapshot, node_links)?.is_none() {
                 if !refresh(&mut connection, &root, &snapshot,
-                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, node_links, &mut work)? {
+                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, node_links, private.is_some(), &mut work)? {
                     continue;
                 }
             } else if !snapshot.unchanged()? {
@@ -811,7 +895,7 @@ fn with_source<T>(
         // Real queries retain their post-query source barrier. Ensure-only
         // callers have no intervening query work; refresh already checked it.
         if verify_query && !snapshot.unchanged()? { continue }
-        let (observer, _) = cache(&root, false)?;
+        let observer = open_cache(active, false)?;
         // A fresh connection observes another publisher's dirty generation;
         // the original read transaction cannot. No additional source scan.
         if current(&observer, &snapshot, node_links)? != Some((version.clone(), generation)) {
@@ -828,7 +912,7 @@ fn with_source<T>(
             let size: i64 = connection.query_row("PRAGMA page_size", [], |r| r.get(0))?;
             if pages * size >= 16 * 1024 * 1024 {
                 let compact = || -> Result<()> {
-                    let _gate = if refresh_lock.is_none() { Some(lock(&directory)?) } else { None };
+                    let _gate = if refresh_lock.is_none() && private.is_none() { Some(lock(&directory)?) } else { None };
                     connection.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
                     Ok(())
                 };
@@ -836,6 +920,17 @@ fn with_source<T>(
                     eprintln!("Index compaction deferred for {}: {error}", root.display());
                 }
             }
+        }
+        if private.is_some() {
+            drop(observer);
+            let (busy, logged, copied): (i64, i64, i64) = connection.query_row(
+                "PRAGMA wal_checkpoint(TRUNCATE)", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            require(busy == 0 && logged == 0 && copied == 0, "private index checkpoint incomplete")?;
+            connection.close().map_err(|(_, e)| e)?;
+            require(no_sidecars(active)? && no_sidecars(&directory)?, "index has unpublished sidecars")?;
+            let dest = directory.join("index.sqlite");
+            tempfile::TempPath::try_from_path(database)?.persist_noclobber(dest).map_err(|e| e.error)?;
+            File::open(&directory)?.sync_all()?;
         }
         drop(refresh_lock);
         return Ok((version, result));

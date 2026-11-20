@@ -153,6 +153,13 @@ pub(crate) fn remove_one(tx: &Transaction<'_>, id: &str) -> Result<()> {
     tx.execute("DELETE FROM search_ids WHERE id=?1", [id])?;
     Ok(())
 }
+/// Append to an empty index in UUID order, using the same identities and text as maintain_one.
+pub(crate) fn insert_new(tx: &Transaction<'_>, id: &str, title: &str, body: &str) -> Result<()> {
+    let rowid = tx.prepare_cached("INSERT INTO search_ids(id) VALUES (?1)")?.insert([id])?;
+    tx.prepare_cached("INSERT INTO search_fts(rowid,title,body,names,tags) VALUES (?1,?2,?3,?4,?4)")?
+        .execute(params![rowid, title.trim(), body, group_token("permitted")])?;
+    Ok(())
+}
 pub(crate) fn maintain_one(tx: &Transaction<'_>, id: &str, title: &str, body: &str) -> Result<()> {
     let title = title.trim();
     let old: Option<(i64, String, String)> = tx.query_row(

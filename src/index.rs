@@ -176,6 +176,7 @@ fn processing_identity() -> &'static str {
                 include_str!("coherent_capture.rs"),
                 include_str!("index.rs"),
                 include_str!("index/current.rs"),
+                include_str!("index/fresh.rs"),
                 include_str!("node_links.rs"),
                 include_str!("ordering.rs"),
                 include_str!("index/git.rs"),

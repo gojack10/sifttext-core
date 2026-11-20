@@ -188,7 +188,7 @@ pub(crate) fn affected(
     Ok(result)
 }
 
-pub(crate) fn rebuild(connection: &Connection, root: &Path) -> Result<u64> {
+pub(crate) fn desired(connection: &Connection) -> Result<BTreeSet<Shortcut>> {
     let mut desired = BTreeSet::new();
     for (table, kind, columns) in [
         ("links", Kind::LinksTo, "e.source,e.target"),
@@ -201,7 +201,15 @@ pub(crate) fn rebuild(connection: &Connection, root: &Path) -> Result<u64> {
         ))?;
         collect_rows(&mut statement, [], kind, &mut desired)?;
     }
-    update(root, &existing(root)?, &desired)
+    Ok(desired)
+}
+
+pub(crate) fn install(root: &Path, desired: &BTreeSet<Shortcut>) -> Result<u64> {
+    update(root, &existing(root)?, desired)
+}
+
+pub(crate) fn rebuild(connection: &Connection, root: &Path) -> Result<u64> {
+    install(root, &desired(connection)?)
 }
 
 fn parent_target(target: &Path) -> Option<&str> {

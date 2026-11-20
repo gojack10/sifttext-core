@@ -25,7 +25,7 @@ pub(super) struct Source {
     native: Option<Native>,
 }
 impl Source {
-    fn directory() -> Self {
+    pub(super) fn directory() -> Self {
         Self { kind: 0, size: 0, target: None, blob: None, native: None }
     }
     pub fn encode(&self) -> Result<Vec<u8>> {
@@ -39,7 +39,7 @@ impl Source {
         require(bytes.get(..2) == Some([1, source.kind].as_slice()), "invalid source kind")?;
         Ok(source)
     }
-    fn from_git(path: &Path, kind: u8, blob: String, size: u64) -> Result<Self> {
+    pub(super) fn from_git(path: &Path, kind: u8, blob: String, size: u64) -> Result<Self> {
         require(valid_oid(&blob) && size <= crate::migration_size::input_limit(path) as u64, "unsafe Git source object")?;
         let source = Self { kind, size, target: link_target(path, kind)?, blob: Some(blob), native: None };
         validate(path, &source)?;
@@ -233,6 +233,9 @@ impl Snapshot {
         }
         Ok(Self { identity: format!("{:x}", hash.finalize()), repo: root.to_owned(), tree, changes, native_monitor })
     }
+    pub(super) fn clean_tree(&self) -> Option<&str> {
+        self.changes.is_empty().then_some(self.tree.as_str())
+    }
     pub fn accepted_version<'a>(&self, accepted: Option<(&str, &'a str)>) -> Option<&'a str> {
         accepted.filter(|(tree, _)| *tree == self.tree && self.changes.is_empty())
             .map(|(_, version)| version)
@@ -246,9 +249,7 @@ impl Snapshot {
     }
     pub fn stage(&self, connection: &mut Connection, root: &Path, indexed_working: Option<&str>) -> Result<bool> {
         let started = std::time::Instant::now();
-        connection.execute_batch("CREATE TABLE IF NOT EXISTS git_sources (
-            path TEXT PRIMARY KEY, signature BLOB NOT NULL, content_hash TEXT, oid TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS git_sources_known_hash ON git_sources(oid,content_hash) WHERE content_hash IS NOT NULL;")?;
+        connection.execute_batch(GIT_SCHEMA)?;
         // Cold staging can contain many identical blobs whose hashes are all
         // still unknown. Index only known hashes so each miss does not rescan
         // those rows; the covering key also avoids fetching their source data.
@@ -365,6 +366,10 @@ fn stage_prefix(tx: &Transaction<'_>, prefix: &str) -> Result<usize> {
         params![prefix, end],
     )?)
 }
+
+pub(super) const GIT_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS git_sources (
+    path TEXT PRIMARY KEY, signature BLOB NOT NULL, content_hash TEXT, oid TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS git_sources_known_hash ON git_sources(oid,content_hash) WHERE content_hash IS NOT NULL;";
 
 fn insert_git(connection: &Connection, objects: &mut Objects<'_>, path: &str, source: &Source) -> Result<()> {
     // Relationship targets are checked against object bytes, not inferred from names.
