@@ -52,14 +52,28 @@ pub(super) fn refresh(
     work: &mut Work,
 ) -> Result<Option<bool>> {
     use crate::source_error::context;
-    let ledger = crate::git_snapshot::GitReader::inventory(root, tree)?;
-    // Keep the position and child vectors bounded. Larger inputs retain the
-    // existing disk-staged route. No Markdown bodies accumulate in memory.
-    let entries: i64 = ledger
-        .connection
-        .query_row("SELECT count(*) FROM entries", [], |r| r.get(0))?;
-    if entries > 131072 {
-        return Ok(None);
+    // The cold projection only consumes each entry once. Keep a bounded,
+    // component-ordered inventory rather than writing and scanning a scratch DB.
+    let mut inventory = BTreeMap::new();
+    let mut footprint = 0usize;
+    let mut large = false;
+    crate::git_snapshot::GitReader::visit_inventory(root, tree, |path, kind, _, oid, len| {
+        footprint = footprint.saturating_add(path.len() + oid.len() + 96);
+        large |= inventory.len() >= 131072 || footprint > 32 << 20;
+        if !large {
+            require(inventory.insert(PathBuf::from(path), (kind, oid.to_owned(), len)).is_none(),
+                "duplicate Git source path")?;
+        }
+        Ok(())
+    })?;
+    if large { return Ok(None); }
+    // Keep a bounded search projection when it fits. Otherwise project from
+    // the node scan as before; neither path changes the published schema.
+    let mut documents = Some(Vec::<(String,String,String)>::new());
+    let mut search_bytes = 0usize;
+    let mut requests = Vec::new();
+    for (kind,oid,_) in inventory.values() {
+        if *kind != 0 { requests.extend_from_slice(oid.as_bytes()); requests.push(b'\n'); }
     }
     setup(connection, true)?;
     connection.execute_batch(super::super::git::GIT_SCHEMA)?;
@@ -77,19 +91,11 @@ pub(super) fn refresh(
     let mut owner = String::new();
     let mut positions = BTreeMap::new();
     let mut children = BTreeMap::<String, Vec<String>>::new();
-    let mut objects = Objects::new(root);
-    let mut statement = ledger
-        .connection
-        .prepare("SELECT path,kind,oid,len FROM entries WHERE kind<>0 ORDER BY ordering")?;
-    let mut rows = statement.query([])?;
-    while let Some(row) = rows.next()? {
-        let path: String = row.get(0)?;
-        let source = Source::from_git(
-            Path::new(&path),
-            row.get(1)?,
-            row.get(2)?,
-            u64::try_from(row.get::<_, i64>(3)?)?,
-        )?;
+    let mut objects = crate::git_snapshot::Batch::stream(root, requests)?;
+    for (relative, (kind, oid, len)) in inventory {
+        if kind == 0 { continue; }
+        let path = relative.to_str().ok_or("non-UTF-8 Git path")?;
+        let source = Source::from_git(&relative, kind, oid, len)?;
         let parts: Vec<_> = path.split('/').collect();
         if parts[0] == "trees" && !trees {
             build.add("trees", &dir, None)?;
@@ -103,7 +109,7 @@ pub(super) fn refresh(
             build.add(&format!("nodes/{owner}"), &dir, None)?;
             build.add(&format!("nodes/{owner}/children"), &dir, None)?;
         }
-        let bytes = objects.source_bytes(Path::new(&path), &source)?;
+        let bytes = objects.bytes(source.blob.as_deref().ok_or("missing Git blob")?, len)?;
         if source.kind == 2 {
             require(
                 source
@@ -140,7 +146,11 @@ pub(super) fn refresh(
                 positions.insert((*id).to_owned(), pos);
                 row["children"] = json!([]);
                 // Validate the projection now; the append scan can run while ext4 installs the links.
-                super::super::project_body(&row)?;
+                let body = super::super::project_body(&row)?;
+                let title = row["name"].as_str().ok_or("missing name")?;
+                search_bytes = search_bytes.saturating_add(body.len()+title.len()+id.len()+96);
+                if search_bytes > 64 << 20 { documents = None; }
+                if let Some(docs) = documents.as_mut() { docs.push(((*id).to_owned(),title.to_owned(),body)); }
                 write_record(&tx, &row, None)?;
                 crate::node_links::index_body(
                     &tx,
@@ -161,9 +171,6 @@ pub(super) fn refresh(
     if !trees {
         build.add("trees", &dir, None)?;
     }
-    drop(rows);
-    drop(statement);
-    drop(ledger);
     drop(objects);
     for (id, members) in children {
         let sorted = context(
@@ -180,6 +187,10 @@ pub(super) fn refresh(
         crate::outlines::refresh_indexed_from(&tx, root, &BTreeSet::new(), true)?;
     work.outline_refresh_us += outlines.elapsed().as_micros();
     let postings = || -> Result<()> {
+        if let Some(documents) = documents {
+            for (id,title,body) in documents { crate::leviathan_search::insert_new(&tx,&id,&title,&body)?; }
+            return Ok(());
+        }
         let mut scan = tx.prepare("SELECT id,name,micro_summary,scope,json_extract(record,'$.content') FROM nodes ORDER BY id")?;
         let mut rows = scan.query([])?;
         while let Some(row) = rows.next()? {

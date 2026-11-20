@@ -104,12 +104,28 @@ pub(crate) struct Batch {
 }
 impl Batch {
     pub(crate) fn new(repo: &Path) -> Result<Self> {
-        let mut child = crate::local::reader_command(repo, &["cat-file", "--batch"])
+        Self::open(repo, None)
+    }
+    /// Send a bounded immutable inventory as one stream, instead of waiting for a
+    /// round trip to the Git process for each blob. Responses remain identity-checked.
+    pub(crate) fn stream(repo: &Path, requests: Vec<u8>) -> Result<Self> {
+        Self::open(repo, Some(requests))
+    }
+    fn open(repo: &Path, requests: Option<Vec<u8>>) -> Result<Self> {
+        let mut command = crate::local::reader_command(repo, &["cat-file", "--batch"]);
+        if requests.is_some() { command.arg("--buffer"); }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()?;
-        let input = child.stdin.take();
+        let mut input = child.stdin.take();
+        if let Some(bytes) = requests {
+            let mut pipe = input.take().ok_or("missing Git object input")?;
+            // Early reader exit closes the child/pipe. A short write is reported
+            // by the header/length check at the first missing result.
+            std::thread::spawn(move || pipe.write_all(&bytes));
+        }
         let output = BufReader::new(child.stdout.take().ok_or("missing Git object output")?);
         Ok(Self {
             child,
@@ -135,12 +151,13 @@ impl Batch {
             )?;
             // Leaves and directory markers share the same immutable empty blob.
             // Verify it once, not once per node in every view of this operation.
-            if len == 0 && self.empty_blob.as_deref() == Some(oid) {
+            if self.input.is_some() && len == 0 && self.empty_blob.as_deref() == Some(oid) {
                 return Ok(Vec::new());
             }
-            let input = self.input.as_mut().ok_or("closed Git object input")?;
-            writeln!(input, "{oid}")?;
-            input.flush()?;
+            if let Some(input) = self.input.as_mut() {
+                writeln!(input, "{oid}")?;
+                input.flush()?;
+            }
             let mut header = Vec::new();
             self.output
                 .by_ref()
@@ -272,6 +289,17 @@ impl GitReader {
     }
 
     pub(crate) fn inventory(repo: &Path, tree: &str) -> Result<TreeLedger> {
+        let mut ledger = TreeLedger::new()?;
+        let tx = ledger.connection.transaction()?;
+        let mut insert = tx.prepare("INSERT INTO entries VALUES (?1,?2,?3,?4,?5,?6,?7,?8)")?;
+        Self::visit_inventory(repo, tree, |path,kind,mode,oid,len| insert_entry(&mut insert,path,kind,mode,oid,len))?;
+        drop(insert);
+        tx.commit()?;
+        Ok(ledger)
+    }
+
+    pub(crate) fn visit_inventory(repo: &Path, tree: &str,
+        mut visit: impl FnMut(&str,u8,&str,&str,u64) -> Result<()>) -> Result<()> {
         let mut child =
             crate::local::reader_command(repo, &["ls-tree", "-r", "-t", "-l", "-z", tree])
                 .stdin(Stdio::null())
@@ -280,9 +308,6 @@ impl GitReader {
                 .spawn()?;
         let result = (|| {
             let mut output = BufReader::new(child.stdout.take().ok_or("missing Git tree output")?);
-            let mut ledger = TreeLedger::new()?;
-            let tx = ledger.connection.transaction()?;
-            let mut insert = tx.prepare("INSERT INTO entries VALUES (?1,?2,?3,?4,?5,?6,?7,?8)")?;
             let mut record = Vec::new();
             loop {
                 record.clear();
@@ -347,12 +372,9 @@ impl GitReader {
                     kind == 0 || len <= crate::migration_size::input_limit(&path) as u64,
                     "oversized authored Git blob",
                 )?;
-                insert_entry(&mut insert, path.to_str().ok_or("non-UTF-8 Git path")?,
-                    kind, words[0], words[2], len)?;
+                visit(path.to_str().ok_or("non-UTF-8 Git path")?,kind,words[0],words[2],len)?;
             }
-            drop(insert);
-            tx.commit()?;
-            Ok(ledger)
+            Ok(())
         })();
         if result.is_err() {
             let _ = child.kill();

@@ -475,10 +475,8 @@ fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str,
 }
 fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result<()> {
     let id = row["id"].as_str().ok_or("missing id")?;
-    tx.execute(
-        // Previous releases write this table positionally during rollback.
-        // The body remains in record JSON and in the projected search text.
-        "INSERT OR REPLACE INTO nodes VALUES (?1,?2,?3,?4,'',?5,?6,?7)",
+    // Previous releases write this table positionally during rollback.
+    tx.prepare_cached("INSERT OR REPLACE INTO nodes VALUES (?1,?2,?3,?4,'',?5,?6,?7)")?.execute(
         params![
             id,
             row["name"].as_str(),
@@ -489,7 +487,7 @@ fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result
             serde_json::to_string(row)?
         ],
     )?;
-    tx.execute("DELETE FROM links WHERE source=?1", [id])?;
+    tx.prepare_cached("DELETE FROM links WHERE source=?1")?.execute([id])?;
     // Duplicate references remain visible in record JSON. The legacy links schema
     // has one row per source/target, so retain its last authored position there.
     for (i, link) in row["see_also"]
@@ -498,8 +496,7 @@ fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result
         .iter()
         .enumerate()
     {
-        tx.execute(
-            "INSERT OR REPLACE INTO links VALUES (?1,?2,?3,?4)",
+        tx.prepare_cached("INSERT OR REPLACE INTO links VALUES (?1,?2,?3,?4)")?.execute(
             params![
                 id,
                 link["target"].as_str(),
