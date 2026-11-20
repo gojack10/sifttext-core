@@ -9,6 +9,7 @@ The tree lives in Markdown files with Git history, allowing agents to use it acr
 ## Plans
 
 - Installing SiftText signs the user in and starts their free trial. No card is needed.
+- The user can choose free, local-only Core instead, with no account. Explain the trial first. [INSTALL.md](https://github.com/gojack10/sifttext-core/blob/main/INSTALL.md#build-from-source) covers the free route.
 
 | Plan | Price | Included services |
 | --- | --- | --- |

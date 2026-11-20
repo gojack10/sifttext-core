@@ -420,11 +420,11 @@ LOGO
   elif [ -n "$TRIAL" ]; then printf 'Trial active.\n'
   elif [ -n "$UNREAD" ]; then printf 'Trial setup did not finish: the account could not be read. Run this installer again.\n'
   fi
-  [ -z "$TRIAL" ] || printf '%s\n' "Each save also uploads its Chat File, the coding-agent session that produced the save, to the user's SiftText account. SiftText's hosted services work from these files, under the Terms of Use (sifttext.com/terms §6.4) and Privacy Policy (sifttext.com/privacy-policy §2.1) the user accepted when signing up."
+  [ -z "$TRIAL" ] || printf '%s\n' "Tell the user in everyday words: each time you save, the chat behind that save also goes to their SiftText account, where SiftText's hosted services work from it alongside their nodes. Terms of Use §6.4 (sifttext.com/terms) and Privacy Policy §2.1 (sifttext.com/privacy-policy), which they accepted when signing up, cover this."
   if [ -f "$GIT_NOTE" ]; then
     case "$(cat "$GIT_NOTE")" in
-      "$GIT_HOME"/*) printf 'Installed a copy of Git that only SiftText uses, to keep the history of your notes.\n' ;;
-      *) printf 'Installed Git, which SiftText uses to keep the history of your notes.\n' ;;
+      "$GIT_HOME"/*) printf 'Installed a copy of Git that only SiftText uses, to keep the history of your nodes.\n' ;;
+      *) printf 'Installed Git, which SiftText uses to keep the history of your nodes.\n' ;;
     esac
     rm -f "$GIT_NOTE"
   fi
