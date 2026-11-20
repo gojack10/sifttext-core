@@ -87,6 +87,7 @@ mod capture_residue_tests;
 pub mod card;
 pub mod checked_publication;
 mod checked_publication_attribution;
+pub mod claude_chat;
 #[cfg(test)]
 #[path = "../tests/successor/checked_publication.rs"]
 mod checked_publication_tests;

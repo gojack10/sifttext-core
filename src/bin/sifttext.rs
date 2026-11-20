@@ -66,6 +66,60 @@ fn upload_trial_chat(home: &Path, chat: &Path) -> Result<serde_json::Value> {
     Ok(receipt)
 }
 
+/// Upload a chat held by Claude, read with this computer's Claude Code sign-in, and make
+/// it the Chat File for the next save. The receipt keeps the conversation's own upload
+/// receipt so later saves return to it.
+fn upload_linked_chat(home: &Path, reference: &sifttext_file_graph::claude_chat::Reference)
+    -> Result<serde_json::Value> {
+    if chat_upload_off(home)? {
+        return Err(CHAT_UPLOAD_OFF.into());
+    }
+    let chat = sifttext_file_graph::claude_chat::fetch(reference)?;
+    let trial_dir = home.join(".sifttext/trial");
+    let chats_dir = trial_dir.join("chats");
+    fs::create_dir_all(&chats_dir)?;
+    fs::set_permissions(&trial_dir, fs::Permissions::from_mode(0o700))?;
+    fs::set_permissions(&chats_dir, fs::Permissions::from_mode(0o700))?;
+    let stored = chats_dir.join(format!("{}.jsonl", sifttext_file_graph::sha256(&chat.bytes)));
+    if !stored.exists() {
+        fs::write(&stored, &chat.bytes)?;
+    }
+    let receipt_path = trial_dir.join("chat-upload.json");
+    let previous = fs::read(&receipt_path).ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    // Two linked chats in a row still return to the conversation's own file.
+    let resume = match &previous {
+        Some(previous) if previous.get("linked_chat").is_some() => previous["resume"].clone(),
+        Some(previous) => previous.clone(),
+        None => serde_json::Value::Null,
+    };
+    let mut receipt = upload_trial_chat(home, &stored)?;
+    receipt["linked_chat"] = chat.summary;
+    receipt["resume"] = resume;
+    receipt["next_save"] = json!("This chat is the Chat File for your next save only. Later saves return to this conversation's own file.");
+    fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt)?)?;
+    Ok(receipt)
+}
+
+/// A linked chat belongs to one save. Once that save is accepted, restore the receipt for
+/// the conversation's own file, or leave none if this conversation never uploaded one.
+fn release_linked_chat(home: &Path) -> Result<()> {
+    let path = home.join(".sifttext/trial/chat-upload.json");
+    let Some(receipt) = fs::read(&path).ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else {
+        return Ok(());
+    };
+    if receipt.get("linked_chat").is_none() {
+        return Ok(());
+    }
+    if receipt["resume"].is_object() {
+        fs::write(&path, serde_json::to_vec_pretty(&receipt["resume"])?)?;
+    } else {
+        fs::remove_file(&path)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct LargeReturnSuppressed {
     tokens: usize,
@@ -415,6 +469,7 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
                 force || receipt["status"] == "current",
             )?;
             let failure: Option<Box<dyn std::error::Error>> = if receipt["status"] == "current" {
+                release_linked_chat(Path::new(repo))?;
                 None
             } else if receipt["published"] == true || receipt["publication"] == "accepted_incomplete" {
                 Some(AcceptedSubmissionIncomplete.into())
@@ -434,7 +489,20 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
             return Ok(());
         }
         [cmd, home, chat] if cmd == "trial-upload" => {
-            upload_trial_chat(Path::new(home), Path::new(chat))?
+            // An existing file always means this conversation's own transcript.
+            match sifttext_file_graph::claude_chat::reference(chat).filter(|_| !Path::new(chat).is_file()) {
+                Some(reference) => upload_linked_chat(Path::new(home), &reference)?,
+                None => upload_trial_chat(Path::new(home), Path::new(chat))?,
+            }
+        }
+        [cmd, links @ ..] if cmd == "trial-preview" && !links.is_empty() => {
+            let mut chats = Vec::new();
+            for link in links {
+                let reference = sifttext_file_graph::claude_chat::reference(link)
+                    .ok_or_else(|| format!("not a Claude chat link: {link}"))?;
+                chats.push(sifttext_file_graph::claude_chat::describe(&reference)?);
+            }
+            json!({"status": "chats_found", "uploaded": false, "chats": chats})
         }
         [cmd, home] if cmd == "trial-enable" => {
             let mut config = sifttext_file_graph::sync_policy::config(Path::new(home))?;

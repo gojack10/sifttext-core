@@ -70,6 +70,8 @@ const GROUPS: &[Group] = &[
             command("submit REPO DRAFT COMMIT BASE [WORK_PACKET.json] [EXPLICIT_UUID ... | --received-statuses] [--skip-epistemic-check | --accept-despite-findings] [-y]", "Publish a draft. Hosted review requires its work packet. Either override requires the user's explicit approval for this save."),
             command("trial-enable HOME", "Upload each save's chat, as the trial requires"),
             command("trial-upload HOME CHAT_FILE", "Upload this conversation's chat file (128 MiB per file; 5 GB per account)"),
+            command("trial-upload HOME CHAT_LINK", "Upload a linked Claude chat as the chat for the next save only"),
+            command("trial-preview CHAT_LINK...", "Show each linked Claude chat's title and dates; uploads nothing"),
             command("accepted REPO [-y]", "Open the checked accepted view"),
             command("advance HOME", "Fast-forward a clean home"),
         ],
