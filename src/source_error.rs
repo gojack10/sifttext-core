@@ -101,6 +101,19 @@ fn classify(error: &(dyn Error + 'static)) -> (&'static str, &'static str, &'sta
     }
     // Only native fixed guards are eligible for customer output, never arbitrary error text.
     let text = error.to_string();
+    match text.as_str() {
+        "missing Git display position" => return (
+            "invalid_capture",
+            "missing required metadata",
+            "add an integer position to this metadata in the retained file, ordering the node among its siblings, then retry",
+        ),
+        "unexpected Git authored file" => return (
+            "unsafe_filesystem",
+            "file is not part of the knowledge tree layout",
+            "a submitted node folder holds only node.md and child links; move this file out of the retained draft, carrying a legacy children.order list over to each child's position metadata first, then retry",
+        ),
+        _ => (),
+    }
     let reason = match text.as_str() {
         "missing Markdown metadata" => "missing Markdown metadata",
         "missing Markdown opening fence" => "missing Markdown opening fence",

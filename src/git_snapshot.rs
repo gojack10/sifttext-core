@@ -464,7 +464,11 @@ impl GitReader {
                             path,
                             None,
                         )?;
-                        require(marker, "unexpected Git authored file")?;
+                        source_error::context(
+                            require(marker, "unexpected Git authored file"),
+                            path,
+                            None,
+                        )?;
                         Sha256::digest(&bytes).into()
                     };
                     source_version::add(
@@ -542,7 +546,11 @@ impl GitReader {
         drop(entries);
         for (id, facts) in &nodes {
             let names = children.get_mut(id).ok_or("missing Git node directory")?;
-            require(facts.position.is_some(), "missing Git display position")?;
+            source_error::context(
+                require(facts.position.is_some(), "missing Git display position"),
+                &PathBuf::from(format!("nodes/{id}/node.md")),
+                Some("position"),
+            )?;
             // Establish membership before asking for a child's position. A
             // dangling link has no node, not merely a missing display rank.
             for child in names.iter() {
