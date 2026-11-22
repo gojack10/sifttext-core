@@ -263,17 +263,14 @@ pub(crate) fn refresh_indexed_from(
 
 /// The first private build already owns these exact rows. Traverse them once
 /// instead of walking the hierarchy in SQL and parsing the records a second time.
-/// On malformed drafts, let the normal projector publish its precise diagnostic.
-pub(crate) fn write_compiled(connection: &Connection, root: &Path, roots: &BTreeSet<String>, nodes: &[Node]) -> Result<u64> {
-    let Ok(forest) = Forest::draft(nodes) else {
-        return refresh_indexed_from(connection, root, &BTreeSet::new(), true);
-    };
+/// Malformed drafts leave the private compiler for ordinary disk preparation.
+pub(crate) fn write_compiled(connection: &Connection, roots: &BTreeSet<String>, nodes: &[Node],
+    emit: impl FnMut(&str,&str,u64,Option<&str>,u64,u64,&str,&str,u64)->Result<()>) -> Result<u64> {
+    let forest = Forest::draft(nodes)?;
     let actual: BTreeSet<_> = forest.indexed_rows().filter_map(|(n,p,_)| p.is_none().then_some(n.id.clone())).collect();
-    if actual != *roots {
-        return refresh_indexed_from(connection, root, &BTreeSet::new(), true);
-    }
+    require(actual == *roots, "roots differ from compiled forest")?;
     connection.execute_batch(SCHEMA)?;
-    let count = write_forest(connection, &forest, nodes.len())?;
+    let count = emit_forest(&forest, nodes.len(), emit)?;
     connection.execute("INSERT INTO outline_projection VALUES (1,?1,NULL)", [processing()])?;
     Ok(count)
 }
@@ -285,6 +282,15 @@ fn write_tree(connection: &Connection, _tree: &str) -> Result<u64> {
 }
 
 fn write_forest(connection: &Connection, forest: &Forest<'_>, count: usize) -> Result<u64> {
+    let mut insert = connection.prepare("INSERT INTO outline_rows VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)")?;
+    emit_forest(forest,count,|id,tree,pre,parent,depth,desc,fields,input,tokens| {
+        insert.execute(params![id,tree,i64::try_from(pre)?,parent,i64::try_from(depth)?,
+            i64::try_from(desc)?,fields,input,i64::try_from(tokens)?])?; Ok(())
+    })
+}
+
+fn emit_forest(forest: &Forest<'_>, count: usize,
+    mut emit: impl FnMut(&str,&str,u64,Option<&str>,u64,u64,&str,&str,u64)->Result<()>) -> Result<u64> {
     let mut rows = Vec::with_capacity(count);
     let mut prefix = Vec::with_capacity(count + 1);
     prefix.push(0usize);
@@ -306,23 +312,12 @@ fn write_forest(connection: &Connection, forest: &Forest<'_>, count: usize) -> R
             serde_json::to_string(fields)?,
         ));
     }
-    let mut insert =
-        connection.prepare("INSERT INTO outline_rows VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)")?;
     let (mut tree, mut base) = ("", 0);
     for (preorder, (node, parent, depth, descendants, fields)) in rows.into_iter().enumerate() {
         if parent.is_none() { tree = &node.id; base = preorder; }
         let tokens = prefix[preorder + descendants + 1] - prefix[preorder];
-        insert.execute(params![
-            node.id,
-            tree,
-            i64::try_from(preorder - base)?,
-            parent,
-            i64::try_from(depth)?,
-            i64::try_from(descendants)?,
-            fields,
-            row_fingerprint(node)?,
-            i64::try_from(tokens)?
-        ])?;
+        emit(&node.id,tree,(preorder-base).try_into()?,parent,depth.try_into()?,descendants.try_into()?,
+            &fields,&row_fingerprint(node)?,tokens.try_into()?)?;
     }
     Ok(count.try_into()?)
 }

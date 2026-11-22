@@ -19,8 +19,11 @@ pub(super) fn sealed_capture(root: &Path) -> Result<Packet> {
     Ok(rows)
 }
 
+struct Fact { path: String, signature: Vec<u8>, hash: Option<String>, oid: Option<String> }
+
 struct Builder<'a> {
     db: &'a Transaction<'a>,
+    packed: Option<&'a mut Vec<Fact>>,
     version: Sha256,
     count: usize,
 }
@@ -45,13 +48,15 @@ impl Builder<'_> {
         }
         let hash = digest.map(|bytes| format!("{bytes:x}"));
         let signature = source.encode()?;
-        self.db
-            .prepare_cached("INSERT INTO sources VALUES (?1,?2,?3)")?
-            .execute(params![path, signature, hash])?;
-        if let Some(blob) = &source.blob {
-            self.db
-                .prepare_cached("INSERT INTO git_sources VALUES (?1,?2,?3,?4)")?
-                .execute(params![path, signature, hash, blob])?;
+        if let Some(facts) = &mut self.packed {
+            facts.push(Fact { path: path.into(), signature, hash, oid: source.blob.clone() });
+        } else {
+            self.db.prepare_cached("INSERT INTO sources VALUES (?1,?2,?3)")?
+                .execute(params![path, signature, hash])?;
+            if let Some(blob) = &source.blob {
+                self.db.prepare_cached("INSERT INTO git_sources VALUES (?1,?2,?3,?4)")?
+                    .execute(params![path, signature, hash, blob])?;
+            }
         }
         self.count += 1;
         Ok(())
@@ -101,6 +106,7 @@ pub(super) fn refresh(
     crate::leviathan_search::initialize_incremental(&tx)?;
     let mut build = Builder {
         db: &tx,
+        packed: None,
         version: source_version::start(),
         count: 0,
     };

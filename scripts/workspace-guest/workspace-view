@@ -161,7 +161,7 @@ build)
         for suffix in -wal -shm -journal; do absent "$epoch/state/index.sqlite$suffix"; done
         rm -f "$epoch/clean-tree"
         mount -o remount,rw,nosuid,nodev "$disk"; rm "$epoch/sealed"
-        dd if="$epoch/state/index.sqlite" of="$state/index.sqlite" bs=1M conv=excl,fsync status=none
+        /usr/sbin/copy-database "$epoch/state/index.sqlite" "$state/index.sqlite"
         chmod --reference="$epoch/state/index.sqlite" "$state/index.sqlite"
         cp -p "$epoch/state/config.json" "$state/config.json"
         cp -p "$epoch/navigation.incoming.sqfs" "$pending"

@@ -178,6 +178,7 @@ fn processing_identity() -> &'static str {
                 include_str!("index/current.rs"),
                 include_str!("index/fresh.rs"),
                 include_str!("index/generation.rs"),
+                include_str!("index/page_image.rs"),
                 include_str!("index/inode_source.rs"),
                 include_str!("index/posting_segment.rs"),
                 include_str!("node_links.rs"),

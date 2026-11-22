@@ -3,6 +3,12 @@
 use super::*;
 use crate::{node_links::Shortcut, outline_rows::Node, source_error::context};
 use std::collections::HashMap;
+#[path = "page_image.rs"]
+mod page_image;
+use page_image::{
+    Field::{Blob, Int, Null, Text},
+    Image, record,
+};
 #[path = "posting_segment.rs"]
 mod posting_segment;
 
@@ -15,6 +21,8 @@ pub(super) fn compile(
     work: &mut Work,
 ) -> Result<bool> {
     let started = Instant::now();
+    let database = PathBuf::from(db.path().ok_or("missing private database file")?);
+    db.pragma_update(None, "page_size", page_image::PAGE as i64)?;
     db.pragma_update(None, "synchronous", "EXTRA")?;
     let tx = db.transaction()?;
     // Write the path-ordered ledgers in primary key order. Build their reverse
@@ -26,8 +34,12 @@ pub(super) fn compile(
     // The empty FTS table's tokenizer and positional format are retained;
     // it needs no per-token SQL updates to read the finished segments.
 
+    let mut source_rows = Vec::new();
+    let mut records = Vec::new();
+    let mut outlines = Vec::new();
     let mut ledger = Builder {
         db: &tx,
+        packed: Some(&mut source_rows),
         version: source_version::start(),
         count: 0,
     };
@@ -40,8 +52,16 @@ pub(super) fn compile(
     let mut refs = BTreeSet::<(String, String)>::new();
     let mut body_refs = BTreeSet::<(String, String)>::new();
     let mut in_trees = false;
-    for inode_source::Entry { path: relative, kind, oid, bytes } in packet {
-        if kind == 0 { continue; }
+    for inode_source::Entry {
+        path: relative,
+        kind,
+        oid,
+        bytes,
+    } in packet
+    {
+        if kind == 0 {
+            continue;
+        }
         let path = relative.to_str().ok_or("invalid path")?;
         let source = Source::from_git(&relative, kind, oid, bytes.len() as u64)?;
         if let Some(target) = &source.target {
@@ -145,7 +165,6 @@ pub(super) fn compile(
             let mut edge = tx.prepare("INSERT INTO child_links VALUES (?1,?2)")?;
             let mut body_edge = tx.prepare("INSERT INTO body_links VALUES (?1,?2)")?;
             let mut reference = tx.prepare("INSERT OR REPLACE INTO links VALUES (?1,?2,?3,?4)")?;
-            let mut record = tx.prepare("INSERT INTO nodes VALUES (?1,?2,?3,?4,'',?5,?6,?7)")?;
             let mut mapping =
                 tx.prepare("INSERT INTO search_ids(rowid,id,title) VALUES(?1,?2,?3)")?;
             let mut postings = posting_segment::Bulk::new(&tx)?;
@@ -179,15 +198,17 @@ pub(super) fn compile(
                         pos as i64
                     ])?;
                 }
-                record.execute(params![
-                    id,
-                    title,
-                    row["micro_summary"].as_str(),
-                    row["scope"].as_str().unwrap_or(""),
-                    row["status"].as_str(),
-                    members_json,
-                    serde_json::to_string(&row)?
-                ])?;
+                let packed = record(&[
+                    Text(&id),
+                    Text(title),
+                    Text(row["micro_summary"].as_str().ok_or("missing summary")?),
+                    Text(row["scope"].as_str().unwrap_or("")),
+                    Text(""),
+                    Text(row["status"].as_str().ok_or("missing status")?),
+                    Text(&members_json),
+                    Text(&serde_json::to_string(&row)?),
+                ]);
+                records.push((id.clone(), packed));
                 let body = super::super::super::project_body(&row)?;
                 let rowid = i64::try_from(i + 1)?;
                 mapping.execute(params![rowid, id, title.trim()])?;
@@ -201,7 +222,33 @@ pub(super) fn compile(
         }
         tx.execute_batch(super::super::super::git::GIT_SCHEMA)?;
         let t = Instant::now();
-        work.outline_rows_written = crate::outlines::write_compiled(&tx, root, &roots, &compact)?;
+        work.outline_rows_written = crate::outlines::write_compiled(
+            &tx,
+            &roots,
+            &compact,
+            |id, tree, pre, parent, depth, desc, fields, input, tokens| {
+                let packed = record(&[
+                    Text(id),
+                    Text(tree),
+                    Int(pre),
+                    parent.map_or(Null, Text),
+                    Int(depth),
+                    Int(desc),
+                    Text(fields),
+                    Text(input),
+                    Int(tokens),
+                ]);
+                outlines.push((
+                    id.to_owned(),
+                    tree.to_owned(),
+                    pre,
+                    parent.map(str::to_owned),
+                    depth,
+                    packed,
+                ));
+                Ok(())
+            },
+        )?;
         work.outline_refresh_us = t.elapsed().as_micros();
         let (written, dur) = image.join().map_err(|_| "navigation worker failed")??;
         work.node_link_writes = written;
@@ -225,6 +272,123 @@ pub(super) fn compile(
         put(&tx, key, val)?;
     }
     tx.commit()?;
+    // The large roots are empty in the SQLite-built catalog. Close its last
+    // handle, append sorted pages to that same private inode, and reopen it.
+    let layout = db
+        .prepare("SELECT name,rootpage FROM sqlite_schema WHERE rootpage>0")?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?
+        .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
+    std::mem::replace(db, Connection::open_in_memory()?)
+        .close()
+        .map_err(|(_, e)| e)?;
+    let mut image = Image::open(&database, layout)?;
+    source_rows.sort_unstable_by(|a, b| a.path.cmp(&b.path));
+    image.index(
+        "sources",
+        source_rows.iter().map(|r| {
+            record(&[
+                Text(&r.path),
+                Blob(&r.signature),
+                r.hash.as_deref().map_or(Null, Text),
+            ])
+        }),
+    )?;
+    image.index(
+        "git_sources",
+        source_rows.iter().filter_map(|r| {
+            Some(record(&[
+                Text(&r.path),
+                Blob(&r.signature),
+                r.hash.as_deref().map_or(Null, Text),
+                Text(r.oid.as_deref()?),
+            ]))
+        }),
+    )?;
+    source_rows.retain(|r| r.oid.is_some() && r.hash.is_some());
+    source_rows
+        .sort_unstable_by(|a, b| (&a.oid, &a.hash, &a.path).cmp(&(&b.oid, &b.hash, &b.path)));
+    image.index(
+        "git_sources_known_hash",
+        source_rows.into_iter().map(|r| {
+            record(&[
+                Text(r.oid.as_deref().unwrap()),
+                Text(r.hash.as_deref().unwrap()),
+                Text(&r.path),
+            ])
+        }),
+    )?;
+    // The capture supplies nodes in component/UUID order, also SQLite BINARY order here.
+    require(
+        records.windows(2).all(|w| w[0].0 < w[1].0),
+        "unordered node capture",
+    )?;
+    image.index(
+        "sqlite_autoindex_nodes_1",
+        records
+            .iter()
+            .enumerate()
+            .map(|(i, (id, _))| record(&[Text(id), Int(i as u64 + 1)])),
+    )?;
+    image.table(
+        "nodes",
+        records
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, r))| (i as u64 + 1, r)),
+    )?;
+    let mut order: Vec<_> = (0..outlines.len()).collect();
+    order.sort_unstable_by(|&a, &b| outlines[a].0.cmp(&outlines[b].0));
+    image.index(
+        "sqlite_autoindex_outline_rows_1",
+        order
+            .iter()
+            .map(|&i| record(&[Text(&outlines[i].0), Int(i as u64 + 1)])),
+    )?;
+    order.sort_unstable_by(|&a, &b| {
+        (&outlines[a].1, outlines[a].2).cmp(&(&outlines[b].1, outlines[b].2))
+    });
+    image.index(
+        "outline_preorder",
+        order
+            .iter()
+            .map(|&i| record(&[Text(&outlines[i].1), Int(outlines[i].2), Int(i as u64 + 1)])),
+    )?;
+    image.index(
+        "outline_deep_rows",
+        order.iter().filter(|&&i| outlines[i].4 >= 1000).map(|&i| {
+            record(&[
+                Text(&outlines[i].1),
+                Int(outlines[i].2),
+                Int(outlines[i].4),
+                Int(i as u64 + 1),
+            ])
+        }),
+    )?;
+    order.sort_unstable_by(|&a, &b| {
+        (&outlines[a].3, outlines[a].2, a).cmp(&(&outlines[b].3, outlines[b].2, b))
+    });
+    image.index(
+        "outline_children",
+        order.iter().map(|&i| {
+            record(&[
+                outlines[i].3.as_deref().map_or(Null, Text),
+                Int(outlines[i].2),
+                Int(i as u64 + 1),
+            ])
+        }),
+    )?;
+    image.table(
+        "outline_rows",
+        outlines
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| (i as u64 + 1, r.5)),
+    )?;
+    image.finish()?;
+    *db = open_cache(database.parent().ok_or("missing database parent")?, false)?;
+    if !snapshot.unchanged()? {
+        return Err(super::super::super::Refusal::changed_source().into());
+    }
     let mode: String = db.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
     require(mode == "wal", "could not enable WAL before publication")?;
     db.pragma_update(None, "synchronous", "FULL")?;

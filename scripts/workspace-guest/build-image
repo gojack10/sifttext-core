@@ -15,6 +15,7 @@ cleanup() {
     rm -rf --one-file-system -- "$tmp"
 }
 trap cleanup EXIT
+cc -O2 "$helpers/copy-database.c" -o "$tmp/copy-database"
 cc -O2 "$helpers/extent-readahead.c" -o "$tmp/read-window"
 cc -O2 -Wno-deprecated-declarations "$helpers/inode-source.c" -l:libext2fs.so.2 -lcrypto -o "$tmp/sifttext-inode-source"
 cp --sparse=always --reflink=auto -- "$base" "$tmp/image"; chmod 0600 "$tmp/image"
@@ -26,7 +27,7 @@ init=$root/usr/sbin/sifttext-init
 # its mount call changes. No index or navigation is baked into the root image.
 sed -i 's|^mount -o nosuid,nodev /dev/vdb /workspace$|/sbin/workspace-view boot|' "$init"
 rsync -a --delete -- "$pkg/" "$root/opt/sifttext/"
-install -m0755 "$tmp/read-window" "$tmp/sifttext-inode-source" "$helpers/workspace-view" "$root/usr/sbin/"
+install -m0755 "$tmp/read-window" "$tmp/copy-database" "$tmp/sifttext-inode-source" "$helpers/workspace-view" "$root/usr/sbin/"
 [[ ! -e $root/opt/read-image && ! -L $root/opt/read-image ]]
 install -d "$root/opt/read-image/lib"
 install -m0755 "$packer/mksquashfs" "$root/opt/read-image/mksquashfs"
