@@ -62,7 +62,10 @@ pub(crate) struct Directory {
 }
 impl Directory {
     pub(crate) fn new() -> Result<Self> {
-        let directory = tempfile::Builder::new().prefix("binary-").tempdir_in(root()?)?;
+        Self::new_in(&root()?)
+    }
+    pub(crate) fn new_in(parent: &Path) -> Result<Self> {
+        let directory = tempfile::Builder::new().prefix("binary-").tempdir_in(parent)?;
         let gate = open_gate(&directory.path().join("lease"))?;
         gate.lock()?;
         let custody = crate::checked_publication::Custody::new(&[&gate])?;

@@ -240,7 +240,17 @@ fn private_build(directory: &Path) -> Result<Option<(File, crate::scratch::Direc
     if !absent(&target)? { return Ok(None) }
     let gate = lock(directory)?;
     if !absent(&target)? || !no_sidecars(directory)? { return Ok(None) }
-    let stage = crate::scratch::Directory::new()?;
+    // A bind mount of the same device is not the same mount for rename(2).
+    // Keep both private builders on the destination mount, even when /tmp
+    // is a separate bind mount of the same filesystem.
+    let stage = if directory.parent().is_some_and(crate::node_links::private_workspace) {
+        let intent = Path::new(crate::node_links::EPOCH).join("disk-stage");
+        if intent.is_file() {
+            let id = fs::read_to_string(intent)?;
+            require(crate::uuid(&id), "invalid disk staging directory")?;
+            crate::scratch::Directory::new_in(&directory.join(format!(".build-{id}")))?
+        } else { crate::scratch::Directory::new_in(directory)? }
+    } else { crate::scratch::Directory::new()? };
     if fs::metadata(stage.path())?.dev() != fs::metadata(directory)?.dev() { return Ok(None) }
     Ok(Some((gate, stage)))
 }
@@ -475,6 +485,8 @@ fn bytes_for_order(connection: &Connection, objects: &mut Objects<'_>, id: &str,
 }
 fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result<()> {
     let id = row["id"].as_str().ok_or("missing id")?;
+    let external = body.is_some() && crate::leviathan_search::external(tx)?;
+    if external { crate::leviathan_search::unindex_old(tx, id)?; }
     // Previous releases write this table positionally during rollback.
     tx.prepare_cached("INSERT OR REPLACE INTO nodes VALUES (?1,?2,?3,?4,'',?5,?6,?7)")?.execute(
         params![
@@ -506,6 +518,9 @@ fn write_record(tx: &Transaction<'_>, row: &Value, body: Option<&str>) -> Result
         )?;
     }
     if let Some(body) = body {
+        if external {
+            return crate::leviathan_search::set_compiled(tx, id, row["name"].as_str().ok_or("missing name")?, body);
+        }
         crate::leviathan_search::maintain_one(
             tx,
             id,
@@ -550,6 +565,7 @@ fn refresh(
     accepted: Option<(&str, &str)>,
     node_links: bool,
     private: bool,
+    packet: Option<fresh::Packet>,
     work: &mut Work,
 ) -> Result<bool> {
     work.refreshed = true;
@@ -565,7 +581,7 @@ fn refresh(
     let fresh_rollback = private && connection.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))? == 0
         && connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))? == "delete";
     if fresh_rollback && donor.is_none() && let Some(tree) = snapshot.clean_tree()
-        && let Some(done) = fresh::refresh(connection, root, snapshot, tree, node_links, work)? {
+        && let Some(done) = fresh::refresh(connection, root, snapshot, tree, node_links, packet, work)? {
         return Ok(done);
     }
     setup(connection, fresh_rollback)?;
@@ -676,10 +692,10 @@ fn refresh(
         crate::leviathan_search::initialize_incremental(&tx)?;
         for id in &changes {
             if !present.contains(id) {
+                crate::leviathan_search::remove_one(&tx, id)?;
                 tx.execute("DELETE FROM nodes WHERE id=?1", [id])?;
                 tx.execute("DELETE FROM links WHERE source=?1", [id])?;
                 tx.execute("DELETE FROM body_links WHERE source=?1", [id])?;
-                crate::leviathan_search::remove_one(&tx, id)?;
                 relations(&tx, id, None)?;
             } else {
                 let (record, body): (String, Option<String>) = tx.query_row("SELECT record,body FROM projected WHERE id=?1", [id], |r| Ok((r.get(0)?,r.get(1)?)))?;
@@ -702,7 +718,13 @@ fn refresh(
         }
         // A forced rebuild visits present and indexed nodes only. Search rows whose
         // node row is already gone would otherwise outlive every rebuild and repair.
-        if force {
+        if force && crate::leviathan_search::external(&tx)? {
+            // No old record text is available for an orphan. Reconstitute all
+            // postings from the remaining current documents in this transaction.
+            if tx.execute("DELETE FROM search_ids WHERE id NOT IN (SELECT id FROM nodes)", [])? != 0 {
+                tx.execute_batch("INSERT INTO search_fts(search_fts) VALUES('rebuild')")?;
+            }
+        } else if force {
             tx.execute_batch("DELETE FROM search_fts WHERE rowid IN (SELECT rowid FROM search_ids WHERE id NOT IN (SELECT id FROM nodes));
                 DELETE FROM search_ids WHERE id NOT IN (SELECT id FROM nodes);")?;
         }
@@ -859,6 +881,10 @@ fn with_source<T>(
     let native_monitor = native_monitor_enabled(&root);
     let mut save_checkpoint = native_monitor && prepare && meta(&connection, "version")?.is_none();
     for _ in 0..4 {
+        let packet = if prepare_links && crate::node_links::sealed_workspace(&root) {
+            require(private.is_some() && donor.is_none(), "sealed build needs an empty private index")?;
+            Some(fresh::sealed_capture(&root)?)
+        } else { None };
         let snapshot = match Snapshot::read(&root, native_monitor, std::mem::take(&mut save_checkpoint)) {
             Ok(snapshot) => snapshot,
             Err(error) if super::Refusal::is_changed_source(error.as_ref()) => continue,
@@ -878,7 +904,7 @@ fn with_source<T>(
             // when read, and the final barrier catches any intervening changes.
             if current(&connection, &snapshot, node_links)?.is_none() {
                 if !refresh(&mut connection, &root, &snapshot,
-                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, node_links, private.is_some(), &mut work)? {
+                    donor.as_ref().map(|(c,p)| (c,p.as_path())), accepted, node_links, private.is_some(), packet, &mut work)? {
                     continue;
                 }
             } else if !snapshot.unchanged()? {

@@ -1,0 +1,206 @@
+#!/bin/bash
+# The guest's fixed instructions entry point. No caller-supplied script,
+# device, path or command is accepted. Boot recovers; only a request builds.
+set -euo pipefail
+[[ $# == 1 ]]
+cd /
+disk=/run/workspace-disk
+volume=$disk/.projection-volume
+data=$volume/data
+image=$volume/navigation.sqfs
+pending=$volume/navigation.incoming.sqfs
+state=$data/knowledge/.sifttext
+original=$volume/before-first-build
+epoch=/run/private-generation
+next=/run/prepared-workspace
+lower=/run/workspace-navigation
+instructions() { /usr/local/bin/sifttext instructions /workspace/knowledge; }
+absent() { [[ ! -e $1 && ! -L $1 ]]; }
+epoch_eligible() {
+    local p k keys g=$data/knowledge/.git
+    [[ -d $g && ! -L $g ]] || return 1
+    for p in "$state"/* "$state"/.[!.]* "$state"/..?*; do
+        absent "$p" && continue
+        [[ ( $p == "$state/config.json" || $p == "$state/refresh.lock" ) && -f $p && ! -L $p ]] || return 1
+    done
+    for p in "$data/knowledge/nodes" "$data/knowledge/trees"; do [[ -d $p && ! -L $p ]] || return 1; done
+    for p in "$g/commondir" "$g/objects/info/alternates" "$g/info/attributes" "$data/knowledge/.gitattributes" /etc/gitattributes /workspace/.config/git/attributes; do absent "$p" || return 1; done
+    [[ -z $(find "$g" -type l -print -quit) ]] || return 1
+    keys=$(git config --file "$g/config" --no-includes --name-only --list) || return 1
+    while read -r k; do case $k in core.repositoryformatversion|core.bare|core.filemode|core.logallrefupdates|gc.auto|user.name|user.email) ;; *) return 1;; esac; done <<<"$keys"
+}
+mount_generation() {
+    [[ -f $1 && ! -L $1 && -d $data && ! -L $data ]]
+    mkdir -p "$lower" "$2"
+    mount -t squashfs -o loop,ro,nosuid,nodev,noexec "$1" "$lower"
+    mount -t overlay overlay -o "nosuid,nodev,lowerdir=$lower,upperdir=$data,workdir=$volume/work,redirect_dir=on,index=off,xino=auto" "$2"
+}
+complete_layout() {
+    [[ -d $volume && ! -L $volume ]]
+    case $(<"$volume/format") in workspace-view-v1|workspace-view-v2) ;; *) return 2;; esac
+    for d in "$data" "$volume/work"; do [[ ! -L $d ]]; mkdir -p -- "$d"; done
+    shopt -s dotglob nullglob
+    for p in "$disk"/*; do
+        [[ $p == "$volume" || $p == "$disk/lost+found" ]] && continue
+        absent "$data/${p##*/}"
+        mv -T "$p" "$data/${p##*/}"
+    done
+    shopt -u dotglob nullglob
+    sync -f "$disk"
+}
+empty_index() {
+    local path
+    for path in "$1"/index.sqlite{,-journal,-shm,-wal}; do absent "$path" || return 1; done
+}
+save_original() {
+    [[ -d $data/knowledge && ! -L $data/knowledge && -d $state && ! -L $state ]]
+    empty_index "$state"
+    absent "$pending"; absent "$original"
+    local d
+    d=$(mktemp -d "$volume/config.XXXXXXXX")
+    [[ ! -L $state/config.json ]]
+    if [[ -e $state/config.json ]]; then [[ -f $state/config.json ]]; cp -p "$state/config.json" "$d/config.json"; fi
+    mv -T "$d" "$original"; sync -f "$volume"
+}
+record_activation() {
+    if [[ -d $original ]]; then mv -T "$original" "$volume/committed"; sync -f "$volume"; fi
+    [[ -d $volume/committed && -f $image && ! -L $image ]]
+}
+retire_disk_stage() {
+    if [[ -f $original/disk-stage ]]; then
+        local id; id=$(<"$original/disk-stage")
+        [[ $id =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ && -d $state && ! -L $state ]]
+        rm -rf --one-file-system -- "$state/.build-$id"
+        rm "$original/disk-stage"
+    fi
+}
+recover_unpublished() {
+    if [[ -e $image || -d $volume/committed ]]; then record_activation; return; fi
+    if [[ -d $original ]]; then
+        [[ ! -L $original && -d $state && ! -L $state ]]
+        retire_disk_stage
+        rm -f -- "$state"/index.sqlite{,-journal,-shm,-wal} "$pending"
+        if [[ -f $original/config.json ]]; then
+            local tmp; tmp=$(mktemp "$state/config.XXXXXXXX")
+            cp -p "$original/config.json" "$tmp"; mv -T "$tmp" "$state/config.json"
+        else rm -f -- "$state/config.json"; fi
+        sync -f "$volume"
+        mv -T "$original" "$volume/rolled-back-config"; sync -f "$volume"
+    fi
+    if [[ -d $volume/rolled-back-config ]]; then rm -f -- "$volume/rolled-back-config/config.json"; rmdir "$volume/rolled-back-config"; fi
+}
+restore_view() {
+    if ! mountpoint -q "$disk"; then mount -o nosuid,nodev /dev/vdb "$disk"; fi
+    if [[ -f $volume/format ]]; then
+        complete_layout
+        if [[ $(<"$volume/format") == workspace-view-v2 ]]; then recover_unpublished; fi
+        if [[ -e $image ]]; then mount_generation "$image" /workspace; else mount --bind "$data" /workspace; fi
+    else mount --move "$disk" /workspace; fi
+}
+recover_first() {
+    if ! mountpoint -q /workspace; then
+        if mountpoint -q "$next"; then umount "$next"; fi
+        if mountpoint -q "$lower"; then umount "$lower"; fi
+        restore_view
+    fi
+}
+case $1 in
+boot)
+    mkdir -m 700 -p "$disk"; restore_view
+    touch /run/workspace-view-enabled;;
+first)
+    # Serialize mount transitions, including simultaneous first instructions.
+    exec 9>/run/workspace-view.lock; flock 9
+    if [[ -f $image ]] && mountpoint -q /workspace && [[ $(findmnt -nro FSTYPE -T /workspace) == overlay ]]; then instructions; exit; fi
+    [[ $(findmnt -nro FSTYPE -T /workspace) == ext4 ]]
+    empty_index /workspace/knowledge/.sifttext
+    mkdir -m 700 -p "$disk" "$epoch"
+    if mountpoint -q "$disk"; then
+        [[ $(stat -c '%d:%i' /workspace) == "$(stat -c '%d:%i' "$data")" && $(<"$volume/format") == workspace-view-v2 ]]; absent "$image"
+    else absent /workspace/.projection-volume; fi
+    umount /workspace
+    # A rejected build must not strand a running guest with an empty /workspace.
+    # Boot performs the same recovery after a hard power cut.
+    trap recover_first EXIT
+    if ! mountpoint -q "$disk"; then
+        mount -o nosuid,nodev /dev/vdb "$disk"
+        layout=$(mktemp -d "$disk/.projection-new.XXXXXXXX")
+        printf '%s\n' workspace-view-v2 > "$layout/format"
+        mv -T "$layout" "$volume"; sync -f "$disk"; complete_layout
+    fi
+    save_original
+    # Neither an early stdout nor a failed mount is a successful reply.
+    result=$(unshare --mount --propagation private /sbin/workspace-view build)
+    [[ -f $pending && ! -L $pending && -s $state/index.sqlite ]]
+    mount_generation "$pending" "$next"
+    if [[ -f $original/disk-stage ]]; then
+        # Dirty source signatures include the filesystem device and inode.
+        # Check through the very overlay that will be published, not another
+        # mount of the same files, and finish any refresh before activation.
+        result=$(unshare --mount --propagation private /sbin/workspace-view verify-disk)
+    fi
+    retire_disk_stage
+    sync -f "$volume"; mv -T "$pending" "$image"; sync -f "$volume"
+    record_activation; mount --move "$next" /workspace
+    [[ $(findmnt -nro FSTYPE -T /workspace/knowledge/nodes) == overlay ]]
+    printf '%s\n' "$result";;
+build)
+    mount --bind "$data" /workspace
+    mount -t tmpfs -o size=16m,mode=1777,nosuid,nodev tmpfs /tmp
+    mount -t tmpfs -o size=256m,mode=0700,nosuid,nodev,noexec tmpfs "$epoch"
+    touch "$epoch/building"
+    trap 'if [[ -f $epoch/sealed ]]; then mount -o remount,rw,nosuid,nodev "$disk"; fi' EXIT
+    if epoch_eligible; then
+        mkdir "$epoch/state"; cp -a "$state/." "$epoch/state/"
+        mount --bind "$epoch/state" /workspace/knowledge/.sifttext
+    else /sbin/workspace-view use-disk; fi
+    export TMPDIR=/tmp
+    instructions
+    if [[ -f $epoch/sealed ]]; then
+        [[ -s $epoch/state/index.sqlite && -s $epoch/navigation.incoming.sqfs ]]
+        for suffix in -wal -shm -journal; do absent "$epoch/state/index.sqlite$suffix"; done
+        rm -f "$epoch/clean-tree"
+        mount -o remount,rw,nosuid,nodev "$disk"; rm "$epoch/sealed"
+        dd if="$epoch/state/index.sqlite" of="$state/index.sqlite" bs=1M conv=excl,fsync status=none
+        chmod --reference="$epoch/state/index.sqlite" "$state/index.sqlite"
+        cp -p "$epoch/state/config.json" "$state/config.json"
+        cp -p "$epoch/navigation.incoming.sqfs" "$pending"
+    fi
+    sync -f "$volume";;
+seal)
+    [[ -f $epoch/building && -d $epoch/state ]]; mountpoint -q "$epoch"
+    mount -o remount,ro,nosuid,nodev "$disk"
+    touch "$epoch/sealed"
+    case ,$(findmnt -nro FS-OPTIONS -T "$data/knowledge"), in *,ro,*) ;; *) exit 1;; esac
+    /usr/sbin/read-window /workspace/knowledge/nodes /dev/vdb || :;;
+use-disk)
+    [[ -f $epoch/building ]]; mountpoint -q "$epoch"
+    # The failed Rust call has closed every SQLite handle. Discard the whole
+    # private mount, including a possible partial link image, not just the DB.
+    rm -f "$epoch/clean-tree"
+    mount -o remount,rw,nosuid,nodev "$disk"
+    if mountpoint -q /workspace/knowledge/.sifttext; then umount /workspace/knowledge/.sifttext; fi
+    umount "$epoch"
+    mount -t tmpfs -o size=1m,mode=0700,nosuid,nodev,noexec tmpfs "$epoch"
+    touch "$epoch/building"
+    # Record the unique scratch name before creating it. Boot can reclaim a
+    # partial disk-sized staging DB without globbing through user state.
+    id=$(</proc/sys/kernel/random/uuid); stage=$state/.build-$id; absent "$stage"
+    printf '%s' "$id" > "$original/disk-stage"; sync -f "$volume"
+    mkdir -m 0700 "$stage"; mkdir -m 1777 "$stage/tmp"
+    printf '%s' "$id" > "$epoch/disk-stage"
+    mount --bind "$stage/tmp" /tmp;;
+verify-disk)
+    id=$(<"$original/disk-stage"); [[ $id =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]]
+    mount --bind "$next" /workspace
+    mount --bind "$state/.build-$id/tmp" /tmp
+    export TMPDIR=/tmp
+    instructions;;
+private-ready)
+    [[ -f $epoch/building ]]
+    if [[ -f $epoch/sealed ]]; then pending=$epoch/navigation.incoming.sqfs; fi
+    [[ -f $pending && ! -L $pending ]]
+    mkdir -p /run/workspace-navigation
+    mount -t squashfs -o loop,ro,nosuid,nodev,noexec "$pending" /run/workspace-navigation;;
+*) exit 2;;
+esac

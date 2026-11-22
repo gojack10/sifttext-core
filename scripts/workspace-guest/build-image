@@ -1,0 +1,38 @@
+#!/bin/bash
+# Assemble a NEW immutable Linux guest image. Never open a workspace disk or
+# change a VM registry. Inputs are a trusted base, a matching checked Core
+# package, and the packer with its matching Linux loader/libraries.
+set -euo pipefail
+[[ $EUID == 0 && $# == 4 ]] || { echo 'usage (root): build-image BASE.ext4 NEW.ext4 CORE_PACKAGE SQUASHFS_RUNTIME' >&2; exit 2; }
+base=$(realpath -e "$1"); out=$(realpath -e "$(dirname "$2")")/$(basename "$2")
+pkg=$(realpath -e "$3"); packer=$(realpath -e "$4"); helpers=$pkg/scripts/workspace-guest
+[[ -f $base && ! -e $out && ! -L $out && -x $pkg/sifttext && -f $pkg/build/candidate.sha256 ]]
+ver=$("$packer/lib/ld-linux-x86-64.so.2" --library-path "$packer/lib" "$packer/mksquashfs" -version)
+[[ $ver == *'version 4.7.5 '* || $ver == *'version 4.7.5'$'\n'* ]]
+tmp=$(mktemp -d -- "$(dirname "$out")/.workspace-image.XXXXXXXX"); root=$tmp/root
+cleanup() {
+    if mountpoint -q "$root"; then umount "$root" || { echo "Retained mounted build: $tmp" >&2; return; }; fi
+    rm -rf --one-file-system -- "$tmp"
+}
+trap cleanup EXIT
+cc -O2 "$helpers/extent-readahead.c" -o "$tmp/read-window"
+cc -O2 -Wno-deprecated-declarations "$helpers/inode-source.c" -l:libext2fs.so.2 -lcrypto -o "$tmp/sifttext-inode-source"
+cp --sparse=always --reflink=auto -- "$base" "$tmp/image"; chmod 0600 "$tmp/image"
+mkdir "$root"; mount -t ext4 -o loop,nosuid,nodev,noexec "$tmp/image" "$root"
+for dir in usr/sbin opt opt/sifttext; do [[ $(realpath -e "$root/$dir") == "$root/$dir" ]]; done
+init=$root/usr/sbin/sifttext-init
+[[ -f $init && ! -L $init && $(grep -Fxc 'mount -o nosuid,nodev /dev/vdb /workspace' "$init") == 1 ]]
+# Keep the selected guest's scratch, fsck, transport, identity and agent. Only
+# its mount call changes. No index or navigation is baked into the root image.
+sed -i 's|^mount -o nosuid,nodev /dev/vdb /workspace$|/sbin/workspace-view boot|' "$init"
+rsync -a --delete -- "$pkg/" "$root/opt/sifttext/"
+install -m0755 "$tmp/read-window" "$tmp/sifttext-inode-source" "$helpers/workspace-view" "$root/usr/sbin/"
+[[ ! -e $root/opt/read-image && ! -L $root/opt/read-image ]]
+install -d "$root/opt/read-image/lib"
+install -m0755 "$packer/mksquashfs" "$root/opt/read-image/mksquashfs"
+cp -L -- "$packer"/lib/* "$root/opt/read-image/lib/"
+install -m0755 "$helpers/squash-writer" "$root/usr/sbin/mksquashfs"
+umount "$root"; chmod 0444 "$tmp/image"
+# Same filesystem; publish without replacing an existing output in a race.
+ln -- "$tmp/image" "$out"; sync -f "$out"
+printf 'Built inactive workspace image: %s\n' "$out"

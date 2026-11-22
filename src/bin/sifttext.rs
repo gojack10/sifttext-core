@@ -165,6 +165,11 @@ fn run(hosted_summary: &mut Option<String>) -> Result<()> {
         };
     }
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if let [command, store] = args.as_slice() && command == "instructions" {
+        // The fixed hosted entry re-execs the actual checked CLI in its private
+        // mount. Do not load the same complete policy package twice.
+        sifttext_file_graph::node_links::dispatch_first_instructions(Path::new(store))?;
+    }
     // Subcommand help must never be mistaken for a new knowledge-home path.
     if args.len() == 2 && matches!(args[1].as_str(), "-h" | "--help") {
         args.remove(0);

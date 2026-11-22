@@ -40,6 +40,8 @@ fn group_token(key: &str) -> String {
     format!("g{h:016x}")
 }
 
+pub(crate) fn permitted_group() -> String { group_token("permitted") }
+
 /// Maintain only verified text. No query, scope, permission, or boost persists.
 pub fn maintain(tx: &Transaction<'_>, documents: &[Document<'_>]) -> Result<BTreeMap<i64, usize>> {
     // Content-backed FTS lets SQLite verify postings against their stored text;
@@ -145,6 +147,39 @@ pub(crate) fn initialize_incremental(tx: &Transaction<'_>) -> Result<()> {
         CREATE TABLE IF NOT EXISTS search_ids (rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);")?;
     Ok(())
 }
+/// A compiled generation keeps the full positional index but only one stored
+/// copy of the node body. SQLite fetches snippet/content columns from the
+/// primary record. Keep Rust's Unicode title trimming in the rowid map.
+pub(crate) fn initialize_compiled(tx: &Transaction<'_>) -> Result<()> {
+    let token = group_token("permitted");
+    tx.execute_batch(&format!("CREATE TABLE search_ids(rowid INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,title TEXT NOT NULL);
+        CREATE VIEW search_projection AS SELECT i.rowid AS rowid,i.title AS title,
+        n.micro_summary||char(10)||n.scope||char(10)||json_extract(n.record,'$.content') AS body,
+        '{token}' AS names,'{token}' AS tags FROM search_ids i JOIN nodes n ON n.id=i.id;
+        CREATE VIRTUAL TABLE search_fts USING fts5(title,body,names,tags,tokenize='porter unicode61',content='search_projection',content_rowid='rowid');"))?;
+    Ok(())
+}
+
+pub(crate) fn external(tx: &Transaction<'_>) -> Result<bool> {
+    Ok(tx.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM main.sqlite_schema WHERE type='view' AND name='search_projection')",
+    )?.query_row([], |row| row.get(0))?)
+}
+
+pub(crate) fn set_compiled(tx: &Transaction<'_>, id: &str, title: &str, body: &str) -> Result<()> {
+    let title = title.trim();
+    let rowid: i64 = tx.prepare_cached("INSERT INTO search_ids(id,title) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET title=excluded.title RETURNING rowid")?.query_row(params![id,title], |r| r.get(0))?;
+    tx.prepare_cached("INSERT INTO search_fts(rowid,title,body,names,tags) VALUES(?1,?2,?3,?4,?4)")?
+        .execute(params![rowid,title,body,group_token("permitted")])?;
+    Ok(())
+}
+
+pub(crate) fn unindex_old(tx: &Transaction<'_>, id: &str) -> Result<()> {
+    // Before changing the record, supply the text which produced its postings.
+    tx.prepare_cached("INSERT INTO search_fts(search_fts,rowid,title,body,names,tags) SELECT 'delete',rowid,title,body,names,tags FROM search_projection WHERE rowid=(SELECT rowid FROM search_ids WHERE id=?1)")?.execute([id])?;
+    Ok(())
+}
+
 pub(crate) fn remove_one(tx: &Transaction<'_>, id: &str) -> Result<()> {
     tx.execute(
         "DELETE FROM search_fts WHERE rowid=(SELECT rowid FROM search_ids WHERE id=?1)",
@@ -163,7 +198,7 @@ pub(crate) fn insert_new(tx: &Transaction<'_>, id: &str, title: &str, body: &str
 pub(crate) fn maintain_one(tx: &Transaction<'_>, id: &str, title: &str, body: &str) -> Result<()> {
     let title = title.trim();
     let old: Option<(i64, String, String)> = tx.query_row(
-        "SELECT search_ids.rowid,title,body FROM search_ids JOIN search_fts ON search_fts.rowid=search_ids.rowid WHERE id=?1",
+        "SELECT i.rowid,f.title,f.body FROM search_ids AS i JOIN search_fts AS f ON f.rowid=i.rowid WHERE i.id=?1",
         [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
     if old
         .as_ref()
@@ -264,7 +299,7 @@ pub(crate) fn retrieve_indexed(
     let highlight = parsed.highlight();
     let cards = page.into_iter().map(|(rowid,rank,relevance)| {
         let (id,title,body): (String,String,String) = tx.query_row(
-            "SELECT id,title,body FROM search_ids JOIN search_fts ON search_fts.rowid=search_ids.rowid WHERE search_ids.rowid=?1",
+            "SELECT i.id,f.title,f.body FROM search_ids AS i JOIN search_fts AS f ON f.rowid=i.rowid WHERE i.rowid=?1",
             [rowid], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
         let mut text = card::build(&id,&title,&body,&highlight,300);
         let shown = text.title.iter().cloned().collect::<Vec<_>>();

@@ -207,7 +207,13 @@ impl Snapshot {
         require(fs::canonicalize(top)? == root, "knowledge view must be its Git root")?;
         require(valid_oid(tree), "invalid Git tree identity")?;
         let tree = tree.to_owned();
-        let status = changed_paths(root, native_monitor, save_checkpoint)?;
+        // The guest publisher sealed this detached source *and its Git directory*
+        // on the read-only work disk. The receipt is private to that mount epoch;
+        // it cannot be reused after thaw or by an ordinary working-tree query.
+        let epoch = crate::node_links::sealed_workspace(root)
+            .then(|| Path::new(crate::node_links::EPOCH).join("clean-tree"));
+        let known = epoch.as_ref().is_some_and(|p| fs::read_to_string(p).ok().as_ref() == Some(&tree));
+        let status = if known { Vec::new() } else { changed_paths(root, native_monitor, save_checkpoint)? };
         let mut changes = BTreeMap::new();
         let mut hash = Sha256::new();
         hash.update(tree.as_bytes());

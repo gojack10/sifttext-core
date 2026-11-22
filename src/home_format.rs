@@ -38,7 +38,7 @@ fn config(home: &Path) -> Result<Value> {
     Ok(value)
 }
 
-fn complete(value: &Value) -> bool {
+pub(crate) fn complete(value: &Value) -> bool {
     value["order_format_version"].as_u64().unwrap_or(0) >= 1
         && value["link_format_version"].as_u64().unwrap_or(0) >= 1
 }

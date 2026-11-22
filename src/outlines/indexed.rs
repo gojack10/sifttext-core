@@ -261,11 +261,32 @@ pub(crate) fn refresh_indexed_from(
     Ok(written)
 }
 
-fn write_tree(connection: &Connection, tree: &str) -> Result<u64> {
+/// The first private build already owns these exact rows. Traverse them once
+/// instead of walking the hierarchy in SQL and parsing the records a second time.
+/// On malformed drafts, let the normal projector publish its precise diagnostic.
+pub(crate) fn write_compiled(connection: &Connection, root: &Path, roots: &BTreeSet<String>, nodes: &[Node]) -> Result<u64> {
+    let Ok(forest) = Forest::draft(nodes) else {
+        return refresh_indexed_from(connection, root, &BTreeSet::new(), true);
+    };
+    let actual: BTreeSet<_> = forest.indexed_rows().filter_map(|(n,p,_)| p.is_none().then_some(n.id.clone())).collect();
+    if actual != *roots {
+        return refresh_indexed_from(connection, root, &BTreeSet::new(), true);
+    }
+    connection.execute_batch(SCHEMA)?;
+    let count = write_forest(connection, &forest, nodes.len())?;
+    connection.execute("INSERT INTO outline_projection VALUES (1,?1,NULL)", [processing()])?;
+    Ok(count)
+}
+
+fn write_tree(connection: &Connection, _tree: &str) -> Result<u64> {
     let nodes = compact_nodes(connection)?;
     let forest = Forest::draft(&nodes)?;
-    let mut rows = Vec::with_capacity(nodes.len());
-    let mut prefix = Vec::with_capacity(nodes.len() + 1);
+    write_forest(connection, &forest, nodes.len())
+}
+
+fn write_forest(connection: &Connection, forest: &Forest<'_>, count: usize) -> Result<u64> {
+    let mut rows = Vec::with_capacity(count);
+    let mut prefix = Vec::with_capacity(count + 1);
     prefix.push(0usize);
     let mut line = String::new();
     for (node, parent, row) in forest.indexed_rows() {
@@ -287,12 +308,14 @@ fn write_tree(connection: &Connection, tree: &str) -> Result<u64> {
     }
     let mut insert =
         connection.prepare("INSERT INTO outline_rows VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)")?;
+    let (mut tree, mut base) = ("", 0);
     for (preorder, (node, parent, depth, descendants, fields)) in rows.into_iter().enumerate() {
+        if parent.is_none() { tree = &node.id; base = preorder; }
         let tokens = prefix[preorder + descendants + 1] - prefix[preorder];
         insert.execute(params![
             node.id,
             tree,
-            i64::try_from(preorder)?,
+            i64::try_from(preorder - base)?,
             parent,
             i64::try_from(depth)?,
             i64::try_from(descendants)?,
@@ -301,7 +324,7 @@ fn write_tree(connection: &Connection, tree: &str) -> Result<u64> {
             i64::try_from(tokens)?
         ])?;
     }
-    Ok(nodes.len().try_into()?)
+    Ok(count.try_into()?)
 }
 
 struct Branch {

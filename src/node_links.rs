@@ -44,6 +44,26 @@ fn save_config(root: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Replace only the actual instructions process, and only in an image whose
+/// init owns this workspace. No user command or path is passed to the publisher.
+pub fn dispatch_first_instructions(root: &Path) -> Result<()> {
+    if cfg!(target_os = "linux") && root == Path::new("/workspace/knowledge")
+        && Path::new("/run/workspace-view-enabled").is_file() && !private_workspace(root)
+        && root.join(".git").is_dir() && !root.join(".sifttext/index.sqlite").try_exists()?
+        && { let config = config(root)?; crate::home_format::complete(&config)
+             && config[VERSION].as_u64().unwrap_or(0) == 0 }
+        && crate::local::reader_git(root, &["rev-parse", "--abbrev-ref", "HEAD"])? == "HEAD" {
+        use std::os::unix::process::CommandExt;
+        return Err(std::process::Command::new("/sbin/workspace-view").arg("first").current_dir("/").exec().into());
+    }
+    Ok(())
+}
+
+fn workspace_operation(op: &str) -> Result<()> {
+    require(std::process::Command::new("/sbin/workspace-view").arg(op).status()?.success(),
+        &format!("guest workspace {op} failed"))
+}
+
 pub fn prepare(root: &Path) -> Result<()> {
     // Linked/sparse drafts reuse the index but materialize no navigation files.
     if !root.join(".git").is_dir() || enabled(root)? {
@@ -53,10 +73,26 @@ pub fn prepare(root: &Path) -> Result<()> {
         return Ok(());
     }
     crate::local::exclude_local_artifacts(root, false, EXCLUDES)?;
-    crate::index::prepare_node_links(root)?;
+    if private_workspace(root) && Path::new(EPOCH).join("state").is_dir() {
+        // Only the verified clean compiler runs in bounded RAM. Discard its
+        // unpublished output on failure; the ordinary Git builder uses disk.
+        // Its connection, both SQLite handles and the refresh lock have all
+        // unwound before changing mounts. Never retry the caller's command.
+        if let Err(reason) = workspace_operation("seal").and_then(|()| crate::index::prepare_node_links(root)) {
+            if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+                eprintln!("index-phase selecting disk builder: {reason}");
+            }
+            workspace_operation("use-disk")?;
+            crate::index::prepare_node_links(root)?;
+        }
+    } else { crate::index::prepare_node_links(root)?; }
     let mut value = config(root)?;
     value[VERSION] = json!(1);
-    save_config(root, &value)
+    save_config(root, &value)?;
+    if private_workspace(root) {
+        workspace_operation("private-ready")?;
+    }
+    Ok(())
 }
 
 pub(crate) fn retire(root: &Path) -> Result<()> {
@@ -80,7 +116,12 @@ pub(crate) fn index_body(connection: &Connection, id: &str, body: &str) -> Resul
     }
     let mut insert =
         connection.prepare_cached("INSERT OR IGNORE INTO body_links VALUES (?1,?2)")?;
-    for event in Parser::new(body) {
+    for target in body_targets(id, body) { insert.execute(params![id, target])?; }
+    Ok(())
+}
+
+pub(crate) fn body_targets<'a>(id: &'a str, body: &'a str) -> impl Iterator<Item=String> + 'a {
+    body.contains("/node.md").then(|| Parser::new(body)).into_iter().flatten().filter_map(move |event| {
         if let Event::Start(Tag::Link { dest_url, .. }) = event
             && let Some(path) = dest_url.strip_prefix("../")
             && let Some(target) = path
@@ -90,10 +131,9 @@ pub(crate) fn index_body(connection: &Connection, id: &str, body: &str) -> Resul
             && uuid(target)
             && target != id
         {
-            insert.execute(params![id, target])?;
-        }
-    }
-    Ok(())
+            Some(target.to_owned())
+        } else { None }
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -127,6 +167,11 @@ impl Shortcut {
             kind,
             peer: peer.into(),
         }
+    }
+
+    pub(crate) fn parent(child: &str, owner: &str) -> Self { Self::new(child, Kind::Parent, owner) }
+    pub(crate) fn reference(src: &str, dst: &str) -> [Self; 2] {
+        [Self::new(src, Kind::LinksTo, dst), Self::new(dst, Kind::LinkedFrom, src)]
     }
 
     fn paths(&self, root: &Path) -> (PathBuf, PathBuf) {
@@ -204,8 +249,82 @@ pub(crate) fn desired(connection: &Connection) -> Result<BTreeSet<Shortcut>> {
     Ok(desired)
 }
 
+pub(crate) const EPOCH: &str = "/run/private-generation";
+
+pub(crate) fn sealed_workspace(root: &Path) -> bool {
+    if !cfg!(target_os = "linux") || !private_workspace(root) || !Path::new(EPOCH).join("sealed").is_file() { return false; }
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // Check the authored volume itself, not the writable RAM state mount.
+    unsafe { libc::statvfs(c"/workspace/knowledge/nodes".as_ptr(), stat.as_mut_ptr()) == 0
+        && stat.assume_init().f_flag & libc::ST_RDONLY != 0 }
+}
+
+const VOLUME: &str = "/run/workspace-disk/.projection-volume";
+
+pub(crate) fn private_workspace(root: &Path) -> bool {
+    root == Path::new("/workspace/knowledge") && Path::new(EPOCH).join("building").is_file()
+}
+
+/// Build only in the guarded, unpublished workspace. Do not cover a
+/// preexisting navigation path, including an unrecognized user occupant.
+fn packed_navigation(root: &Path, desired: &BTreeSet<Shortcut>, checked_names: bool) -> Result<u64> {
+    let volume = Path::new(if sealed_workspace(root) { EPOCH } else { VOLUME });
+    let pending = volume.join("navigation.incoming.sqfs");
+    require(!volume.join("navigation.sqfs").try_exists()? && !pending.try_exists()?, "workspace already has a navigation image")?;
+    if !checked_names {
+        for e in fs::read_dir(root.join("nodes"))? {
+            let e = e?;
+            if !e.file_type()?.is_dir() { continue; }
+            for name in ["parent", "links-to", "linked-from"] {
+                match fs::symlink_metadata(e.path().join(name)) {
+                    Err(e) if e.kind()==std::io::ErrorKind::NotFound => (),
+                    Err(e) => return Err(e.into()),
+                    Ok(_) => return Err("navigation path already present".into()),
+                }
+            }
+        }
+    }
+    let scratch = tempfile::tempdir_in(volume)?;
+    let empty=scratch.path().join("empty"); fs::create_dir(&empty)?;
+    let manifest=scratch.path().join("manifest"); let image=scratch.path().join("navigation.sqfs");
+    let mut out=std::io::BufWriter::new(fs::File::create(&manifest)?);
+    writeln!(out,"knowledge d 0755 0 0\nknowledge/nodes d 0755 0 0")?;
+    let mut last = "";
+    let mut last_kind = None;
+    for link in desired {
+        let Shortcut { owner,kind,peer } = link;
+        if owner != last {
+            writeln!(out,"knowledge/nodes/{owner} d 0755 0 0")?;
+            last = owner;
+            last_kind = None;
+        }
+        if *kind == Kind::Parent {
+            writeln!(out,"knowledge/nodes/{owner}/parent s 0777 0 0 ../{peer}")?;
+        } else {
+            let name = kind.name();
+            if last_kind != Some(kind) { writeln!(out,"knowledge/nodes/{owner}/{name} d 0755 0 0")?; }
+            writeln!(out,"knowledge/nodes/{owner}/{name}/{peer} s 0777 0 0 ../../{peer}")?;
+        }
+        last_kind = Some(kind);
+    }
+    out.flush()?;drop(out);
+    let result=std::process::Command::new("/usr/sbin/mksquashfs").arg(empty).arg(&image).args(["-noappend","-processors","1","-no-progress","-no-xattrs","-no-exports","-comp","gzip","-Xcompression-level","1","-pf"]).arg(manifest).output()?;
+    require(result.status.success(),&format!("navigation image failed: {}",String::from_utf8_lossy(&result.stderr)))?;
+    fs::File::open(&image)?.sync_all()?;
+    fs::rename(image,pending)?;
+    fs::File::open(volume)?.sync_all()?;
+    Ok(desired.len() as u64)
+}
+
 pub(crate) fn install(root: &Path, desired: &BTreeSet<Shortcut>) -> Result<u64> {
+    if private_workspace(root) { return packed_navigation(root, desired, false); }
     update(root, &existing(root)?, desired)
+}
+
+/// The inode decoder refuses every non-source name, including any of the
+/// three reserved navigation names. This proves absence until the disk thaws.
+pub(crate) fn install_captured(root: &Path, desired: &BTreeSet<Shortcut>) -> Result<u64> {
+    if sealed_workspace(root) { packed_navigation(root, desired, true) } else { install(root, desired) }
 }
 
 pub(crate) fn rebuild(connection: &Connection, root: &Path) -> Result<u64> {

@@ -4,6 +4,21 @@
 use super::*;
 use crate::source_version::{self, Part};
 
+#[path = "inode_source.rs"]
+mod inode_source;
+#[path = "generation.rs"]
+mod generation;
+pub(super) use inode_source::Packet;
+
+pub(super) fn sealed_capture(root: &Path) -> Result<Packet> {
+    let tree = crate::local::reader_git(root, &["rev-parse", "--verify", "HEAD^{tree}"])?;
+    let rows = inode_source::capture(root, &tree).ok_or("checkout does not match the sealed source format")?;
+    require(inode_source::stage_matches(root, &rows)?, "Git's staged entries differ from the checkout")?;
+    fs::write(Path::new(crate::node_links::EPOCH).join("clean-tree"), tree)?;
+    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() { eprintln!("index-phase checkout and Git index matched sealed packet"); }
+    Ok(rows)
+}
+
 struct Builder<'a> {
     db: &'a Transaction<'a>,
     version: Sha256,
@@ -49,9 +64,13 @@ pub(super) fn refresh(
     snapshot: &Snapshot,
     tree: &str,
     node_links: bool,
+    packet: Option<Packet>,
     work: &mut Work,
 ) -> Result<Option<bool>> {
     use crate::source_error::context;
+    if let Some(rows) = packet {
+        return generation::compile(connection, root, snapshot, tree, rows, work).map(Some);
+    }
     // The cold projection only consumes each entry once. Keep a bounded,
     // component-ordered inventory rather than writing and scanning a scratch DB.
     let mut inventory = BTreeMap::new();

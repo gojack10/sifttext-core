@@ -156,21 +156,23 @@ fn retrieval_tool_fields(lines: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn command_output(lines: &mut Vec<String>, key: &str, command: &mut Command) -> Result<()> {
+fn command_output(lines: &mut Vec<String>, key: &str, command: &mut Command) -> Result<bool> {
     match command.output() {
         Ok(output) if output.status.success() => {
             lines.push(format!("{key}:"));
             lines.extend(String::from_utf8_lossy(&output.stdout).lines()
                 .map(|line| format!("  {line}")));
-            Ok(())
+            Ok(true)
         }
         Ok(output) => {
             eprintln!("{key} unavailable: {}", String::from_utf8_lossy(&output.stderr).trim());
-            field(lines, key, json!("unavailable"))
+            field(lines, key, json!("unavailable"))?;
+            Ok(false)
         }
         Err(error) => {
             eprintln!("{key} unavailable: {error}");
-            field(lines, key, json!("unavailable"))
+            field(lines, key, json!("unavailable"))?;
+            Ok(false)
         }
     }
 }
@@ -185,7 +187,13 @@ fn knowledge_fields(lines: &mut Vec<String>, home: &Path, sifttext: &Path) -> Re
         quote(&fd), quote(&home.join("trees")), quote(sifttext), quote(home),
     );
     field(lines, "trees-command", json!(command))?;
-    command_output(lines, "trees-output", Command::new("bash").args(["-o", "pipefail", "-c", &command]))
+    let ready = command_output(lines, "trees-output", Command::new("bash").args(["-o", "pipefail", "-c", &command]))?;
+    // A managed worker needs a successful root query, not a degraded local
+    // CLI receipt. Use the query's actual exit status, not its rendered text.
+    if !ready && home == Path::new("/workspace/knowledge") && Path::new("/run/workspace-view-enabled").is_file() {
+        return Err("workspace tree list unavailable".into());
+    }
+    Ok(())
 }
 
 fn references(lines: &mut Vec<String>, key: &str, values: &BTreeSet<String>) -> Result<()> {
