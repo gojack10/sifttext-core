@@ -869,6 +869,14 @@ fn with_source<T>(
     let mut work = Work::default();
     let root = knowledge_root(path)?;
     require(prepare || root.join(".sifttext/index.sqlite").try_exists()?, &preparation_required(&root))?;
+    // Resolve the verified packet before opening a database handle. This is
+    // the only point at which the private output mount can change identity.
+    let mut packet = if prepare_links && crate::node_links::sealed_workspace(&root) {
+        require(prepare && prepared.is_none(), "sealed build requires an empty workspace")?;
+        let packet = fresh::sealed_capture(&root)?;
+        crate::node_links::workspace_operation("open-output")?;
+        Some(packet)
+    } else { None };
     let directory = cache_directory(&root, prepare)?;
     let directory_id = identity(&directory)?;
     let private = if prepare { private_build(&directory)? } else { None };
@@ -883,7 +891,7 @@ fn with_source<T>(
     for _ in 0..4 {
         let packet = if prepare_links && crate::node_links::sealed_workspace(&root) {
             require(private.is_some() && donor.is_none(), "sealed build needs an empty private index")?;
-            Some(fresh::sealed_capture(&root)?)
+            Some(packet.take().ok_or("sealed checkout changed during its private build")?)
         } else { None };
         let snapshot = match Snapshot::read(&root, native_monitor, std::mem::take(&mut save_checkpoint)) {
             Ok(snapshot) => snapshot,

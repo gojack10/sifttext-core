@@ -15,6 +15,8 @@ pub(crate) fn vocabulary_identity() -> &'static str {
 struct Counter {
     encoder: FxHashMap<Vec<u8>, Rank>,
     regex: Regex,
+    // Only counts of complete regex pieces, never cross-piece BPE merges.
+    piece_counts: FxHashMap<Box<[u8]>, usize>,
 }
 
 // The first two alternatives match a word with uppercase letters before
@@ -68,7 +70,7 @@ impl Counter {
             "\\s+(?!\\S)",
             "\\s+",
         ].join("|")).expect("pinned o200k_base ordinary regex");
-        Self { encoder, regex }
+        Self { encoder, regex, piece_counts: FxHashMap::default() }
     }
 
     fn fits_word_bound(&self, text: &str, ceiling: usize) -> bool {
@@ -94,12 +96,23 @@ impl Counter {
         false
     }
 
-    fn count(&self, text: &str) -> usize {
+    fn count(&mut self, text: &str) -> usize {
         let bytes = text.as_bytes();
         let mut offset = 0;
         let mut total = 0usize;
         while offset < bytes.len() {
-            let (start, end) = if let Some(end) = ascii_word_end(bytes, offset) {
+            // The number alternative is exactly one to three Unicode numbers.
+            // At a non-ASCII boundary a shorter ASCII run is not conclusive.
+            let number = bytes[offset].is_ascii_digit().then(|| {
+                bytes[offset..].iter().take(3).take_while(|b| b.is_ascii_digit()).count()
+            }).filter(|&n| n == 3 || bytes.get(offset + n).is_none_or(u8::is_ascii));
+            let (start, end) = if let Some(n) = number {
+                (offset, offset + n)
+            } else if bytes[offset].is_ascii() && !bytes[offset].is_ascii_alphanumeric()
+                && bytes.get(offset + 1).is_some_and(u8::is_ascii_digit) {
+                // A single separator before a number cannot prefix that number.
+                (offset, offset + 1)
+            } else if let Some(end) = ascii_word_end(bytes, offset) {
                 (offset, end)
             } else if let Some(matched) = self.regex.find_from_pos(text, offset).unwrap() {
                 (matched.start(), matched.end())
@@ -110,7 +123,13 @@ impl Counter {
             let count = if piece.len() == 1 || self.encoder.contains_key(piece) {
                 1
             } else {
-                byte_pair_split(piece, &self.encoder).len()
+                if let Some(&count) = self.piece_counts.get(piece) { count } else {
+                    let count = byte_pair_split(piece, &self.encoder).len();
+                    if piece.len() <= 64 && self.piece_counts.len() < 16_384 {
+                        self.piece_counts.insert(piece.into(), count);
+                    }
+                    count
+                }
             };
             total = total.checked_add(count).expect("ordinary token count overflow");
             offset = end;

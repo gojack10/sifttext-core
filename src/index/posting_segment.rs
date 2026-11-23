@@ -152,13 +152,28 @@ impl Term {
         self.position = pos;
     }
 }
-type Terms = FxHashMap<Box<[u8]>, Term>;
+#[derive(Default)]
+struct Terms {
+    stems: FxHashMap<Box<[u8]>, usize>,
+    spellings: FxHashMap<Box<[u8]>, usize>,
+    lists: Vec<Term>,
+}
 struct Locations<'a> {
     terms: &'a mut Terms,
     row: u32,
     column: u32,
     count: u32,
     budget: &'a mut usize,
+    last: usize,
+}
+impl Locations<'_> {
+    #[inline]
+    fn append(&mut self, id: usize, flags: c_int) {
+        if flags & ffi::FTS5_TOKEN_COLOCATED == 0 || self.count == 0 { self.count += 1; }
+        self.terms.lists[id].record(self.row, self.column, self.count - 1);
+        self.last = id;
+        *self.budget += 3;
+    }
 }
 // SQLite calls back synchronously; token storage is valid only for this call.
 unsafe extern "C" fn token(
@@ -174,24 +189,47 @@ unsafe extern "C" fn token(
     }
     let ctx = unsafe { &mut *context.cast::<Locations<'_>>() };
     let bytes = unsafe { std::slice::from_raw_parts(word.cast::<u8>(), (len as usize).min(32768)) };
-    if flags & ffi::FTS5_TOKEN_COLOCATED == 0 || ctx.count == 0 {
-        ctx.count += 1;
-    }
-    // The buffer already contains the stem produced by SQLite, not an
-    // approximation. In particular, one authored word need not equal one token.
-    let term = match ctx.terms.get_mut(bytes) {
-        Some(t) => t,
+    let id = match ctx.terms.stems.get(bytes) {
+        Some(id) => *id,
         None => {
+            let id = ctx.terms.lists.len();
+            ctx.terms.lists.push(Term::default());
+            ctx.terms.stems.insert(bytes.into(), id);
             *ctx.budget += bytes.len() + 112;
-            ctx.terms.entry(bytes.into()).or_default()
+            id
         }
     };
-    term.record(ctx.row, ctx.column, ctx.count - 1);
-    *ctx.budget += 3;
+    ctx.append(id, flags);
     ffi::SQLITE_OK
 }
 
-const PAGE: usize = 8192;
+impl Tokenizer {
+    fn native(&self, ctx: &mut Locations<'_>, bytes: &[u8]) -> Result<()> {
+        let rc = unsafe { (self.methods.xTokenize.unwrap())(self.raw,
+            (ctx as *mut Locations<'_>).cast(), ffi::FTS5_TOKENIZE_DOCUMENT,
+            bytes.as_ptr().cast(), c_int::try_from(bytes.len())?, Some(token)) };
+        require(rc == ffi::SQLITE_OK, "bulk tokenization failed")
+    }
+    fn column(&self, ctx: &mut Locations<'_>, text: &[u8]) -> Result<()> {
+        // unicode61 with its default categories treats every non-alphanumeric
+        // ASCII byte as a separator. Never split a Unicode run on its interior:
+        // combining marks and the actual folding rules still belong to SQLite.
+        for run in text.split(|b| b.is_ascii() && !b.is_ascii_alphanumeric()).filter(|s| !s.is_empty()) {
+            if run.len() <= 80 && run.is_ascii() {
+                if let Some(&id) = ctx.terms.spellings.get(run) { ctx.append(id, 0); continue; }
+                let before = ctx.count;
+                self.native(ctx, run)?;
+                require(ctx.count == before + 1, "unexpected ASCII token boundary")?;
+                ctx.terms.spellings.insert(run.into(), ctx.last);
+                *ctx.budget += run.len() + 32;
+            } else { self.native(ctx, run)?; }
+        }
+        Ok(())
+    }
+}
+
+// Two posting leaves and the row/cell headers fit in one native page.
+const PAGE: usize = super::page_image::PAGE / 2 - 256;
 struct Leaves<'a> {
     block: Statement<'a>,
     separator: Statement<'a>,
@@ -342,18 +380,9 @@ impl<'a> Bulk<'a> {
                 column: i as u32,
                 count: 0,
                 budget: &mut self.budget,
+                last: 0,
             };
-            let rc = unsafe {
-                (self.tokenizer.methods.xTokenize.unwrap())(
-                    self.tokenizer.raw,
-                    (&mut ctx as *mut Locations<'_>).cast(),
-                    ffi::FTS5_TOKENIZE_DOCUMENT,
-                    col.as_ptr().cast(),
-                    c_int::try_from(col.len())?,
-                    Some(token),
-                )
-            };
-            require(rc == ffi::SQLITE_OK, "bulk tokenization failed")?;
+            self.tokenizer.column(&mut ctx, col.as_bytes())?;
             self.totals[i] += ctx.count;
             var(&mut sizes, ctx.count);
         }
@@ -366,16 +395,18 @@ impl<'a> Bulk<'a> {
         Ok(())
     }
     fn flush(&mut self) -> Result<()> {
-        if self.terms.is_empty() {
+        if self.terms.stems.is_empty() {
             return Ok(());
         }
         let segment = u32::try_from(self.leaves.len() + 1)?;
         require(segment < 65536, "too many search segments")?;
         let mut writer = Leaves::new(self.db, segment)?;
-        let mut terms: Vec<_> = self.terms.drain().collect();
+        self.terms.spellings.clear();
+        let mut terms: Vec<_> = self.terms.stems.drain().collect();
         terms.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         let mut key = vec![b'0']; // native FTS5_MAIN_PREFIX
-        for (word, mut term) in terms {
+        for (word, index) in terms {
+            let term = &mut self.terms.lists[index];
             key.truncate(1);
             key.extend_from_slice(&word);
             term.close_row();
@@ -383,6 +414,7 @@ impl<'a> Bulk<'a> {
         }
         writer.flush()?;
         self.leaves.push(writer.page - 1);
+        self.terms.lists.clear();
         self.budget = 0;
         Ok(())
     }

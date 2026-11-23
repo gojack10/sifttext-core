@@ -59,7 +59,7 @@ pub fn dispatch_first_instructions(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn workspace_operation(op: &str) -> Result<()> {
+pub(crate) fn workspace_operation(op: &str) -> Result<()> {
     require(std::process::Command::new("/sbin/workspace-view").arg(op).status()?.success(),
         &format!("guest workspace {op} failed"))
 }

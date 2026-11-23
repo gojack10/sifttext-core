@@ -146,6 +146,9 @@ pub(super) struct Image {
     file: File,
     pages: u32,
     roots: BTreeMap<String, u32>,
+    catalog_pages: u32,
+    first_pending: u32,
+    pending: Vec<u8>,
 }
 impl Image {
     pub(super) fn open(path: &Path, roots: BTreeMap<String, u32>) -> Result<Self> {
@@ -161,14 +164,37 @@ impl Image {
                 && u64::from(pages) * PAGE as u64 == file.metadata()?.len(),
             "unsupported private page layout",
         )?;
-        Ok(Self { file, pages, roots })
+        Ok(Self { file, pages, roots, catalog_pages: pages, first_pending: 0,
+            pending: Vec::with_capacity(1 << 20) })
     }
     fn reserve(&mut self) -> Result<u32> {
         self.pages = self.pages.checked_add(1).ok_or("database page overflow")?;
         Ok(self.pages)
     }
-    fn write(&self, n: u32, b: &[u8]) -> Result<()> {
-        self.file.write_all_at(b, u64::from(n - 1) * PAGE as u64)?;
+    fn drain(&mut self) -> Result<()> {
+        if self.pending.is_empty() { return Ok(()); }
+        let offset = u64::from(self.first_pending - 1) * PAGE as u64;
+        self.file.write_all_at(&self.pending, offset)?;
+        // Schedule complete runs, including overflow pages. The durable barrier
+        // is the publisher's sync before activation, not this writeback hint.
+        #[cfg(target_os = "linux")] {
+            use std::os::fd::AsRawFd;
+            unsafe { libc::sync_file_range(self.file.as_raw_fd(), offset as i64,
+                self.pending.len() as i64, libc::SYNC_FILE_RANGE_WRITE); }
+        }
+        self.pending.clear();
+        Ok(())
+    }
+    fn write(&mut self, n: u32, b: &[u8]) -> Result<()> {
+        if n <= self.catalog_pages {
+            self.file.write_all_at(b, u64::from(n - 1) * PAGE as u64)?;
+        } else {
+            if self.pending.is_empty() { self.first_pending = n; }
+            require(n == self.first_pending + (self.pending.len() / PAGE) as u32 && b.len() == PAGE,
+                "noncontiguous bulk pages")?;
+            self.pending.extend_from_slice(b);
+            if self.pending.len() >= 1 << 20 { self.drain()?; }
+        }
         Ok(())
     }
     fn append(&mut self, b: &[u8]) -> Result<u32> {
@@ -338,7 +364,8 @@ impl Image {
             children = next;
         }
     }
-    pub(super) fn finish(self) -> Result<()> {
+    pub(super) fn finish(mut self) -> Result<()> {
+        self.drain()?;
         let mut h = [0u8; 100];
         self.file.read_exact_at(&mut h, 0)?;
         let change = be32(&h[24..28]).wrapping_add(1).to_be_bytes();
@@ -346,7 +373,8 @@ impl Image {
         h[92..96].copy_from_slice(&change);
         h[28..32].copy_from_slice(&self.pages.to_be_bytes());
         self.file.write_all_at(&h, 0)?;
-        self.file.sync_all()?;
+        // This inode still lives under a durable rollback intent. Its publisher
+        // must flush the entire finished generation before activating it.
         Ok(())
     }
 }

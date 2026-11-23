@@ -79,7 +79,8 @@ recover_unpublished() {
     if [[ -d $original ]]; then
         [[ ! -L $original && -d $state && ! -L $state ]]
         retire_disk_stage
-        rm -f -- "$state"/index.sqlite{,-journal,-shm,-wal} "$pending"
+        rm -rf --one-file-system -- "$original/generation"
+        rm -f -- "$original/links" "$state"/index.sqlite{,-journal,-shm,-wal} "$pending"
         if [[ -f $original/config.json ]]; then
             local tmp; tmp=$(mktemp "$state/config.XXXXXXXX")
             cp -p "$original/config.json" "$tmp"; mv -T "$tmp" "$state/config.json"
@@ -99,6 +100,7 @@ restore_view() {
 }
 recover_first() {
     if ! mountpoint -q /workspace; then
+        if mountpoint -q "$disk"; then mount -o remount,rw,nosuid,nodev "$disk"; fi
         if mountpoint -q "$next"; then umount "$next"; fi
         if mountpoint -q "$lower"; then umount "$lower"; fi
         restore_view
@@ -129,8 +131,18 @@ first)
         mv -T "$layout" "$volume"; sync -f "$disk"; complete_layout
     fi
     save_original
-    # Neither an early stdout nor a failed mount is a successful reply.
+    # Relinquish the device. The builder must claim the original disk, not
+    # infer its exclusivity from a sample of the current process table.
+    umount "$disk"
     result=$(unshare --mount --propagation private /sbin/workspace-view build)
+    mount -o nosuid,nodev /dev/vdb "$disk"
+    if [[ -d $original/generation ]]; then
+        empty_index "$state"; absent "$pending"
+        mv -T "$original/generation/index.sqlite" "$state/index.sqlite"
+        mv -T "$original/generation/config.json" "$state/config.json"
+        mv -T "$original/links" "$pending"
+        rm -f "$original/generation/refresh.lock"; rmdir "$original/generation"
+    fi
     [[ -f $pending && ! -L $pending && -s $state/index.sqlite ]]
     mount_generation "$pending" "$next"
     if [[ -f $original/disk-stage ]]; then
@@ -145,34 +157,71 @@ first)
     [[ $(findmnt -nro FSTYPE -T /workspace/knowledge/nodes) == overlay ]]
     printf '%s\n' "$result";;
 build)
+    owned=0
+    if /usr/sbin/claim-work-disk; then owned=1
+    else
+        rc=$?; [[ $rc == 77 ]] || exit "$rc"
+        # No exclusive claim: do not trust a captured packet. Use ordinary Git.
+        mount -o nosuid,nodev /dev/vdb "$disk"
+    fi
     mount --bind "$data" /workspace
     mount -t tmpfs -o size=16m,mode=1777,nosuid,nodev tmpfs /tmp
     mount -t tmpfs -o size=256m,mode=0700,nosuid,nodev,noexec tmpfs "$epoch"
     touch "$epoch/building"
     trap 'if [[ -f $epoch/sealed ]]; then mount -o remount,rw,nosuid,nodev "$disk"; fi' EXIT
-    if epoch_eligible; then
+    if (( owned )) && epoch_eligible; then
+        touch "$epoch/owns-device"
         mkdir "$epoch/state"; cp -a "$state/." "$epoch/state/"
         mount --bind "$epoch/state" /workspace/knowledge/.sifttext
     else /sbin/workspace-view use-disk; fi
     export TMPDIR=/tmp
     instructions
     if [[ -f $epoch/sealed ]]; then
-        [[ -s $epoch/state/index.sqlite && -s $epoch/navigation.incoming.sqfs ]]
-        for suffix in -wal -shm -journal; do absent "$epoch/state/index.sqlite$suffix"; done
-        rm -f "$epoch/clean-tree"
-        mount -o remount,rw,nosuid,nodev "$disk"; rm "$epoch/sealed"
-        /usr/sbin/copy-database "$epoch/state/index.sqlite" "$state/index.sqlite"
-        chmod --reference="$epoch/state/index.sqlite" "$state/index.sqlite"
-        cp -p "$epoch/state/config.json" "$state/config.json"
-        cp -p "$epoch/navigation.incoming.sqfs" "$pending"
+        [[ -s $epoch/sink/generation/index.sqlite && -s $epoch/navigation.incoming.sqfs ]]
+        for suffix in -wal -shm -journal; do absent "$epoch/sink/generation/index.sqlite$suffix"; done
+        cp -p "$epoch/navigation.incoming.sqfs" "$epoch/sink/links"
+        sync -f "$epoch/sink"
+        rm -f "$epoch/clean-tree" "$epoch/sealed"
     fi
-    sync -f "$volume";;
+    sync -f "$volume"
+    # Release the claim synchronously before the publisher mounts the original
+    # block device. Do not leave namespace teardown to clean up busy loop I/O.
+    umount "$lower"
+    if mountpoint -q /workspace/knowledge/.sifttext; then umount /workspace/knowledge/.sifttext; fi
+    umount /workspace
+    if mountpoint -q "$epoch/sink"; then umount "$epoch/sink"; fi
+    if [[ -f $epoch/disk-stage ]]; then umount /tmp; fi
+    umount "$disk"
+    if (( owned )); then umount /dev/vdb; fi;;
 seal)
     [[ -f $epoch/building && -d $epoch/state ]]; mountpoint -q "$epoch"
     mount -o remount,ro,nosuid,nodev "$disk"
     touch "$epoch/sealed"
     case ,$(findmnt -nro FS-OPTIONS -T "$data/knowledge"), in *,ro,*) ;; *) exit 1;; esac
     /usr/sbin/read-window /workspace/knowledge/nodes /dev/vdb || :;;
+open-output)
+    # Raw-inode capture and stage comparison have completed with the entire
+    # superblock read-only. Preserve that exclusion for every source alias
+    # before thawing the disk through a bind of the saved intent directory.
+    [[ -f $epoch/sealed && -f $epoch/clean-tree && ! -e $original/generation ]]
+    mkdir "$epoch/sink"; mount --bind "$original" "$epoch/sink"
+    mount -o remount,bind,ro,nosuid,nodev /workspace
+    mount -o remount,bind,ro,nosuid,nodev "$disk"
+    # The raw-device claim excludes older filesystems even in namespaces with
+    # no processes. Only this private publisher created mounts of its new loop.
+    [[ -f $epoch/owns-device ]]
+    dev=$(findmnt -nro MAJ:MIN -T "$disk")
+    awk -v dev="$dev" -v sink="$epoch/sink" '$3==dev && $5!=sink && $6 ~ /(^|,)rw(,|$)/ {exit 1}' /proc/self/mountinfo
+    mount -o remount,rw,nosuid,nodev /dev/vdb "$epoch/sink"
+    for p in /workspace/knowledge/.git /workspace/knowledge/nodes "$disk"; do
+        case ,$(findmnt -nro VFS-OPTIONS -T "$p"), in *,ro,*) ;; *) exit 1;; esac
+    done
+    [[ $(findmnt -nro FSROOT -T "$epoch/sink") == /.projection-volume/before-first-build ]]
+    printf 'index-phase exclusive stream: source read-only, private output writable\n' >&2
+    mkdir -m 700 "$epoch/sink/generation"
+    cp -a "$epoch/state/." "$epoch/sink/generation/"
+    umount /workspace/knowledge/.sifttext
+    mount --bind "$epoch/sink/generation" /workspace/knowledge/.sifttext;;
 use-disk)
     [[ -f $epoch/building ]]; mountpoint -q "$epoch"
     # The failed Rust call has closed every SQLite handle. Discard the whole
@@ -180,6 +229,9 @@ use-disk)
     rm -f "$epoch/clean-tree"
     mount -o remount,rw,nosuid,nodev "$disk"
     if mountpoint -q /workspace/knowledge/.sifttext; then umount /workspace/knowledge/.sifttext; fi
+    if mountpoint -q "$epoch/sink"; then umount "$epoch/sink"; fi
+    mount -o remount,bind,rw,nosuid,nodev /workspace
+    rm -rf --one-file-system -- "$original/generation"; rm -f "$original/links"
     umount "$epoch"
     mount -t tmpfs -o size=1m,mode=0700,nosuid,nodev,noexec tmpfs "$epoch"
     touch "$epoch/building"

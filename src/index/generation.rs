@@ -12,6 +12,16 @@ use page_image::{
 #[path = "posting_segment.rs"]
 mod posting_segment;
 
+// The caller owns an unpublished inode, covered by a durable rollback intent.
+// SQLite assigns the root pages. Close its pager before appending bulk tables.
+fn take_image(db: &mut Connection, path: &Path) -> Result<Image> {
+    let layout = db.prepare("SELECT name,rootpage FROM sqlite_schema WHERE rootpage>0")?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?
+        .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
+    std::mem::replace(db, Connection::open_in_memory()?).close().map_err(|(_, e)| e)?;
+    Image::open(path, layout)
+}
+
 pub(super) fn compile(
     db: &mut Connection,
     root: &Path,
@@ -23,7 +33,7 @@ pub(super) fn compile(
     let started = Instant::now();
     let database = PathBuf::from(db.path().ok_or("missing private database file")?);
     db.pragma_update(None, "page_size", page_image::PAGE as i64)?;
-    db.pragma_update(None, "synchronous", "EXTRA")?;
+    db.execute_batch("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;")?;
     let tx = db.transaction()?;
     // Write the path-ordered ledgers in primary key order. Build their reverse
     // lookup after the load; it is complete before publication.
@@ -153,6 +163,32 @@ pub(super) fn compile(
     }
     drop(owners);
     drop(positions);
+    tx.execute_batch(super::super::super::git::GIT_SCHEMA)?;
+    tx.commit()?;
+    let mut image = take_image(db, &database)?;
+    write_sources(&mut image, source_rows)?;
+    for row in &mut nodes {
+        let id = row["id"].as_str().ok_or("missing id")?.to_owned();
+        let members = children.remove(&id).unwrap_or_default();
+        let members_json = serde_json::to_string(&members)?;
+        row["children"] = json!(members);
+        let packed = record(&[
+            Text(&id), Text(row["name"].as_str().ok_or("missing name")?),
+            Text(row["micro_summary"].as_str().ok_or("missing summary")?),
+            Text(row["scope"].as_str().unwrap_or("")), Text(""),
+            Text(row["status"].as_str().ok_or("missing status")?),
+            Text(&members_json), Text(&serde_json::to_string(&row)?),
+        ]);
+        records.push((id, packed));
+    }
+    write_nodes(&mut image, records)?;
+    image.finish()?;
+    let directory = database.parent().ok_or("missing database parent")?;
+    *db = open_cache(directory, false)?;
+    // SQLite writes the small indexes and postings behind the sequential
+    // node/ledger page stream. The source seal outlives both producers.
+    db.execute_batch("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA cache_size=-49152; PRAGMA cache_spill=OFF;")?;
+    let tx = db.transaction()?;
     std::thread::scope(|scope| -> Result<()> {
         let image = scope.spawn(move || {
             let t = Instant::now();
@@ -178,12 +214,9 @@ pub(super) fn compile(
             }
             for (i, mut row) in nodes.into_iter().enumerate() {
                 let id = row["id"].as_str().ok_or("missing id")?.to_owned();
-                let members = children.remove(&id).unwrap_or_default();
-                for child in &members {
-                    edge.execute(params![id, child])?;
+                for child in row["children"].as_array().ok_or("missing children")? {
+                    edge.execute(params![id, child.as_str().ok_or("missing child id")?])?;
                 }
-                let members_json = serde_json::to_string(&members)?;
-                row["children"] = json!(members);
                 let title = row["name"].as_str().ok_or("missing name")?;
                 for (pos, link) in row["see_also"]
                     .as_array()
@@ -198,17 +231,6 @@ pub(super) fn compile(
                         pos as i64
                     ])?;
                 }
-                let packed = record(&[
-                    Text(&id),
-                    Text(title),
-                    Text(row["micro_summary"].as_str().ok_or("missing summary")?),
-                    Text(row["scope"].as_str().unwrap_or("")),
-                    Text(""),
-                    Text(row["status"].as_str().ok_or("missing status")?),
-                    Text(&members_json),
-                    Text(&serde_json::to_string(&row)?),
-                ]);
-                records.push((id.clone(), packed));
                 let body = super::super::super::project_body(&row)?;
                 let rowid = i64::try_from(i + 1)?;
                 mapping.execute(params![rowid, id, title.trim()])?;
@@ -220,7 +242,6 @@ pub(super) fn compile(
             }
             postings.finish()?;
         }
-        tx.execute_batch(super::super::super::git::GIT_SCHEMA)?;
         let t = Instant::now();
         work.outline_rows_written = crate::outlines::write_compiled(
             &tx,
@@ -272,16 +293,29 @@ pub(super) fn compile(
         put(&tx, key, val)?;
     }
     tx.commit()?;
-    // The large roots are empty in the SQLite-built catalog. Close its last
-    // handle, append sorted pages to that same private inode, and reopen it.
-    let layout = db
-        .prepare("SELECT name,rootpage FROM sqlite_schema WHERE rootpage>0")?
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?
-        .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
-    std::mem::replace(db, Connection::open_in_memory()?)
-        .close()
-        .map_err(|(_, e)| e)?;
-    let mut image = Image::open(&database, layout)?;
+    let mut image = take_image(db, &database)?;
+    write_outlines(&mut image, outlines)?;
+    image.finish()?;
+    *db = open_cache(directory, false)?;
+    if !snapshot.unchanged()? {
+        return Err(super::super::super::Refusal::changed_source().into());
+    }
+    let mode: String = db.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
+    require(mode == "wal", "could not enable WAL before publication")?;
+    db.pragma_update(None, "synchronous", "FULL")?;
+    let tx = db.transaction()?;
+    put(&tx, "schema", SCHEMA)?;
+    put(&tx, "version", &version)?;
+    put(&tx, "artifacts_ready", "1")?;
+    tx.commit()?;
+    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
+        eprintln!("index-phase compiled nodes={} facts_us={} total_us={}", work.nodes_parsed,
+            facts.as_micros(), started.elapsed().as_micros());
+    }
+    Ok(true)
+}
+
+fn write_sources(image: &mut Image, mut source_rows: Vec<Fact>) -> Result<()> {
     source_rows.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     image.index(
         "sources",
@@ -317,6 +351,9 @@ pub(super) fn compile(
             ])
         }),
     )?;
+    Ok(())
+}
+fn write_nodes(image: &mut Image, records: Vec<(String, Vec<u8>)>) -> Result<()> {
     // The capture supplies nodes in component/UUID order, also SQLite BINARY order here.
     require(
         records.windows(2).all(|w| w[0].0 < w[1].0),
@@ -336,6 +373,10 @@ pub(super) fn compile(
             .enumerate()
             .map(|(i, (_, r))| (i as u64 + 1, r)),
     )?;
+    Ok(())
+}
+type OutlinePageRow = (String, String, u64, Option<String>, u64, Vec<u8>);
+fn write_outlines(image: &mut Image, outlines: Vec<OutlinePageRow>) -> Result<()> {
     let mut order: Vec<_> = (0..outlines.len()).collect();
     order.sort_unstable_by(|&a, &b| outlines[a].0.cmp(&outlines[b].0));
     image.index(
@@ -384,26 +425,5 @@ pub(super) fn compile(
             .enumerate()
             .map(|(i, r)| (i as u64 + 1, r.5)),
     )?;
-    image.finish()?;
-    *db = open_cache(database.parent().ok_or("missing database parent")?, false)?;
-    if !snapshot.unchanged()? {
-        return Err(super::super::super::Refusal::changed_source().into());
-    }
-    let mode: String = db.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
-    require(mode == "wal", "could not enable WAL before publication")?;
-    db.pragma_update(None, "synchronous", "FULL")?;
-    let tx = db.transaction()?;
-    put(&tx, "schema", SCHEMA)?;
-    put(&tx, "version", &version)?;
-    put(&tx, "artifacts_ready", "1")?;
-    tx.commit()?;
-    if std::env::var_os("SIFTTEXT_RETRIEVAL_TRACE").is_some() {
-        eprintln!(
-            "index-phase compiled nodes={} facts_us={} total_us={}",
-            work.nodes_parsed,
-            facts.as_micros(),
-            started.elapsed().as_micros()
-        );
-    }
-    Ok(true)
+    Ok(())
 }
