@@ -566,13 +566,17 @@ impl GitReader {
         }
         drop(rows);
         drop(entries);
+        // Name every node's own missing position before any parent sorts its
+        // children; otherwise the sort refuses first, without the file.
         for (id, facts) in &nodes {
-            let names = children.get_mut(id).ok_or("missing Git node directory")?;
             source_error::context(
                 require(facts.position.is_some(), "missing Git display position"),
                 &PathBuf::from(format!("nodes/{id}/node.md")),
                 Some("position"),
             )?;
+        }
+        for id in nodes.keys() {
+            let names = children.get_mut(id).ok_or("missing Git node directory")?;
             // Establish membership before asking for a child's position. A
             // dangling link has no node, not merely a missing display rank.
             for child in names.iter() {
